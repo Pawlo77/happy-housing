@@ -1,0 +1,42 @@
+---
+description: Python typing, Google docstrings, and style for __PROJECT_SLUG__
+alwaysApply: true
+---
+
+# Python quality
+
+Match tooling in `pyproject.toml` — do not fight ruff or mypy.
+
+## Types
+
+- Imports at module top; no inline imports unless circular dependency is documented
+- Annotate all public functions, methods, and module-level names in `src/__PROJECT_MODULE__`
+- Prefer `pathlib.Path`, explicit returns, `X | Y` over `Optional`
+- No bare `except:`; no `# type: ignore` without a comment
+- Ruff line length 88 — run the formatter
+- Exhaustive `match` on unions: `never` in the default branch
+- No bare `*` for keyword-only parameters unless required — e.g. multiple optional args where positional calls would be ambiguous, or a deliberate API boundary. Do not add `*` just to mark one trailing parameter as keyword-only.
+
+## Docstrings (Google style)
+
+Use [Google-style](https://google.github.io/styleguide/pyguide.html#383-functions-and-methods) docstrings in `src/__PROJECT_MODULE__`. Types live in annotations — **do not repeat them** in `Args`/`Returns`.
+
+Every Python file in `src/__PROJECT_MODULE__` starts with a module docstring — including `__init__.py`. Every module-level constant gets a docstring on the line immediately below its definition.
+
+| Surface | Rule |
+|---------|------|
+| Module | **Required** on every file (including `__init__.py`) |
+| Module-level constant | **Required**: one-line docstring directly under the assignment |
+| Public class | One-line summary; expand only when behavior is non-obvious |
+| Public function/method | One line when signature is sufficient; else `Args`/`Returns`/`Raises` |
+| `_private` | Omit unless logic is genuinely non-obvious |
+| `tests/` | Docstring optional; prefer clear test names |
+
+Comments: non-obvious logic only.
+
+## Logging
+
+Use the stdlib [`logging`](https://docs.python.org/3/library/logging.html) package — no `print` for diagnostics in library code.
+
+- One module logger per file: `logger = logging.getLogger(__name__)`
+- No handlers in library modules unless the experiment explicitly configures logging at the entrypoint

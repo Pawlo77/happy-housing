@@ -1,0 +1,112 @@
+[project]
+name = "__PROJECT_SLUG__"
+version = "0.1.0"
+description = "__PROJECT_DESCRIPTION__"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+
+authors = [
+  { name = "__AUTHOR_NAME__", email = "__AUTHOR_EMAIL__" },
+]
+maintainers = [
+  { name = "__AUTHOR_NAME__", email = "__AUTHOR_EMAIL__" },
+]
+
+keywords = [
+  "experiments",
+  "mlflow",
+  "research",
+]
+
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Intended Audience :: Science/Research",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+  "humanize>=4.15.0",
+  "ipykernel>=7.2.0",
+  "ipywidgets>=8.1.8",
+  "matplotlib>=3.10.8",
+  "mlflow>=3.0.0",
+  "mlflow-sysmetrics>=0.1.3",
+  "nbformat>=5.10.4",
+  "numpy>=2.4.2",
+  "pandas>=2.2.0",
+  "psutil>=7.2.2",
+  "python-dotenv>=1.2.2",
+  "pyyaml>=6.0.2",
+  "seaborn>=0.13.2",
+  "tqdm>=4.67.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/__GITHUB_OWNER__/__PROJECT_SLUG__"
+Repository = "https://github.com/__GITHUB_OWNER__/__PROJECT_SLUG__"
+Issues = "https://github.com/__GITHUB_OWNER__/__PROJECT_SLUG__/issues"
+
+[build-system]
+requires = ["uv_build>=0.11.0,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+  "bandit>=1.9.4",
+  "mypy>=1.16.0",
+  "prek>=0.4.9",
+  "pytest>=8.4.2",
+  "pytest-cov>=7.1.0",
+  "ruff>=0.15.20",
+  "types-pyyaml>=6.0.12.20250915",
+]
+
+[tool.uv]
+required-version = ">=0.11.28"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["B", "E", "F", "I", "N", "RUF", "SIM", "T10", "UP"]
+
+[tool.ruff.format]
+preview = true
+
+[tool.mypy]
+python_version = "3.12"
+mypy_path = "src"
+packages = ["__PROJECT_MODULE__"]
+strict = true
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+no_implicit_reexport = true
+disallow_any_generics = true
+
+[[tool.mypy.overrides]]
+module = ["mlflow", "mlflow.*", "yaml", "yaml.*"]
+ignore_missing_imports = true
+
+[tool.bandit]
+exclude_dirs = [".venv", "tests", "notebooks", "report"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+filterwarnings = []
+
+[tool.coverage.run]
+source = ["__PROJECT_MODULE__"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+
+[tool.uv.build-backend]
+module-name = "__PROJECT_MODULE__"

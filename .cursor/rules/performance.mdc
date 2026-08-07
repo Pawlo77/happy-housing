@@ -1,0 +1,24 @@
+---
+description: Performance and resource-use expectations for __PROJECT_SLUG__
+alwaysApply: true
+---
+
+# Performance
+
+Prefer the **fastest correct implementation** with the **lowest practical memory footprint**.
+
+## Design defaults
+
+- Stream large workloads — generators or batched iteration; avoid materializing huge lists upfront
+- Bound concurrency memory — do not create one async task per item when inputs can be large
+- Reuse precomputed tables and packed encodings in hot loops
+- Keep caches sized to real reuse patterns
+
+## End-of-task performance review
+
+After implementation and before hand-off:
+
+1. Identify hot paths touched
+2. Estimate memory and time scaling; flag accidental bulk materialization
+3. Run `make check`
+4. Fix regressions found during review

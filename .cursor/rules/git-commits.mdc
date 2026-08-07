@@ -1,0 +1,50 @@
+---
+description: Granular commits and PRs; always ask permission first
+alwaysApply: true
+---
+
+# Git commits and pull requests
+
+**Never commit, push, or open a PR without explicit user permission.** Propose first; execute only after approval.
+
+## Commits
+
+Prefer **granular** commits — one logical change per commit. Split when changes span unrelated concerns (e.g. MLflow tracking vs report vs CI).
+
+If a single commit would bundle too much, **stop and propose** a commit plan instead of committing.
+
+### Message format
+
+Short **type** prefix + brief summary. Optional body with bullet details when helpful.
+
+**Types:** `feat`, `fix`, `docs`, `test`, `refactor`, `chore`, `ci`, `build`, `perf`
+
+- Subject: imperative, lowercase type, no period, ~72 chars
+- Body: what changed and why — not a file list unless useful
+- One concern per commit; do not mix unrelated types
+
+### Before committing
+
+1. Run `git status`, `git diff`, `git log -5` (parallel)
+2. Draft message(s) matching the split plan
+3. **Ask user to approve** message(s) and scope
+4. Stage only files for that commit; commit; verify with `git status`
+
+Do not `--no-verify`, amend, or force-push unless user rules explicitly allow.
+
+## Pull requests
+
+Same permission gate — **propose title and body; create only when asked.**
+
+**Body:**
+
+```markdown
+## Summary
+- Bullet: user-facing or architectural outcome
+
+## Test plan
+- [ ] make check
+- [ ] …
+```
+
+Keep PRs focused. Use `gh pr create` with HEREDOC body when user approves.

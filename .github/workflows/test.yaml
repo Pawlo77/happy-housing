@@ -1,0 +1,63 @@
+name: Pytest
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/test.yaml"
+      - "src/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - "uv.lock"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/test.yaml"
+      - "src/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - "uv.lock"
+
+jobs:
+  template-guard:
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Detect template placeholders
+        id: check
+        run: |
+          if grep -q '__PROJECT_SLUG__' pyproject.toml; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Template placeholders detected — pytest skipped until customized."
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  test:
+    needs: template-guard
+    if: needs.template-guard.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.3.2
+        with:
+          enable-cache: true
+          version: "0.11.28"
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Sync dependencies
+        run: uv sync --locked --all-groups
+
+      - name: Run pytest
+        run: uv run pytest tests/
