@@ -3,7 +3,7 @@
 from collections.abc import Mapping
 from dataclasses import dataclass, field, fields, is_dataclass
 from pathlib import Path
-from typing import Any, Self
+from typing import Any, Self, cast
 
 import yaml
 
@@ -28,7 +28,8 @@ def _serialize(value: Any) -> Any:
     """Convert nested dataclasses and tuples into JSON-friendly values."""
     if is_dataclass(value):
         return {
-            field.name: _serialize(getattr(value, field.name)) for field in fields(value)
+            field.name: _serialize(getattr(value, field.name))
+            for field in fields(value)
         }
     if isinstance(value, tuple):
         return [_serialize(item) for item in value]
@@ -53,7 +54,7 @@ class MLflowTrackingConfig:
     """Enable MLflow tracking."""
     tracking_uri: str = "sqlite:///mlruns.db"
     """MLflow tracking URI (SQLite backend for SQL-based trace metrics support)."""
-    experiment_name: str = "default-experiment"
+    experiment_name: str = "happy-housing"
     """MLflow experiment name."""
     run_name: str | None = None
     """Optional MLflow run name."""
@@ -75,7 +76,7 @@ class MLflowTrackingConfig:
 
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-serializable representation of the MLflow config."""
-        return _serialize(self)
+        return cast(dict[str, Any], _serialize(self))
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> Self:
@@ -90,7 +91,7 @@ class MLflowTrackingConfig:
 class ExperimentConfig:
     """Top-level experiment configuration."""
 
-    name: str = "default-experiment"
+    name: str = "happy-housing"
     """Human-readable experiment name."""
     mlflow: MLflowTrackingConfig = field(default_factory=MLflowTrackingConfig)
     """MLflow tracking settings for this experiment."""
@@ -100,7 +101,7 @@ class ExperimentConfig:
 
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-serializable representation of the experiment config."""
-        return _serialize(self)
+        return cast(dict[str, Any], _serialize(self))
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> Self:
@@ -112,7 +113,7 @@ class ExperimentConfig:
             if mlflow_data
             else MLflowTrackingConfig()
         )
-        name = str(mapping.get("name", "default-experiment"))
+        name = str(mapping.get("name", "happy-housing"))
         return cls(name=name, mlflow=mlflow_config)
 
 

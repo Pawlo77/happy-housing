@@ -23,4 +23,4 @@ Repo-specific gotcha: experiment settings load from YAML via `load_experiment_co
 1. This file (exit + agent-only)
 2. Skill `caveman` (ultra — always active)
 3. `.cursor/rules/*.mdc`
-4. Skill `__PROJECT_SLUG__-development` (steps 1–7)
+4. Skill `happy-housing-development` (steps 1–7)

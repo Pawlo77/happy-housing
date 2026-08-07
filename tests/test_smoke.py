@@ -1,11 +1,11 @@
-"""Smoke tests for the __PROJECT_SLUG__ scaffold."""
+"""Smoke tests for the happy-housing scaffold."""
 
 from pathlib import Path
 
 
 def test_package_imports() -> None:
     """Smoke test: package can be imported."""
-    import __PROJECT_MODULE__  # noqa: F401
+    import happy_housing  # noqa: F401
 
 
 def test_project_scaffold_layout() -> None:
@@ -13,7 +13,7 @@ def test_project_scaffold_layout() -> None:
     root = Path(__file__).resolve().parents[1]
 
     expected_paths = [
-        root / "src" / "__PROJECT_MODULE__",
+        root / "src" / "happy_housing",
         root / "tests",
         root / "notebooks",
         root / "configs",
@@ -23,5 +23,7 @@ def test_project_scaffold_layout() -> None:
         root / "README.md",
     ]
 
-    missing = [str(path.relative_to(root)) for path in expected_paths if not path.exists()]
+    missing = [
+        str(path.relative_to(root)) for path in expected_paths if not path.exists()
+    ]
     assert not missing, f"Missing scaffold paths: {missing}"

@@ -1,18 +1,18 @@
 ---
-name: __PROJECT_SLUG__-development
+name: happy-housing-development
 description: >-
-  Ordered implementation workflow for __PROJECT_SLUG__. Use for any code, test,
+  Ordered implementation workflow for happy-housing. Use for any code, test,
   config, hook, or CI change.
 ---
 
-# __PROJECT_SLUG__ development
+# happy-housing development
 
 Follow rules in `.cursor/rules/*.mdc`. Agent exit criteria in `AGENTS.md`.
 
 ## 1. Read
 
 - Task scope only
-- Existing code in `src/__PROJECT_MODULE__/`, `configs/`, and `tests/` for conventions
+- Existing code in `src/happy_housing/`, `configs/`, and `tests/` for conventions
 - Porting from another repo → minimum slice, not bulk copy
 
 ## 2. Red

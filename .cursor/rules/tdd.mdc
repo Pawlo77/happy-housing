@@ -1,5 +1,5 @@
 ---
-description: Test-driven development for __PROJECT_SLUG__
+description: Test-driven development for happy-housing
 alwaysApply: true
 ---
 
@@ -8,7 +8,7 @@ alwaysApply: true
 New behavior or bug fixes: **test first**, then implement.
 
 1. **Red** — write failing test in `tests/` (`test_*.py`, mirror `src/` layout)
-2. **Green** — minimal implementation in `src/__PROJECT_MODULE__/`
+2. **Green** — minimal implementation in `src/happy_housing/`
 3. **Refactor** — run `make check`; keep green
 4. **Validate** — re-read the diff; run full checks; fix style, coverage, docs, and consistency issues before hand-off
 5. **Performance** — analyze hot paths; implement the fastest low-resource correct version (see `performance.mdc`)

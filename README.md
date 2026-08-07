@@ -1,8 +1,6 @@
-> **Template repo** — replace `__PROJECT_*__` tokens and rename `src/__PROJECT_MODULE__/` before use. See [TEMPLATE.md](TEMPLATE.md).
+# happy-housing
 
-# __PROJECT_SLUG__
-
-__PROJECT_DESCRIPTION__
+Warsaw real-estate AI analyzer: free GIS enrichment (OSMnx, RCN, GTFS, GIOŚ), LightGBM fair-price model with SHAP, Streamlit/pydeck heatmap — DuckDB + GeoParquet, zero paid APIs.
 
 ## Quick start
 
@@ -11,7 +9,7 @@ make install
 make check
 ```
 
-Edit `configs/experiment.yaml` for run metadata and MLflow settings.
+Edit `configs/experiment.yaml` for run metadata and MLflow settings. Implementation plan: [docs/plan.md](docs/plan.md).
 
 ## MLflow
 
@@ -28,7 +26,7 @@ Load config in code:
 ```python
 from pathlib import Path
 
-from __PROJECT_MODULE__.config import load_experiment_config
+from happy_housing.config import load_experiment_config
 
 config = load_experiment_config(Path("configs/experiment.yaml"))
 ```
@@ -37,10 +35,12 @@ config = load_experiment_config(Path("configs/experiment.yaml"))
 
 | Path | Purpose |
 |------|---------|
-| `src/__PROJECT_MODULE__/` | Experiment code (config, orchestration, training) |
+| `src/happy_housing/` | Pipeline code (ingest, GIS, storage, models, app) |
 | `configs/` | YAML experiment configs |
+| `data/fixtures/` | Small committed samples (raw dumps gitignored) |
+| `docs/plan.md` | Phased implementation plan |
 | `notebooks/` | Jupyter notebooks |
-| `report/` | Interspeech LaTeX paper scaffold |
+| `report/` | LaTeX paper scaffold |
 | `tests/` | Pytest suite |
 
 ## Development
@@ -57,4 +57,4 @@ Run `make help` for all targets.
 
 Apache License 2.0. See [LICENSE](LICENSE).
 
-Copyright __COPYRIGHT_YEAR__ __AUTHOR_NAME__.
+Copyright 2026 Paweł Pozorski.

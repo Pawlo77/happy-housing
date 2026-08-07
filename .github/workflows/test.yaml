@@ -32,7 +32,7 @@ jobs:
       - name: Detect template placeholders
         id: check
         run: |
-          if grep -q '__PROJECT_SLUG__' pyproject.toml; then
+          if grep -q 'happy-housing' pyproject.toml; then
             echo "ready=false" >> "$GITHUB_OUTPUT"
             echo "::notice::Template placeholders detected — pytest skipped until customized."
           else

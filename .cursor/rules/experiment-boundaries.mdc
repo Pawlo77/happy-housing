@@ -5,7 +5,7 @@ alwaysApply: true
 
 # Experiment boundaries
 
-- Runnable code in `src/__PROJECT_MODULE__/` — notebooks in `notebooks/`, paper in `report/`, configs in `configs/`
+- Runnable code in `src/happy_housing/` — notebooks in `notebooks/`, paper in `report/`, configs in `configs/`
 - YAML experiment configs in `configs/`; load via `load_experiment_config` in `config.py`
 - Add modules only with real implementation, never empty package trees
 - Heavy optional dependencies → `[project.optional-dependencies]` extras when introduced

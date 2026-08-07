@@ -84,7 +84,9 @@ class MlflowRunTracker:
                             "Failed to resume MLflow run_id=%s; starting a new run.",
                             resume_run_id,
                         )
-                        mlflow.start_run(run_name=self.run_name or self.tracking.run_name)
+                        mlflow.start_run(
+                            run_name=self.run_name or self.tracking.run_name
+                        )
                 else:
                     mlflow.start_run(run_name=self.run_name or self.tracking.run_name)
 

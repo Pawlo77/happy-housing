@@ -1,23 +1,27 @@
 [project]
-name = "__PROJECT_SLUG__"
+name = "happy-housing"
 version = "0.1.0"
-description = "__PROJECT_DESCRIPTION__"
+description = "Warsaw real-estate AI analyzer: free GIS enrichment (OSMnx, RCN, GTFS, GIOŚ), LightGBM fair-price model with SHAP, Streamlit/pydeck heatmap — DuckDB + GeoParquet, zero paid APIs."
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 
 authors = [
-  { name = "__AUTHOR_NAME__", email = "__AUTHOR_EMAIL__" },
+  { name = "Paweł Pozorski", email = "pozorski.paul@gmail.com" },
 ]
 maintainers = [
-  { name = "__AUTHOR_NAME__", email = "__AUTHOR_EMAIL__" },
+  { name = "Paweł Pozorski", email = "pozorski.paul@gmail.com" },
 ]
 
 keywords = [
-  "experiments",
+  "real-estate",
+  "warsaw",
+  "geospatial",
+  "lightgbm",
+  "streamlit",
+  "duckdb",
   "mlflow",
-  "research",
 ]
 
 classifiers = [
@@ -46,9 +50,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/__GITHUB_OWNER__/__PROJECT_SLUG__"
-Repository = "https://github.com/__GITHUB_OWNER__/__PROJECT_SLUG__"
-Issues = "https://github.com/__GITHUB_OWNER__/__PROJECT_SLUG__/issues"
+Homepage = "https://github.com/Pawlo77/happy-housing"
+Repository = "https://github.com/Pawlo77/happy-housing"
+Issues = "https://github.com/Pawlo77/happy-housing/issues"
 
 [build-system]
 requires = ["uv_build>=0.11.0,<0.12.0"]
@@ -81,7 +85,7 @@ preview = true
 [tool.mypy]
 python_version = "3.12"
 mypy_path = "src"
-packages = ["__PROJECT_MODULE__"]
+packages = ["happy_housing"]
 strict = true
 warn_unused_configs = true
 warn_redundant_casts = true
@@ -101,7 +105,7 @@ pythonpath = ["src"]
 filterwarnings = []
 
 [tool.coverage.run]
-source = ["__PROJECT_MODULE__"]
+source = ["happy_housing"]
 branch = true
 
 [tool.coverage.report]
@@ -109,4 +113,4 @@ show_missing = true
 skip_empty = true
 
 [tool.uv.build-backend]
-module-name = "__PROJECT_MODULE__"
+module-name = "happy_housing"

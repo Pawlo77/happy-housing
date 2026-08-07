@@ -4,7 +4,7 @@ import importlib.metadata
 import os
 import platform
 import shutil
-import subprocess
+import subprocess  # nosec B404
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from functools import lru_cache
@@ -102,7 +102,9 @@ def _read_git_commit_hash(repo_root: Path) -> str:
     if git_dir.is_file():
         git_dir_text = git_dir.read_text(encoding="utf-8").strip()
         if git_dir_text.startswith("gitdir:"):
-            git_dir = (repo_root / git_dir_text.split("gitdir:", maxsplit=1)[1].strip()).resolve()
+            git_dir = (
+                repo_root / git_dir_text.split("gitdir:", maxsplit=1)[1].strip()
+            ).resolve()
             head_path = git_dir / "HEAD"
 
     try:
@@ -128,7 +130,9 @@ def _read_git_branch(repo_root: Path) -> str:
     if git_dir.is_file():
         git_dir_text = git_dir.read_text(encoding="utf-8").strip()
         if git_dir_text.startswith("gitdir:"):
-            git_dir = (repo_root / git_dir_text.split("gitdir:", maxsplit=1)[1].strip()).resolve()
+            git_dir = (
+                repo_root / git_dir_text.split("gitdir:", maxsplit=1)[1].strip()
+            ).resolve()
             head_path = git_dir / "HEAD"
 
     try:
@@ -147,7 +151,7 @@ def _read_git_status_porcelain(repo_root: Path) -> str:
         git_executable = shutil.which("git")
         if git_executable is None:
             return ""
-        completed = subprocess.run(  # noqa: S603
+        completed = subprocess.run(  # nosec B603
             [git_executable, "status", "--porcelain=v1", "-uall"],
             cwd=repo_root,
             check=True,
@@ -164,7 +168,12 @@ def _read_total_ram_bytes() -> int:
     try:
         pages = os.sysconf("SC_PHYS_PAGES")
         page_size = os.sysconf("SC_PAGE_SIZE")
-        if isinstance(pages, int) and isinstance(page_size, int) and pages > 0 and page_size > 0:
+        if (
+            isinstance(pages, int)
+            and isinstance(page_size, int)
+            and pages > 0
+            and page_size > 0
+        ):
             return int(pages * page_size)
     except (AttributeError, OSError, ValueError):
         pass
@@ -174,7 +183,7 @@ def _read_total_ram_bytes() -> int:
             sysctl_executable = shutil.which("sysctl")
             if sysctl_executable is None:
                 return 0
-            completed = subprocess.run(  # noqa: S603
+            completed = subprocess.run(  # nosec B603
                 [sysctl_executable, "-n", "hw.memsize"],
                 check=True,
                 capture_output=True,

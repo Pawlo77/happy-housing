@@ -1,4 +1,4 @@
-"""Pytest configuration and fixtures for __PROJECT_SLUG__ tests."""
+"""Pytest configuration and fixtures for happy-housing tests."""
 
 import shutil
 from contextlib import suppress

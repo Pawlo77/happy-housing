@@ -1,5 +1,5 @@
 ---
-description: Python typing, Google docstrings, and style for __PROJECT_SLUG__
+description: Python typing, Google docstrings, and style for happy-housing
 alwaysApply: true
 ---
 
@@ -10,7 +10,7 @@ Match tooling in `pyproject.toml` — do not fight ruff or mypy.
 ## Types
 
 - Imports at module top; no inline imports unless circular dependency is documented
-- Annotate all public functions, methods, and module-level names in `src/__PROJECT_MODULE__`
+- Annotate all public functions, methods, and module-level names in `src/happy_housing`
 - Prefer `pathlib.Path`, explicit returns, `X | Y` over `Optional`
 - No bare `except:`; no `# type: ignore` without a comment
 - Ruff line length 88 — run the formatter
@@ -19,9 +19,9 @@ Match tooling in `pyproject.toml` — do not fight ruff or mypy.
 
 ## Docstrings (Google style)
 
-Use [Google-style](https://google.github.io/styleguide/pyguide.html#383-functions-and-methods) docstrings in `src/__PROJECT_MODULE__`. Types live in annotations — **do not repeat them** in `Args`/`Returns`.
+Use [Google-style](https://google.github.io/styleguide/pyguide.html#383-functions-and-methods) docstrings in `src/happy_housing`. Types live in annotations — **do not repeat them** in `Args`/`Returns`.
 
-Every Python file in `src/__PROJECT_MODULE__` starts with a module docstring — including `__init__.py`. Every module-level constant gets a docstring on the line immediately below its definition.
+Every Python file in `src/happy_housing` starts with a module docstring — including `__init__.py`. Every module-level constant gets a docstring on the line immediately below its definition.
 
 | Surface | Rule |
 |---------|------|

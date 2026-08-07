@@ -46,7 +46,7 @@ tests: ## Run the test suite
 	uv run pytest tests/
 
 coverage: ## Run tests with coverage report
-	uv run pytest --cov=./src/__PROJECT_MODULE__ --cov-report=term-missing tests/
+	uv run pytest --cov=./src/happy_housing --cov-report=term-missing tests/
 
 datasets: ## Download or build datasets (project-specific)
 	@echo "Not implemented — add dataset targets for your experiment."
