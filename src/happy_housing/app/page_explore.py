@@ -1,4 +1,4 @@
-"""Explore page: sidebar filters + Map / Offer / Board sections."""
+"""Explore page: sidebar filters + Map / Offer / Board / News tabs."""
 
 from __future__ import annotations
 
@@ -651,14 +651,6 @@ def render_explore() -> None:
 
     if "explore_section" not in st.session_state:
         st.session_state["explore_section"] = "Map"
-    section = st.segmented_control(
-        "Section",
-        options=list(EXPLORE_SECTIONS),
-        key="explore_section",
-        label_visibility="collapsed",
-    )
-    if section is None:
-        section = "Map"
     map_kwargs = {
         "oou": oou,
         "amenities": amenities,
@@ -674,22 +666,31 @@ def render_explore() -> None:
         "commute_lon": float(config.commute_target_lon),
         "commute_lat": float(config.commute_target_lat),
     }
-    if section == "Map":
-        if starred_only:
-            st.caption(f"Starred only · {len(map_board)} offers")
-        _tab_map(map_board, **map_kwargs)
-    elif section == "Offer":
-        _tab_offer(
-            filtered,
-            starred=starred,
-            stars_file=stars_file,
-            lm_model=app_settings.lm_model,
-            ai_review_on_open=app_settings.ai_review_on_offer_open,
-            **map_kwargs,
-        )
-    elif section == "Board":
-        if starred_only:
-            st.caption(f"Starred only · {len(map_board)} offers")
-        _tab_board(map_board, starred=starred)
-    else:
-        _tab_news(starred=starred, items=news_items, news_file=news_file)
+    tab_map, tab_offer, tab_board, tab_news = st.tabs(
+        list(EXPLORE_SECTIONS),
+        key="explore_section",
+        on_change="rerun",
+    )
+    with tab_map:
+        if tab_map.open:
+            if starred_only:
+                st.caption(f"Starred only · {len(map_board)} offers")
+            _tab_map(map_board, **map_kwargs)
+    with tab_offer:
+        if tab_offer.open:
+            _tab_offer(
+                filtered,
+                starred=starred,
+                stars_file=stars_file,
+                lm_model=app_settings.lm_model,
+                ai_review_on_open=app_settings.ai_review_on_offer_open,
+                **map_kwargs,
+            )
+    with tab_board:
+        if tab_board.open:
+            if starred_only:
+                st.caption(f"Starred only · {len(map_board)} offers")
+            _tab_board(map_board, starred=starred)
+    with tab_news:
+        if tab_news.open:
+            _tab_news(starred=starred, items=news_items, news_file=news_file)

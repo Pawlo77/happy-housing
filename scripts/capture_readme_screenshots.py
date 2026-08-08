@@ -31,11 +31,6 @@ def _tab(page: Page, label: str) -> None:
     page.wait_for_timeout(2500)
 
 
-def _segment(page: Page, label: str) -> None:
-    page.get_by_role("radio", name=label).click()
-    page.wait_for_timeout(3000)
-
-
 def main() -> None:
     """Capture Home / Explore / Stats / Admin screenshots for the README."""
     OUT.mkdir(parents=True, exist_ok=True)
@@ -55,9 +50,9 @@ def main() -> None:
         _nav(page, "Explore")
         page.wait_for_timeout(4000)
         _shot(page, "04-explore-map.png")
-        _segment(page, "Board")
+        _tab(page, "Board")
         _shot(page, "05-explore-board.png")
-        _segment(page, "Offer")
+        _tab(page, "Offer")
         _shot(page, "06-explore-offer.png")
         try:
             _tab(page, "Context")
