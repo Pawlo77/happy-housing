@@ -5,6 +5,7 @@ from __future__ import annotations
 import altair as alt
 import streamlit as st
 
+from happy_housing.app.attribution import render_attribution_footer
 from happy_housing.app.charts import bar_chart, line_chart
 from happy_housing.app.data import load_scored
 from happy_housing.app.stats_insights import (
@@ -309,3 +310,4 @@ def render_stats() -> None:
             f"Universe: **{len(frame):,}** scored rows · switch to Explore to "
             "open any outlier on the map."
         )
+    render_attribution_footer()

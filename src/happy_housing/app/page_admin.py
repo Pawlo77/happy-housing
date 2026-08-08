@@ -9,6 +9,7 @@ from pathlib import Path
 
 import streamlit as st
 
+from happy_housing.app.attribution import render_attribution_footer
 from happy_housing.app.data import (
     clear_data_caches,
     load_config,
@@ -151,3 +152,4 @@ def render_admin() -> None:
         "Set numeric caps there only if you need a smaller local slice. "
         "Reload the app after pipeline finishes to see new Home metrics."
     )
+    render_attribution_footer()
