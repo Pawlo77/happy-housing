@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import pandas as pd
 import streamlit as st
 
@@ -40,6 +42,8 @@ from happy_housing.app.stats_insights import (
     transit_price_curve,
     year_paradox,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _section(title: str, blurb: str) -> None:
@@ -449,6 +453,7 @@ def _tab_stock(frame: pd.DataFrame) -> None:
 
 def render_stats() -> None:
     """Render filterable Stats analytics for buyers and investors."""
+    logger.info("Rendering Stats")
     st.title("Market analytics")
     st.caption(
         "Explore trends, district value, location premiums, and stock mix — "
@@ -458,12 +463,21 @@ def render_stats() -> None:
     try:
         frame = load_scored()
     except FileNotFoundError as exc:
+        logger.warning("Stats missing scored listings: %s", exc)
         st.error(str(exc))
         st.stop()
 
     settings = load_app_settings(settings_path(processed_dir()))
     state = _render_filters(frame)
     filtered = apply_stats_filters(frame, state)
+    logger.debug(
+        "Stats lens: %s/%s offers (districts=%s sources=%s valuation=%s)",
+        len(filtered),
+        len(frame),
+        state.districts or "all",
+        state.sources or "all",
+        state.valuation,
+    )
     if filtered.empty:
         st.warning("No offers match the current filters — widen the lens.")
         render_attribution_footer()

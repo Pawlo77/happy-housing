@@ -47,3 +47,6 @@ ingest:
   otodom_max_pages: null
   otodom_max_listings: null
   rcn_max_rows: null
+
+logging:
+  level: INFO

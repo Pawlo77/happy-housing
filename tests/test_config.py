@@ -23,6 +23,15 @@ def test_load_default_experiment_yaml() -> None:
     assert config.ingest.otodom_max_pages is None
     assert config.ingest.otodom_max_listings is None
     assert config.ingest.rcn_max_rows is None
+    assert config.logging.level == "INFO"
+
+
+def test_logging_config_from_dict() -> None:
+    config = ExperimentConfig.from_dict({
+        "name": "logs",
+        "logging": {"level": "debug"},
+    })
+    assert config.logging.level == "DEBUG"
 
 
 def test_ingest_limits_null_means_unlimited() -> None:

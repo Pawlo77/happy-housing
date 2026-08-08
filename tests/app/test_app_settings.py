@@ -34,6 +34,7 @@ def test_round_trip_settings(tmp_path: Path) -> None:
             recommender_demotion_alpha=2.5,
             stats_min_district_offers=8,
             stats_top_n=20,
+            log_level="DEBUG",
         ),
     )
     loaded = load_app_settings(path)
@@ -44,3 +45,4 @@ def test_round_trip_settings(tmp_path: Path) -> None:
     assert loaded.recommender_demotion_alpha == 2.5
     assert loaded.stats_min_district_offers == 8
     assert loaded.stats_top_n == 20
+    assert loaded.log_level == "DEBUG"

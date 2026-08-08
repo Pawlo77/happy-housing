@@ -603,16 +603,26 @@ def _tab_news(
 
 def render_explore() -> None:
     """Render Explore with sidebar filters and Map / Offer / Board / News."""
+    logger.info("Rendering Explore")
     st.title("Explore")
     try:
         frame = load_scored()
     except FileNotFoundError as exc:
+        logger.warning("Explore missing scored listings: %s", exc)
         st.error(str(exc))
         st.stop()
 
     state, starred_only = _sidebar_filters(frame)
     flags, hour, basemap = _sidebar_map_controls()
     filtered = apply_filters(frame, state)
+    logger.debug(
+        "Explore filters → %s/%s offers (district=%s source=%s starred_only=%s)",
+        len(filtered),
+        len(frame),
+        state.district,
+        state.source,
+        starred_only,
+    )
     proc = processed_dir()
     stars_file = stars_path(proc)
     starred = load_stars(stars_file)

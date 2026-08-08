@@ -276,6 +276,33 @@ class IngestLimitsConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class LoggingConfig:
+    """Stdlib logging defaults for pipeline / app entrypoints."""
+
+    level: str = "INFO"
+    """Log level name (DEBUG, INFO, WARNING, ERROR, CRITICAL)."""
+
+    def __post_init__(self) -> None:
+        _require_str("level", self.level)
+        allowed = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+        _require(
+            self.level.strip().upper() in allowed,
+            f"level must be one of {sorted(allowed)}.",
+        )
+        object.__setattr__(self, "level", self.level.strip().upper())
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-serializable representation of logging config."""
+        return cast(dict[str, Any], _serialize(self))
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> Self:
+        """Build logging config from a mapping."""
+        mapping = _extract_mapping(data, name="LoggingConfig")
+        return cls(**dict(mapping))
+
+
+@dataclass(frozen=True, slots=True)
 class ExperimentConfig:
     """Top-level experiment configuration."""
 
@@ -293,6 +320,8 @@ class ExperimentConfig:
     """Remote download endpoints."""
     ingest: IngestLimitsConfig = field(default_factory=IngestLimitsConfig)
     """Ingest download caps (default: unlimited)."""
+    logging: LoggingConfig = field(default_factory=LoggingConfig)
+    """Package logging level for entrypoints."""
     commute_target_lon: float = 20.9830
     """Rondo Daszyńskiego longitude (commute destination)."""
     commute_target_lat: float = 52.2300
@@ -339,6 +368,11 @@ class ExperimentConfig:
             if mapping.get("ingest")
             else IngestLimitsConfig()
         )
+        logging_config = (
+            LoggingConfig.from_dict(mapping["logging"])
+            if mapping.get("logging")
+            else LoggingConfig()
+        )
         name = str(mapping.get("name", "happy-housing"))
         return cls(
             name=name,
@@ -348,6 +382,7 @@ class ExperimentConfig:
             model=model_config,
             ingest_urls=urls_config,
             ingest=ingest_config,
+            logging=logging_config,
             commute_target_lon=float(mapping.get("commute_target_lon", 20.9830)),
             commute_target_lat=float(mapping.get("commute_target_lat", 52.2300)),
         )
@@ -376,7 +411,7 @@ def load_experiment_config(path: Path | str) -> ExperimentConfig:
         "experiment section must be a mapping.",
     )
     merged: dict[str, Any] = dict(experiment_section)
-    for key in ("mlflow", "data", "bbox", "model", "ingest_urls", "ingest"):
+    for key in ("mlflow", "data", "bbox", "model", "ingest_urls", "ingest", "logging"):
         if key in raw:
             merged[key] = raw[key]
     for key in ("commute_target_lon", "commute_target_lat"):

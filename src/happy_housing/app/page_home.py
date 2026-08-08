@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 from typing import Any
 
@@ -29,6 +30,8 @@ from happy_housing.app.source_inventory import (
     SourceInventoryRow,
     build_source_inventory,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _hero(refreshed: str | None, n_offers: int, r2: float | None) -> None:
@@ -206,14 +209,21 @@ def _tab_sources(rows: list[SourceInventoryRow]) -> None:
 
 def render_home() -> None:
     """Render the interactive Home overview."""
+    logger.info("Rendering Home")
     meta = load_metadata()
     try:
         frame = load_scored()
     except FileNotFoundError as exc:
+        logger.warning("Home missing scored listings: %s", exc)
         st.warning(str(exc))
         frame = pd.DataFrame()
 
     summary = market_summary(frame)
+    logger.debug(
+        "Home summary: n=%s median_ppm=%s",
+        summary.get("n_offers"),
+        summary.get("median_price_per_m2"),
+    )
     refreshed = meta.refreshed_at if meta else None
     path = scored_path()
     if not refreshed and path.exists():

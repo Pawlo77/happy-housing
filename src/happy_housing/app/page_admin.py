@@ -33,6 +33,7 @@ from happy_housing.app.recommender import (
 )
 from happy_housing.app.star_news import clear_star_news_memory, load_news, news_path
 from happy_housing.app.stars import clear_stars, load_stars, stars_path
+from happy_housing.logging_config import configure_logging
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +53,7 @@ def _run_command(command: list[str], timeout_s: int) -> tuple[int, str]:
 
 
 def _tab_general(settings: AppSettings, settings_file: Path, proc: Path) -> None:
-    """Paths, ingest caps (read-only summary), and cache clear."""
+    """Paths, ingest caps (read-only summary), cache clear, and log level."""
     config = load_config()
     meta = load_metadata()
     st.caption("Experiment paths and last pipeline refresh (edit YAML for caps).")
@@ -79,8 +80,30 @@ def _tab_general(settings: AppSettings, settings_file: Path, proc: Path) -> None
     lon = config.commute_target_lon
     lat = config.commute_target_lat
     st.caption(f"Commute target: {lon:.4f}, {lat:.4f}")
+
+    st.subheader("Logging")
+    log_level = st.selectbox(
+        "App log level",
+        options=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        index=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"].index(
+            settings.log_level
+            if settings.log_level in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+            else "INFO"
+        ),
+        help="Applies to happy_housing.* loggers (stderr). Env "
+        "HAPPY_HOUSING_LOG_LEVEL overrides when set at process start.",
+        key="settings_log_level",
+    )
+    if st.button("Save logging settings", key="save_logging_settings"):
+        settings.log_level = str(log_level)
+        save_app_settings(settings_file, settings)
+        configure_logging(settings.log_level, force=True)
+        logger.info("App log level set to %s", settings.log_level)
+        st.success(f"Log level saved: {settings.log_level}")
+
     if st.button("Clear Streamlit data caches", key="admin_clear_caches"):
         clear_data_caches()
+        logger.info("Cleared Streamlit data caches from Admin")
         st.success("Caches cleared.")
 
 
@@ -249,22 +272,33 @@ def _tab_pipeline() -> None:
             "-c",
             (
                 "from pathlib import Path; "
+                "from happy_housing.logging_config import configure_logging; "
                 "from happy_housing.ingest.otodom import scrape_otodom_warsaw; "
+                "configure_logging(); "
                 f"scrape_otodom_warsaw(Path({str(out_path)!r}), "
                 f"max_pages={pages_arg}, max_listings={listings_arg})"
             ),
         ]
+        logger.info(
+            "Admin starting Otodom scrape → %s (max_pages=%s max_listings=%s)",
+            out_path,
+            pages_arg,
+            listings_arg,
+        )
         with st.spinner("Scraping Otodom (full run may take hours)…"):
             try:
                 code, log = _run_command(cmd, timeout_s=24 * 3600)
             except subprocess.TimeoutExpired:
+                logger.error("Otodom scrape timed out")
                 st.error("Scrape timed out.")
             else:
                 st.code(log[-8000:] or "(no output)")
                 if code == 0:
                     clear_data_caches()
+                    logger.info("Otodom scrape finished → %s", out_path)
                     st.success(f"Scrape finished → {out_path}")
                 else:
+                    logger.error("Otodom scrape failed (exit %s)", code)
                     st.error(f"Scrape failed (exit {code})")
 
     st.subheader("Remodel / full pipeline")
@@ -292,17 +326,26 @@ def _tab_pipeline() -> None:
                 f"use_osm={use_osm!r}, scrape_otodom={scrape_otodom!r})"
             ),
         ]
+        logger.info(
+            "Admin starting pipeline (download_remote=%s use_osm=%s scrape_otodom=%s)",
+            download_remote,
+            use_osm,
+            scrape_otodom,
+        )
         with st.spinner("Running pipeline (full RCN/Otodom may take hours)…"):
             try:
                 code, log = _run_command(cmd, timeout_s=24 * 3600)
             except subprocess.TimeoutExpired:
+                logger.error("Pipeline timed out")
                 st.error("Pipeline timed out.")
             else:
                 st.code(log[-12000:] or "(no output)")
                 if code == 0:
                     clear_data_caches()
+                    logger.info("Pipeline finished successfully")
                     st.success("Pipeline finished — Home metrics refreshed.")
                 else:
+                    logger.error("Pipeline failed (exit %s)", code)
                     st.error(f"Pipeline failed (exit {code})")
     st.caption(
         "Default ingest caps in configs/experiment.yaml are null (unlimited). "
@@ -312,6 +355,7 @@ def _tab_pipeline() -> None:
 
 def render_admin() -> None:
     """Render Admin with tabbed settings (no raw JSON dump)."""
+    logger.info("Rendering Admin")
     st.title("Admin")
     st.caption("Tweaks and maintenance — grouped by concern. No raw settings dump.")
 

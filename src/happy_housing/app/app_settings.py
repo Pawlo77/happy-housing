@@ -31,6 +31,8 @@ class AppSettings:
     """Minimum offers before a district appears on Stats scoreboards."""
     stats_top_n: int = 15
     """How many hunt / watch offers to list on Stats → Value."""
+    log_level: str = "INFO"
+    """Package log level for the Streamlit app (DEBUG/INFO/WARNING/ERROR)."""
 
 
 def settings_path(processed: Path) -> Path:
@@ -81,7 +83,17 @@ def load_app_settings(path: Path) -> AppSettings:
             ),
         ),
         stats_top_n=max(1, int(payload.get("stats_top_n", defaults.stats_top_n))),
+        log_level=_coerce_log_level(
+            payload.get("log_level", defaults.log_level), defaults.log_level
+        ),
     )
+
+
+def _coerce_log_level(value: object, fallback: str) -> str:
+    """Normalize a persisted log level to an uppercase logging name."""
+    allowed = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+    name = str(value or fallback).strip().upper()
+    return name if name in allowed else fallback
 
 
 def save_app_settings(path: Path, settings: AppSettings) -> None:

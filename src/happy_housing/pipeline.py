@@ -92,8 +92,17 @@ def run_pipeline(
     rcn_max_rows: int | None = None,
 ) -> dict[str, Path]:
     """Run the full local pipeline and return key output paths."""
+    from happy_housing.logging_config import configure_logging
+
     started = time.perf_counter()
     config = load_experiment_config(config_path)
+    configure_logging(config.logging.level, force=False)
+    logger.info(
+        "Pipeline start (download_remote=%s use_osm=%s scrape_otodom=%s)",
+        download_remote,
+        use_osm,
+        scrape_otodom,
+    )
     limits = config.ingest
     page_cap = (
         otodom_max_pages if otodom_max_pages is not None else limits.otodom_max_pages
@@ -277,10 +286,14 @@ def run_pipeline(
 
 def main() -> None:
     """CLI entry for ``python -m happy_housing.pipeline``."""
-    logging.basicConfig(level=logging.INFO)
+    from happy_housing.logging_config import configure_logging
+
+    config = load_experiment_config(Path("configs/experiment.yaml"))
+    configure_logging(config.logging.level, force=True)
+    logger.info("Starting pipeline (log level=%s)", config.logging.level)
     paths = run_pipeline()
     for name, path in paths.items():
-        print(f"{name}: {path}")
+        logger.info("%s: %s", name, path)
 
 
 if __name__ == "__main__":

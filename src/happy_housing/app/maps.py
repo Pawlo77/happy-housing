@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import geopandas as gpd
@@ -17,6 +18,8 @@ from happy_housing.app.map_layers import (
     prepare_transit_for_hour,
     traffic_weights_for_hour,
 )
+
+logger = logging.getLogger(__name__)
 
 _STREETS_STYLE = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
 """Carto positron GL basemap URL."""
@@ -402,6 +405,9 @@ def build_explore_layers(
         offers = listings_scatter_layer(listings)
         if offers is not None:
             layers.append(offers)
+    logger.debug(
+        "Built %s map layers (offers=%s hour=%s)", len(layers), flags.offers, hour
+    )
     return layers
 
 
@@ -426,5 +432,6 @@ def render_deck(
             )
         )
     except Exception as exc:
+        logger.exception("pydeck render failed: %s", exc)
         st.warning(f"pydeck unavailable ({exc})")
         st.caption("Map fallback unavailable for mixed layers.")
