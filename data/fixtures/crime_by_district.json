@@ -1,0 +1,182 @@
+[
+  {
+    "district": "Bemowo",
+    "year": 2024,
+    "population": 128895.0,
+    "crime_total": 2578.0,
+    "crime_criminal": 1733.0,
+    "crime_detectability_pct": 49.3,
+    "crime_rate_per_1000": 20.000775825284144,
+    "crime_criminal_rate_per_1000": 13.44505217425036
+  },
+  {
+    "district": "Białołęka",
+    "year": 2024,
+    "population": 161428.0,
+    "crime_total": 2616.0,
+    "crime_criminal": 1718.0,
+    "crime_detectability_pct": 38.4,
+    "crime_rate_per_1000": 16.205367098644597,
+    "crime_criminal_rate_per_1000": 10.642515548727607
+  },
+  {
+    "district": "Bielany",
+    "year": 2024,
+    "population": 130527.0,
+    "crime_total": 3196.0,
+    "crime_criminal": 1641.0,
+    "crime_detectability_pct": 48.4,
+    "crime_rate_per_1000": 24.485355520313806,
+    "crime_criminal_rate_per_1000": 12.572111517157369
+  },
+  {
+    "district": "Mokotów",
+    "year": 2024,
+    "population": 224935.0,
+    "crime_total": 5136.0,
+    "crime_criminal": 2890.0,
+    "crime_detectability_pct": 54.3,
+    "crime_rate_per_1000": 22.833262942627872,
+    "crime_criminal_rate_per_1000": 12.848156133994264
+  },
+  {
+    "district": "Ochota",
+    "year": 2024,
+    "population": 78643.0,
+    "crime_total": 2998.0,
+    "crime_criminal": 2086.0,
+    "crime_detectability_pct": 51.0,
+    "crime_rate_per_1000": 38.1216382894854,
+    "crime_criminal_rate_per_1000": 26.524929110028864
+  },
+  {
+    "district": "Praga-Południe",
+    "year": 2024,
+    "population": 186302.0,
+    "crime_total": 4144.0,
+    "crime_criminal": 2797.0,
+    "crime_detectability_pct": 50.9,
+    "crime_rate_per_1000": 22.24345417655205,
+    "crime_criminal_rate_per_1000": 15.013258043391911
+  },
+  {
+    "district": "Praga-Północ",
+    "year": 2024,
+    "population": 59183.0,
+    "crime_total": 3400.0,
+    "crime_criminal": 2467.0,
+    "crime_detectability_pct": 64.4,
+    "crime_rate_per_1000": 57.448929591267756,
+    "crime_criminal_rate_per_1000": 41.68426744166399
+  },
+  {
+    "district": "Rembertów",
+    "year": 2024,
+    "population": 25010.0,
+    "crime_total": 478.0,
+    "crime_criminal": 372.0,
+    "crime_detectability_pct": 55.5,
+    "crime_rate_per_1000": 19.11235505797681,
+    "crime_criminal_rate_per_1000": 14.874050379848061
+  },
+  {
+    "district": "Śródmieście",
+    "year": 2024,
+    "population": 96225.0,
+    "crime_total": 8299.0,
+    "crime_criminal": 5707.0,
+    "crime_detectability_pct": 54.5,
+    "crime_rate_per_1000": 86.24577812418809,
+    "crime_criminal_rate_per_1000": 59.30891140555988
+  },
+  {
+    "district": "Targówek",
+    "year": 2024,
+    "population": 122711.0,
+    "crime_total": 2576.0,
+    "crime_criminal": 1590.0,
+    "crime_detectability_pct": 43.1,
+    "crime_rate_per_1000": 20.992413068103104,
+    "crime_criminal_rate_per_1000": 12.957273594054323
+  },
+  {
+    "district": "Ursus",
+    "year": 2024,
+    "population": 71020.0,
+    "crime_total": 1000.0,
+    "crime_criminal": 738.0,
+    "crime_detectability_pct": 45.1,
+    "crime_rate_per_1000": 14.080540692762602,
+    "crime_criminal_rate_per_1000": 10.3914390312588
+  },
+  {
+    "district": "Ursynów",
+    "year": 2024,
+    "population": 149879.0,
+    "crime_total": 2577.0,
+    "crime_criminal": 1589.0,
+    "crime_detectability_pct": 38.3,
+    "crime_rate_per_1000": 17.193869721575403,
+    "crime_criminal_rate_per_1000": 10.60188552098693
+  },
+  {
+    "district": "Wawer",
+    "year": 2024,
+    "population": 89544.0,
+    "crime_total": 1334.0,
+    "crime_criminal": 830.0,
+    "crime_detectability_pct": 43.7,
+    "crime_rate_per_1000": 14.897703922094166,
+    "crime_criminal_rate_per_1000": 9.26918609845439
+  },
+  {
+    "district": "Wesoła",
+    "year": 2024,
+    "population": 26698.0,
+    "crime_total": 395.0,
+    "crime_criminal": 258.0,
+    "crime_detectability_pct": 30.5,
+    "crime_rate_per_1000": 14.795115739006668,
+    "crime_criminal_rate_per_1000": 9.663645216870178
+  },
+  {
+    "district": "Wilanów",
+    "year": 2024,
+    "population": 53162.0,
+    "crime_total": 733.0,
+    "crime_criminal": 514.0,
+    "crime_detectability_pct": 39.7,
+    "crime_rate_per_1000": 13.788044091644409,
+    "crime_criminal_rate_per_1000": 9.668560249802491
+  },
+  {
+    "district": "Włochy",
+    "year": 2024,
+    "population": 50753.0,
+    "crime_total": 1612.0,
+    "crime_criminal": 1061.0,
+    "crime_detectability_pct": 44.2,
+    "crime_rate_per_1000": 31.761669260930386,
+    "crime_criminal_rate_per_1000": 20.905168167398973
+  },
+  {
+    "district": "Wola",
+    "year": 2024,
+    "population": 150203.0,
+    "crime_total": 5035.0,
+    "crime_criminal": 3447.0,
+    "crime_detectability_pct": 46.5,
+    "crime_rate_per_1000": 33.52130117241334,
+    "crime_criminal_rate_per_1000": 22.94894243124305
+  },
+  {
+    "district": "Żoliborz",
+    "year": 2024,
+    "population": 58727.0,
+    "crime_total": 717.0,
+    "crime_criminal": 519.0,
+    "crime_detectability_pct": 45.0,
+    "crime_rate_per_1000": 12.209035026478452,
+    "crime_criminal_rate_per_1000": 8.837502341342143
+  }
+]

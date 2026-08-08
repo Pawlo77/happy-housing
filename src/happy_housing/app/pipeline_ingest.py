@@ -20,6 +20,8 @@ class IngestFlags:
     """Refresh RCN GML zip + extract."""
     download_gunb: bool
     """Refresh GUNB Mazowieckie dump."""
+    download_crime: bool
+    """Refresh GUS Panorama dzielnic crime rates."""
     use_osm: bool
     """Fetch OSM amenities + shops (else fixtures)."""
     scrape_otodom: bool
@@ -59,6 +61,10 @@ def resolve_ingest_urls(
         gios_stations=_url(settings.gios_stations_url, yaml_urls.gios_stations),
         rcn_zip=_url(settings.rcn_zip_url, yaml_urls.rcn_zip),
         gunb_zip=_url(settings.gunb_zip_url, yaml_urls.gunb_zip),
+        crime_panorama_7z=_url(
+            settings.crime_panorama_7z_url,
+            yaml_urls.crime_panorama_7z,
+        ),
     )
 
 
@@ -78,16 +84,17 @@ def resolve_ingest_flags(
     """
     del config  # reserved for future YAML defaults
     if download_remote is True:
-        base_gtfs = base_gios = base_rcn = base_gunb = True
+        base_gtfs = base_gios = base_rcn = base_gunb = base_crime = True
     elif download_remote is False:
-        base_gtfs = base_gios = base_rcn = base_gunb = False
+        base_gtfs = base_gios = base_rcn = base_gunb = base_crime = False
     elif settings.pipeline_overrides_enabled:
         base_gtfs = bool(settings.download_gtfs)
         base_gios = bool(settings.download_gios)
         base_rcn = bool(settings.download_rcn)
         base_gunb = bool(settings.download_gunb)
+        base_crime = bool(settings.download_crime)
     else:
-        base_gtfs = base_gios = base_rcn = base_gunb = True
+        base_gtfs = base_gios = base_rcn = base_gunb = base_crime = True
 
     if use_osm is not None:
         osm = bool(use_osm)
@@ -108,6 +115,7 @@ def resolve_ingest_flags(
         download_gios=base_gios,
         download_rcn=base_rcn,
         download_gunb=base_gunb,
+        download_crime=base_crime,
         use_osm=osm,
         scrape_otodom=scrape,
     )

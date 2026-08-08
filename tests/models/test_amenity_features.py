@@ -33,4 +33,7 @@ def test_core_features_include_city_poi_distances() -> None:
     assert "tram_lden_db" in CORE_FEATURE_COLUMNS
     assert "industry_lden_db" in CORE_FEATURE_COLUMNS
     assert "in_high_noise" in CORE_FEATURE_COLUMNS
+    assert "crime_rate_per_1000" in CORE_FEATURE_COLUMNS
+    assert "crime_criminal_rate_per_1000" in CORE_FEATURE_COLUMNS
+    assert "crime_detectability_pct" in CORE_FEATURE_COLUMNS
     assert FEATURE_COLUMNS[0] == CORE_FEATURE_COLUMNS[0]

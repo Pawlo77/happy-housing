@@ -34,6 +34,7 @@ def _config(
             gios_stations="https://yaml.example/gios",
             rcn_zip="https://yaml.example/rcn.zip",
             gunb_zip="https://yaml.example/gunb.zip",
+            crime_panorama_7z="https://yaml.example/crime.7z",
         ),
     )
 
@@ -75,12 +76,14 @@ def test_resolve_urls_empty_override_falls_back_to_yaml() -> None:
         gios_stations_url="https://admin.example/gios",
         rcn_zip_url="  ",
         gunb_zip_url="https://admin.example/gunb.zip",
+        crime_panorama_7z_url="",
     )
     urls = resolve_ingest_urls(settings, _config())
     assert urls.gtfs_zip == "https://yaml.example/gtfs.zip"
     assert urls.gios_stations == "https://admin.example/gios"
     assert urls.rcn_zip == "https://yaml.example/rcn.zip"
     assert urls.gunb_zip == "https://admin.example/gunb.zip"
+    assert urls.crime_panorama_7z == "https://yaml.example/crime.7z"
 
 
 def test_resolve_flags_defaults_and_overrides() -> None:
@@ -91,6 +94,7 @@ def test_resolve_flags_defaults_and_overrides() -> None:
         download_remote=True,
     )
     assert off.download_gtfs is True
+    assert off.download_crime is True
     assert off.use_osm is True
     assert off.scrape_otodom is True
 
@@ -101,6 +105,7 @@ def test_resolve_flags_defaults_and_overrides() -> None:
             download_gios=True,
             download_rcn=False,
             download_gunb=True,
+            download_crime=False,
             use_osm=False,
             scrape_otodom_in_pipeline=False,
         ),
@@ -110,6 +115,7 @@ def test_resolve_flags_defaults_and_overrides() -> None:
     assert custom.download_gtfs is False
     assert custom.download_gios is True
     assert custom.download_rcn is False
+    assert custom.download_crime is False
     assert custom.use_osm is False
     assert custom.scrape_otodom is False
 
@@ -122,3 +128,4 @@ def test_resolve_flags_defaults_and_overrides() -> None:
     assert shorthand.download_gios is False
     assert shorthand.download_rcn is False
     assert shorthand.download_gunb is False
+    assert shorthand.download_crime is False

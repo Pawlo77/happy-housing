@@ -224,9 +224,21 @@ class IngestUrlsConfig:
         "https://wyszukiwarka.gunb.gov.pl/pliki_pobranie/wynik_mazowieckie.zip"
     )
     """Official GUNB Mazowieckie bulk zip (attributes; coords via GUGiK WFS)."""
+    crime_panorama_7z: str = (
+        "https://warszawa.stat.gov.pl/download/gfx/warszawa/pl/"
+        "defaultaktualnosci/760/5/26/1/"
+        "panorama_dzielnic_warszawy_2024_aneks_excel.7z"
+    )
+    """US Warszawa Panorama dzielnic Excel annex (.7z) with police crime tables."""
 
     def __post_init__(self) -> None:
-        for name in ("gtfs_zip", "gios_stations", "rcn_zip", "gunb_zip"):
+        for name in (
+            "gtfs_zip",
+            "gios_stations",
+            "rcn_zip",
+            "gunb_zip",
+            "crime_panorama_7z",
+        ):
             _require_str(name, str(getattr(self, name)))
 
     def to_dict(self) -> dict[str, Any]:

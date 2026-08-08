@@ -365,6 +365,8 @@ def _apply_pipeline_widgets(
     gios_stations_url: str,
     download_gunb: bool,
     gunb_zip_url: str,
+    download_crime: bool,
+    crime_panorama_7z_url: str,
     use_osm: bool,
     scrape_in_pipe: bool,
     snap_out_of_parks: bool,
@@ -384,6 +386,8 @@ def _apply_pipeline_widgets(
     settings.gios_stations_url = str(gios_stations_url).strip()
     settings.download_gunb = bool(download_gunb)
     settings.gunb_zip_url = str(gunb_zip_url).strip()
+    settings.download_crime = bool(download_crime)
+    settings.crime_panorama_7z_url = str(crime_panorama_7z_url).strip()
     settings.use_osm = bool(use_osm)
     settings.scrape_otodom_in_pipeline = bool(scrape_in_pipe)
     settings.snap_listings_out_of_parks = bool(snap_out_of_parks)
@@ -579,7 +583,7 @@ def _panel_sources(settings: AppSettings, settings_file: Path, proc: Path) -> No
         )
 
     st.subheader("Feeds")
-    f1, f2, f3 = st.columns(3)
+    f1, f2, f3, f4 = st.columns(4)
     with f1:
         download_gtfs = st.checkbox(
             "Download GTFS",
@@ -597,6 +601,13 @@ def _panel_sources(settings: AppSettings, settings_file: Path, proc: Path) -> No
             "Download GUNB",
             value=bool(flags.download_gunb),
             key="pipe_download_gunb",
+        )
+    with f4:
+        download_crime = st.checkbox(
+            "Download crime",
+            value=bool(flags.download_crime),
+            help="GUS Panorama dzielnic — police crime rates by district.",
+            key="pipe_download_crime",
         )
 
     st.subheader("OSM / enrich")
@@ -654,6 +665,11 @@ def _panel_sources(settings: AppSettings, settings_file: Path, proc: Path) -> No
             value=urls.gunb_zip,
             key="pipe_gunb_zip_url",
         )
+        crime_panorama_7z_url = st.text_input(
+            "Crime Panorama .7z URL",
+            value=urls.crime_panorama_7z,
+            key="pipe_crime_panorama_7z_url",
+        )
 
     if st.button(
         "Save Pipeline settings",
@@ -676,6 +692,8 @@ def _panel_sources(settings: AppSettings, settings_file: Path, proc: Path) -> No
             gios_stations_url=gios_stations_url,
             download_gunb=download_gunb,
             gunb_zip_url=gunb_zip_url,
+            download_crime=download_crime,
+            crime_panorama_7z_url=crime_panorama_7z_url,
             use_osm=use_osm,
             scrape_in_pipe=scrape_in_pipe,
             snap_out_of_parks=snap_out_of_parks,

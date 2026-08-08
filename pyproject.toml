@@ -46,10 +46,12 @@ dependencies = [
   "nbformat>=5.10.4",
   "numba>=0.60.0",
   "numpy>=2.4.2",
+  "openpyxl>=3.1.0",
   "osmnx>=2.0.0",
   "pandas>=2.2.0",
   "pillow>=10.0.0",
   "psutil>=7.2.2",
+  "py7zr>=0.22.0",
   "pyarrow>=18.0.0",
   "pydeck>=0.9.0",
   "python-dotenv>=1.2.2",
@@ -154,6 +156,10 @@ module = [
   "PIL.*",
   "requests",
   "requests.*",
+  "openpyxl",
+  "openpyxl.*",
+  "py7zr",
+  "py7zr.*",
 ]
 ignore_missing_imports = true
 

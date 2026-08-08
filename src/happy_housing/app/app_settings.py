@@ -160,6 +160,8 @@ class AppSettings:
     """Re-download RCN during pipeline."""
     download_gunb: bool = True
     """Re-download GUNB during pipeline."""
+    download_crime: bool = True
+    """Re-download GUS Panorama dzielnic crime rates during pipeline."""
     gtfs_zip_url: str = ""
     """Override GTFS zip URL; empty → YAML."""
     gios_stations_url: str = ""
@@ -168,6 +170,8 @@ class AppSettings:
     """Override RCN zip URL; empty → YAML."""
     gunb_zip_url: str = ""
     """Override GUNB zip URL; empty → YAML."""
+    crime_panorama_7z_url: str = ""
+    """Override Panorama crime .7z URL; empty → YAML."""
     train_otodom_labels_only: bool = True
     """Train LightGBM on Otodom/fixture asks; RCN used as comps only."""
     chat_enabled: bool = True
@@ -476,12 +480,20 @@ def load_app_settings(path: Path) -> AppSettings:
         download_gios=bool(payload.get("download_gios", defaults.download_gios)),
         download_rcn=bool(payload.get("download_rcn", defaults.download_rcn)),
         download_gunb=bool(payload.get("download_gunb", defaults.download_gunb)),
+        download_crime=bool(payload.get("download_crime", defaults.download_crime)),
         gtfs_zip_url=str(payload.get("gtfs_zip_url", defaults.gtfs_zip_url) or ""),
         gios_stations_url=str(
             payload.get("gios_stations_url", defaults.gios_stations_url) or ""
         ),
         rcn_zip_url=str(payload.get("rcn_zip_url", defaults.rcn_zip_url) or ""),
         gunb_zip_url=str(payload.get("gunb_zip_url", defaults.gunb_zip_url) or ""),
+        crime_panorama_7z_url=str(
+            payload.get(
+                "crime_panorama_7z_url",
+                defaults.crime_panorama_7z_url,
+            )
+            or ""
+        ),
         train_otodom_labels_only=bool(
             payload.get(
                 "train_otodom_labels_only",

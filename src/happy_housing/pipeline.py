@@ -60,6 +60,11 @@ from happy_housing.ingest import (
     fetch_gios_stations,
     load_listings_json,
 )
+from happy_housing.ingest.crime import (
+    attach_crime_features,
+    download_panorama_crime,
+    load_crime_by_district,
+)
 from happy_housing.ingest.gios_aq import (
     AIR_QUALITY_COLUMNS,
     enrich_stations_with_air_quality,
@@ -172,11 +177,12 @@ def run_pipeline(
         scrape_otodom=scrape_otodom,
     )
     logger.info(
-        "Pipeline start (gtfs=%s gios=%s rcn=%s gunb=%s osm=%s otodom=%s)",
+        "Pipeline start (gtfs=%s gios=%s rcn=%s gunb=%s crime=%s osm=%s otodom=%s)",
         flags.download_gtfs,
         flags.download_gios,
         flags.download_rcn,
         flags.download_gunb,
+        flags.download_crime,
         flags.use_osm,
         flags.scrape_otodom,
     )
@@ -228,6 +234,7 @@ def run_pipeline(
     gios_parquet = processed / "gios_stations.parquet"
     rcn_parquet = processed / "rcn_transactions.parquet"
     gunb_parquet = processed / "gunb_mazowieckie.parquet"
+    crime_parquet = processed / "crime_by_district.parquet"
 
     def _ensure_empty(path: Path, cols: list[str]) -> None:
         if not path.exists():
@@ -268,6 +275,21 @@ def run_pipeline(
         )
     else:
         _ensure_empty(gunb_parquet, ["lon", "lat"])
+
+    if flags.download_crime:
+        download_panorama_crime(
+            urls.crime_panorama_7z,
+            raw,
+            crime_parquet,
+            fixture_path=fixtures / "crime_by_district.json",
+            force=force_gis_refresh,
+        )
+    else:
+        load_crime_by_district(
+            crime_parquet,
+            fixture_path=fixtures / "crime_by_district.json",
+        )
+    crime_by_district = pd.read_parquet(crime_parquet)
 
     rcn = pd.read_parquet(rcn_parquet)
     rcn_listings = _rcn_as_listings(rcn)
@@ -417,6 +439,7 @@ def run_pipeline(
         enriched = attach_warsaw_noise_features(enriched, noise_rasters)
     train_frame = pd.DataFrame(enriched.drop(columns=["geometry"], errors="ignore"))
     train_frame = promote_listing_flags(train_frame)
+    train_frame = attach_crime_features(train_frame, crime_by_district)
     if app_settings.extract_attrs_enabled:
         cap = int(app_settings.extract_max_listings) or None
         train_frame = enrich_frame_listing_attrs(

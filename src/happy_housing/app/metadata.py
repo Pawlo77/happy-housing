@@ -151,6 +151,16 @@ DEFAULT_SOURCE_CATALOG: tuple[DataSource, ...] = (
         unit="permits",
     ),
     DataSource(
+        name="GUS US Warszawa — Panorama dzielnic (crime)",
+        url="https://warszawa.stat.gov.pl/",
+        role=(
+            "Police-ascertained crimes and detectability by Warsaw district "
+            "(Panorama dzielnic Excel annex); rates per 1,000 residents."
+        ),
+        key="crime",
+        unit="districts",
+    ),
+    DataSource(
         name="Chopin aircraft Lden / Lnight (EEA END)",
         url=(
             "https://noise.discomap.eea.europa.eu/arcgis/rest/services/"
@@ -173,8 +183,9 @@ DEFAULT_METHODOLOGY: str = (
     "LightGBM regresses asking/transaction zł/m² from property traits "
     "(area, rooms, year) and livability distances (hospital, fire, police, "
     "transit, air station, GUNB permits, commute to Rondo Daszyńskiego) plus "
-    "an aircraft Lden/Lnight feature from EEA END contours and nearest-station "
-    "GIOŚ air quality (AQI + PM10/PM2.5/NO2, not distance alone). SHAP "
+    "an aircraft Lden/Lnight feature from EEA END contours, nearest-station "
+    "GIOŚ air quality (AQI + PM10/PM2.5/NO2, not distance alone), and "
+    "district police crime rates (per 1,000 residents + detectability). SHAP "
     "TreeExplainer "
     "explains each offer. "
     "Commute minutes use local OSRM when available, else a 30 km/h distance proxy."

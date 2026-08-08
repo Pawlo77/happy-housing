@@ -86,8 +86,11 @@ _STRUCTURAL_FEATURE_COLUMNS: tuple[str, ...] = (
     "dist_airport_area_m",
     "dist_traffic_road_m",
     "traffic_weight_nearby",
+    "crime_rate_per_1000",
+    "crime_criminal_rate_per_1000",
+    "crime_detectability_pct",
 )
-"""Structural + noise + air + transit + zone + traffic + bike-path features."""
+"""Structural + noise + air + transit + zone + traffic + bike + crime features."""
 
 CORE_FEATURE_COLUMNS: tuple[str, ...] = (
     _STRUCTURAL_FEATURE_COLUMNS + model_distance_feature_columns()
