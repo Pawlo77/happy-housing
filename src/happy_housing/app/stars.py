@@ -6,6 +6,8 @@ import json
 import logging
 from pathlib import Path
 
+from happy_housing.app.io_cache import read_json
+
 logger = logging.getLogger(__name__)
 
 
@@ -19,8 +21,8 @@ def load_stars(path: Path) -> frozenset[str]:
     if not path.exists():
         return frozenset()
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        payload = read_json(str(path), path.stat().st_mtime)
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
         logger.warning("Failed to load stars %s: %s", path, exc)
         return frozenset()
     if not isinstance(payload, list):

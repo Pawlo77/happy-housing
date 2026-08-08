@@ -2,18 +2,13 @@
 
 from __future__ import annotations
 
-import json
-import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
-import pyarrow.parquet as pq
-
+from happy_housing.app.io_cache import file_mtime, json_record_count, parquet_num_rows
 from happy_housing.app.metadata import DataSource
-
-logger = logging.getLogger(__name__)
 
 RootName = Literal["processed", "cache", "fixtures"]
 
@@ -62,31 +57,16 @@ def count_parquet_rows(path: Path) -> int | None:
     """Return parquet row count from footer metadata (no full scan)."""
     if not path.exists():
         return None
-    try:
-        meta = pq.ParquetFile(path).metadata
-        return int(meta.num_rows) if meta is not None else None
-    except (OSError, ValueError, TypeError) as exc:
-        logger.warning("Parquet row count failed for %s: %s", path, exc)
-        return None
+    return parquet_num_rows(str(path), file_mtime(path))  # type: ignore[no-any-return]
 
 
 def count_json_records(path: Path) -> int | None:
     """Count GeoJSON features or JSON array / object rows."""
     if not path.exists():
         return None
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        logger.warning("JSON count failed for %s: %s", path, exc)
-        return None
-    if isinstance(payload, list):
-        return len(payload)
-    if isinstance(payload, dict):
-        if payload.get("type") == "FeatureCollection":
-            features = payload.get("features")
-            return len(features) if isinstance(features, list) else 0
-        return 1
-    return None
+    return json_record_count(  # type: ignore[no-any-return]
+        str(path), file_mtime(path)
+    )
 
 
 def format_row_count(n: int | None, unit: str) -> str:

@@ -12,6 +12,8 @@ from typing import Any
 
 import pandas as pd
 
+from happy_housing.app.io_cache import read_json
+
 logger = logging.getLogger(__name__)
 
 WATCH_FIELDS: tuple[str, ...] = (
@@ -89,8 +91,8 @@ def load_snapshots(path: Path) -> dict[str, dict[str, Any]]:
     if not path.exists():
         return {}
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        payload = read_json(str(path), path.stat().st_mtime)
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
         logger.warning("Failed to load snapshots %s: %s", path, exc)
         return {}
     if not isinstance(payload, dict):
@@ -116,8 +118,8 @@ def load_news(path: Path) -> list[StarNewsItem]:
     if not path.exists():
         return []
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        payload = read_json(str(path), path.stat().st_mtime)
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
         logger.warning("Failed to load news %s: %s", path, exc)
         return []
     if not isinstance(payload, list):

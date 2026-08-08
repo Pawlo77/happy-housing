@@ -11,6 +11,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from happy_housing.app.io_cache import read_json
+
 logger = logging.getLogger(__name__)
 
 
@@ -29,8 +31,8 @@ def load_impressions(path: Path) -> dict[str, dict[str, Any]]:
     if not path.exists():
         return {}
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        payload = read_json(str(path), path.stat().st_mtime)
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
         logger.warning("Failed to load impressions %s: %s", path, exc)
         return {}
     if not isinstance(payload, dict):
@@ -174,8 +176,8 @@ def load_recommender_metrics(processed: Path) -> dict[str, float]:
     if not path.exists():
         return {}
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        payload = read_json(str(path), path.stat().st_mtime)
+    except (OSError, UnicodeDecodeError, ValueError):
         return {}
     if not isinstance(payload, dict):
         return {}

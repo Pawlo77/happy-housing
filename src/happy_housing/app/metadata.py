@@ -8,6 +8,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from happy_housing.app.io_cache import read_json
+
 logger = logging.getLogger(__name__)
 
 
@@ -67,7 +69,10 @@ def load_run_metadata(path: Path) -> RunMetadata | None:
     if not path.exists():
         return None
     try:
-        payload: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
+        payload_obj = read_json(str(path), path.stat().st_mtime)
+        if not isinstance(payload_obj, dict):
+            return None
+        payload: dict[str, Any] = payload_obj
         return RunMetadata(
             refreshed_at=str(payload.get("refreshed_at", "")),
             duration_s=float(payload.get("duration_s", 0.0)),

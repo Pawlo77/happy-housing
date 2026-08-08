@@ -7,6 +7,7 @@ import logging
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from happy_housing.app.io_cache import read_json
 from happy_housing.models.metrics import coerce_opt_metric
 
 logger = logging.getLogger(__name__)
@@ -142,12 +143,13 @@ def load_app_settings(path: Path) -> AppSettings:
     if not path.exists():
         return defaults
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload_obj = read_json(str(path), path.stat().st_mtime)
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         logger.warning("Failed to load app settings %s: %s", path, exc)
         return defaults
-    if not isinstance(payload, dict):
+    if not isinstance(payload_obj, dict):
         return defaults
+    payload = payload_obj
     prompt = str(
         payload.get("ai_review_system_prompt", defaults.ai_review_system_prompt) or ""
     ).strip()

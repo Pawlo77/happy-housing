@@ -270,8 +270,16 @@ def _tab_map(
     )
 
 
+@st.cache_data(show_spinner=False)  # type: ignore[misc]
+def _fetch_otodom_description(slug: str) -> str:
+    """Cached Otodom detail description fetch keyed by listing slug."""
+    detail = fetch_listing_detail(otodom_session(), slug.strip())
+    text = detail.get("description")
+    return text.strip() if isinstance(text, str) else ""
+
+
 def _ensure_description(row: pd.Series) -> str:
-    """Return cached description or fetch from Otodom when a slug exists."""
+    """Return stored description or a cached Otodom fetch when a slug exists."""
     existing = row.get("description")
     if isinstance(existing, str) and existing.strip():
         return existing.strip()
@@ -279,12 +287,10 @@ def _ensure_description(row: pd.Series) -> str:
     if not isinstance(slug, str) or not slug.strip():
         return ""
     try:
-        detail = fetch_listing_detail(otodom_session(), slug.strip())
+        return _fetch_otodom_description(slug.strip())  # type: ignore[no-any-return]
     except (requests.RequestException, ValueError, TypeError, KeyError) as exc:
         logger.warning("Description fetch failed for %s: %s", slug, exc)
         return ""
-    text = detail.get("description")
-    return text.strip() if isinstance(text, str) else ""
 
 
 _DELTA_COLORS_HELP = "green underpriced · yellow fair · red overpriced"

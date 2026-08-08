@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from functools import lru_cache
 from pathlib import Path
 
 import geopandas as gpd
@@ -12,6 +11,7 @@ import pandas as pd
 import shap
 import streamlit as st
 
+from happy_housing.app.io_cache import clear_io_caches, file_mtime, read_geojson_gdf
 from happy_housing.app.metadata import RunMetadata, load_run_metadata
 from happy_housing.config import ExperimentConfig, load_experiment_config
 from happy_housing.ingest import build_gtfs_stop_hourly
@@ -24,10 +24,19 @@ def config_path() -> Path:
     return Path("configs/experiment.yaml")
 
 
-@lru_cache(maxsize=1)
+@st.cache_data(show_spinner=False)  # type: ignore[misc]
+def _load_config_cached(path: str, mtime: float) -> ExperimentConfig:
+    """Cached experiment config keyed by YAML path + mtime."""
+    del mtime
+    return load_experiment_config(Path(path))
+
+
 def load_config() -> ExperimentConfig:
-    """Load experiment config (process-cached)."""
-    return load_experiment_config(config_path())
+    """Load experiment config (mtime-keyed Streamlit cache)."""
+    path = config_path()
+    return _load_config_cached(  # type: ignore[no-any-return]
+        str(path.resolve()), file_mtime(path)
+    )
 
 
 def processed_dir() -> Path:
@@ -100,7 +109,7 @@ def _read_amenities(
     cache = Path(cache_path)
     fixture = Path(fixture_path)
     if cache.exists():
-        return gpd.read_file(cache)
+        return read_geojson_gdf(str(cache), cache.stat().st_mtime)
     if fixture.exists():
         frame = pd.read_json(fixture)
         return gpd.GeoDataFrame(
@@ -120,21 +129,12 @@ def load_amenities() -> gpd.GeoDataFrame:
     return _read_amenities(str(cache), str(fixture), max(mtimes, default=0.0))
 
 
-@st.cache_data(show_spinner=False)  # type: ignore[misc]
-def _read_oou(path: str, mtime: float) -> gpd.GeoDataFrame | None:
-    """Cached OOU polygon keyed by path + mtime; ``mtime < 0`` means missing."""
-    if mtime < 0:
-        return None
-    del mtime
-    return gpd.read_file(path)
-
-
 def load_oou() -> gpd.GeoDataFrame | None:
     """Load Chopin OOU polygon when present."""
     path = load_config().data.fixtures_path() / "oou_chopin.geojson"
     if not path.exists():
-        return _read_oou(str(path), -1.0)
-    return _read_oou(str(path), path.stat().st_mtime)
+        return None
+    return read_geojson_gdf(str(path), path.stat().st_mtime)
 
 
 @st.cache_resource(show_spinner=False)  # type: ignore[misc]
@@ -158,13 +158,7 @@ def load_shap_bundle() -> tuple[lgb.Booster, shap.TreeExplainer] | None:
 
 def clear_data_caches() -> None:
     """Drop Streamlit + config caches after pipeline / scrape rematerializes data."""
-    load_config.cache_clear()
-    _read_scored.clear()
-    _read_amenities.clear()
-    _read_oou.clear()
-    _read_parquet_frame.clear()
-    _read_json_points.clear()
-    _shap_bundle.clear()
+    clear_io_caches()
     logger.info("Cleared Streamlit app data caches")
 
 
@@ -180,6 +174,19 @@ def _read_json_points(path: str, mtime: float) -> pd.DataFrame:
     """Cached JSON point table (shops / traffic sample)."""
     del mtime
     return pd.read_json(path)
+
+
+@st.cache_data(show_spinner=False)  # type: ignore[misc]
+def _shops_from_geojson(path: str, mtime: float) -> pd.DataFrame:
+    """Cached shop points extracted from an OSM shops GeoJSON."""
+    del mtime
+    gdf = gpd.read_file(path)
+    return pd.DataFrame({
+        "name": gdf["name"] if "name" in gdf.columns else "Shop",
+        "shop": gdf["shop"] if "shop" in gdf.columns else "shop",
+        "lon": gdf.geometry.x,
+        "lat": gdf.geometry.y,
+    })
 
 
 def _load_parquet_or_empty(
@@ -237,14 +244,7 @@ def load_shops() -> pd.DataFrame:
     cache = config.data.cache_path() / "osm_shops.geojson"
     fixture = config.data.fixtures_path() / "shops.json"
     if cache.exists():
-        gdf = gpd.read_file(cache)
-        out = pd.DataFrame({
-            "name": gdf["name"] if "name" in gdf.columns else "Shop",
-            "shop": gdf["shop"] if "shop" in gdf.columns else "shop",
-            "lon": gdf.geometry.x,
-            "lat": gdf.geometry.y,
-        })
-        return out
+        return _shops_from_geojson(str(cache), cache.stat().st_mtime)
     if fixture.exists():
         return _read_json_points(str(fixture), fixture.stat().st_mtime)
     return pd.DataFrame(columns=["name", "shop", "lon", "lat"])
