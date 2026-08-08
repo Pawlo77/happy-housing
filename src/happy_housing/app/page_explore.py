@@ -20,6 +20,13 @@ from happy_housing.app.ai_review import (
     reviews_db_path,
 )
 from happy_housing.app.app_settings import AppSettings, load_app_settings, settings_path
+from happy_housing.app.board_sort import (
+    BOARD_SORT_OPTIONS,
+    BOARD_SORT_RECOMMENDATION,
+    coerce_board_sort,
+    enrich_board_recommendations,
+    sort_board,
+)
 from happy_housing.app.charts import OVERPRICED, UNDERPRICED, diverging_bar_chart
 from happy_housing.app.data import (
     load_amenities,
@@ -51,6 +58,11 @@ from happy_housing.app.offer_display import (
     livability_rows,
     offer_fact_rows,
 )
+from happy_housing.app.recommender import (
+    impressions_path,
+    load_impressions,
+    mark_opened,
+)
 from happy_housing.app.star_news import (
     StarNewsItem,
     format_change_markdown,
@@ -78,6 +90,8 @@ logger = logging.getLogger(__name__)
 
 _BOARD_COLUMNS: tuple[str, ...] = (
     "starred",
+    "seen",
+    "confidence",
     "listing_id",
     "title",
     "district",
@@ -564,19 +578,50 @@ def _tab_offer(
                     st.error(str(exc))
 
 
-def _tab_board(filtered: pd.DataFrame, *, starred: frozenset[str]) -> None:
+def _tab_board(
+    filtered: pd.DataFrame,
+    *,
+    starred: frozenset[str],
+    app_settings: AppSettings,
+    impressions_file: Path,
+) -> None:
     """Tabular offer board; selecting a row opens Offer for that listing."""
-    board = filtered.copy().reset_index(drop=True)
+    impressions = load_impressions(impressions_file)
+    enriched = enrich_board_recommendations(
+        filtered,
+        impressions=impressions,
+        demotion_alpha=float(app_settings.recommender_demotion_alpha),
+    )
+    labels = [label for _, label in BOARD_SORT_OPTIONS]
+    keys = [key for key, _ in BOARD_SORT_OPTIONS]
+    default_idx = keys.index(BOARD_SORT_RECOMMENDATION)
+    sort_label = st.selectbox(
+        "Sort board",
+        options=labels,
+        index=default_idx,
+        key="explore_board_sort",
+        help=(
+            "Default ranks by recommender score with new / unseen offers first. "
+            "Pick another key to reorder by price, district, posted time, etc."
+        ),
+    )
+    sort_key = coerce_board_sort(keys[labels.index(str(sort_label))])
+    board = sort_board(enriched, sort_key)
+    board = board.copy()
     board.insert(
         0,
         "starred",
         board["listing_id"].astype(str).map(lambda lid: star_marker(lid, starred)),
     )
+    if "confidence" in board.columns:
+        board["confidence"] = pd.to_numeric(board["confidence"], errors="coerce").round(
+            3
+        )
     cols = [c for c in _BOARD_COLUMNS if c in board.columns]
     board = board[cols]
     st.caption(
-        f"{len(board)} offers after filters · click a row to open Offer · "
-        "star offers on the Offer tab"
+        f"{len(board)} offers after filters · sort: **{sort_label}** · "
+        "click a row to open Offer · star offers on the Offer tab"
     )
     event = st.dataframe(
         board,
@@ -585,10 +630,15 @@ def _tab_board(filtered: pd.DataFrame, *, starred: frozenset[str]) -> None:
         on_select="rerun",
         selection_mode="single-row",
         key="explore_board",
+        column_config={
+            "confidence": st.column_config.NumberColumn("confidence", format="%.3f"),
+            "seen": st.column_config.TextColumn("seen"),
+        },
     )
     listing_id = listing_id_from_board_selection(board, event)
     if listing_id is None:
         return
+    mark_opened(impressions_file, listing_id)
     st.session_state["explore_offer_id"] = listing_id
     st.session_state["explore_section"] = "Offer"
     st.rerun()
@@ -746,7 +796,12 @@ def render_explore() -> None:
         if tab_board.open:
             if starred_only:
                 st.caption(f"Starred only · {len(map_board)} offers")
-            _tab_board(map_board, starred=starred)
+            _tab_board(
+                map_board,
+                starred=starred,
+                app_settings=app_settings,
+                impressions_file=impressions_path(proc),
+            )
     with tab_news:
         if tab_news.open:
             _tab_news(starred=starred, items=news_items, news_file=news_file)
