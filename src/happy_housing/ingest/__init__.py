@@ -172,7 +172,7 @@ def _parse_gios_station_row(row: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def fetch_gios_stations(url: str, output_parquet: Path) -> pd.DataFrame:
-    """Fetch GIOŚ v1 stations and prefer Warsaw rows.
+    """Fetch all GIOŚ v1 stations (paginated) into parquet.
 
     Args:
         url: GIOŚ stations endpoint.
@@ -181,27 +181,42 @@ def fetch_gios_stations(url: str, output_parquet: Path) -> pd.DataFrame:
     Returns:
         Stations dataframe with ``station_id``, ``lat``, ``lon``, ``name``.
     """
-    response = requests.get(url, params={"size": 1000}, timeout=60.0)
-    response.raise_for_status()
-    payload: dict[str, Any] = response.json()
-    rows = payload.get("Lista stacji pomiarowych") or payload.get("stationList") or []
-    records = [
-        parsed
-        for row in rows
-        if isinstance(row, dict)
-        for parsed in [_parse_gios_station_row(row)]
-        if parsed is not None
-    ]
+    records: list[dict[str, Any]] = []
+    page = 0
+    page_size = 500
+    while True:
+        response = requests.get(
+            url,
+            params={"size": page_size, "page": page},
+            timeout=60.0,
+        )
+        response.raise_for_status()
+        payload: dict[str, Any] = response.json()
+        rows = (
+            payload.get("Lista stacji pomiarowych") or payload.get("stationList") or []
+        )
+        if not rows:
+            break
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            parsed = _parse_gios_station_row(row)
+            if parsed is not None:
+                records.append(parsed)
+        total_pages = payload.get("totalPages") or payload.get("total_pages")
+        if total_pages is not None and page + 1 >= int(total_pages):
+            break
+        if len(rows) < page_size:
+            break
+        page += 1
+        if page > 100:
+            logger.warning("GIOŚ pagination stopped after 100 pages")
+            break
+
     frame = pd.DataFrame(records)
     if frame.empty:
         raise ValueError("GIOŚ station response produced zero rows.")
-    warsaw = frame[
-        frame["name"].str.contains("Warszawa", case=False, na=False)
-        | frame["city"].str.contains("Warszawa", case=False, na=False)
-        | ((frame["lat"].between(52.0, 52.5)) & (frame["lon"].between(20.7, 21.4)))
-    ]
-    if not warsaw.empty:
-        frame = warsaw
+    frame = frame.drop_duplicates(subset=["station_id"], keep="last")
     output_parquet.parent.mkdir(parents=True, exist_ok=True)
     frame.to_parquet(output_parquet, index=False)
     logger.info("Wrote %s GIOŚ stations to %s", len(frame), output_parquet)

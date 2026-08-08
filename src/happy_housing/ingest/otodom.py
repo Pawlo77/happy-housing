@@ -14,6 +14,8 @@ from urllib.parse import urlencode
 import pandas as pd
 import requests
 
+from happy_housing.ingest.limits import reached_cap, resolve_ingest_cap
+
 logger = logging.getLogger(__name__)
 
 _USER_AGENT = (
@@ -168,28 +170,35 @@ def fetch_listing_detail(
 def scrape_otodom_warsaw(
     output_parquet: Path,
     *,
-    max_pages: int = 40,
-    max_listings: int = 1000,
+    max_pages: int | None = None,
+    max_listings: int | None = None,
     detail_workers: int = 6,
     sleep_s: float = 0.35,
+    page_size: int = 72,
 ) -> pd.DataFrame:
     """Scrape Warsaw flat-sale listings from Otodom into a parquet file.
 
     Args:
         output_parquet: Destination path.
-        max_pages: Max search result pages to walk.
-        max_listings: Hard cap on enriched listings with coordinates.
+        max_pages: Max search pages; ``None`` walks every page Otodom reports.
+        max_listings: Hard cap on geocoded listings; ``None`` keeps all.
         detail_workers: Parallel detail-page workers.
         sleep_s: Pause between search page requests.
+        page_size: Search page size requested from Otodom.
 
     Returns:
         Normalized listings dataframe.
     """
+    page_cap = resolve_ingest_cap(max_pages)
+    listing_cap = resolve_ingest_cap(max_listings)
     session = _session()
     cards: list[dict[str, Any]] = []
-    for page in range(1, max_pages + 1):
+    page = 1
+    while True:
+        if page_cap is not None and page > page_cap:
+            break
         logger.info("Otodom search page %s", page)
-        ads = fetch_search_page(session, page=page)
+        ads = fetch_search_page(session, page=page, limit=page_size)
         items = ads.get("items") or []
         if not items:
             break
@@ -198,15 +207,18 @@ def scrape_otodom_warsaw(
         pagination = ads.get("pagination") or {}
         total_pages = int(pagination.get("totalPages") or page)
         time.sleep(sleep_s)
-        if page >= total_pages or len(cards) >= max_listings * 2:
+        if page >= total_pages or reached_cap(len(cards), listing_cap):
             break
+        page += 1
 
     # Deduplicate by listing id.
     by_id: dict[str, dict[str, Any]] = {}
     for row in cards:
         lid = str(row["listing_id"])
         by_id[lid] = row
-    cards = list(by_id.values())[: max_listings * 2]
+    cards = list(by_id.values())
+    if listing_cap is not None:
+        cards = cards[:listing_cap]
     logger.info("Otodom unique search cards: %s", len(cards))
 
     enriched: list[dict[str, Any]] = []
@@ -245,7 +257,9 @@ def scrape_otodom_warsaw(
             if detail_row is None:
                 continue
             enriched.append(detail_row)
-            if len(enriched) >= max_listings:
+            if reached_cap(len(enriched), listing_cap):
+                for pending in futures:
+                    pending.cancel()
                 break
 
     frame = pd.DataFrame(enriched)

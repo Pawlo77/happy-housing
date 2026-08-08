@@ -237,6 +237,45 @@ class IngestUrlsConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class IngestLimitsConfig:
+    """Download caps; ``None`` / null means take everything the source returns."""
+
+    otodom_max_pages: int | None = None
+    """Otodom search pages; ``None`` walks every reported page."""
+    otodom_max_listings: int | None = None
+    """Geocoded Otodom listings; ``None`` keeps every successful detail."""
+    rcn_max_rows: int | None = None
+    """RCN joined Warsaw rows; ``None`` parses the full GML."""
+
+    def __post_init__(self) -> None:
+        for name in ("otodom_max_pages", "otodom_max_listings", "rcn_max_rows"):
+            value = getattr(self, name)
+            if value is not None and int(value) <= 0:
+                object.__setattr__(self, name, None)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-serializable representation of ingest limits."""
+        return cast(dict[str, Any], _serialize(self))
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> Self:
+        """Build ingest limits from a mapping (YAML null → unlimited)."""
+        mapping = _extract_mapping(data, name="IngestLimitsConfig")
+
+        def _opt_int(key: str) -> int | None:
+            if key not in mapping or mapping[key] is None:
+                return None
+            value = int(mapping[key])
+            return None if value <= 0 else value
+
+        return cls(
+            otodom_max_pages=_opt_int("otodom_max_pages"),
+            otodom_max_listings=_opt_int("otodom_max_listings"),
+            rcn_max_rows=_opt_int("rcn_max_rows"),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class ExperimentConfig:
     """Top-level experiment configuration."""
 
@@ -252,6 +291,8 @@ class ExperimentConfig:
     """Price model hyperparameters."""
     ingest_urls: IngestUrlsConfig = field(default_factory=IngestUrlsConfig)
     """Remote download endpoints."""
+    ingest: IngestLimitsConfig = field(default_factory=IngestLimitsConfig)
+    """Ingest download caps (default: unlimited)."""
     commute_target_lon: float = 20.9830
     """Rondo Daszyńskiego longitude (commute destination)."""
     commute_target_lat: float = 52.2300
@@ -293,6 +334,11 @@ class ExperimentConfig:
             if mapping.get("ingest_urls")
             else IngestUrlsConfig()
         )
+        ingest_config = (
+            IngestLimitsConfig.from_dict(mapping["ingest"])
+            if mapping.get("ingest")
+            else IngestLimitsConfig()
+        )
         name = str(mapping.get("name", "happy-housing"))
         return cls(
             name=name,
@@ -301,6 +347,7 @@ class ExperimentConfig:
             bbox=bbox_config,
             model=model_config,
             ingest_urls=urls_config,
+            ingest=ingest_config,
             commute_target_lon=float(mapping.get("commute_target_lon", 20.9830)),
             commute_target_lat=float(mapping.get("commute_target_lat", 52.2300)),
         )
@@ -329,7 +376,7 @@ def load_experiment_config(path: Path | str) -> ExperimentConfig:
         "experiment section must be a mapping.",
     )
     merged: dict[str, Any] = dict(experiment_section)
-    for key in ("mlflow", "data", "bbox", "model", "ingest_urls"):
+    for key in ("mlflow", "data", "bbox", "model", "ingest_urls", "ingest"):
         if key in raw:
             merged[key] = raw[key]
     for key in ("commute_target_lon", "commute_target_lat"):

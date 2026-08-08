@@ -18,6 +18,8 @@ from xml.etree import ElementTree as ET  # nosec B405 — local RCN GML only
 import pandas as pd
 from pyproj import Transformer
 
+from happy_housing.ingest.limits import reached_cap, resolve_ingest_cap
+
 logger = logging.getLogger(__name__)
 
 _TRANSFORMER_2178 = Transformer.from_crs("EPSG:2178", "EPSG:4326", always_xy=True)
@@ -139,17 +141,18 @@ def _district_from_text(text: str | None) -> str | None:
 def parse_rcn_gml_stream(
     gml_handle: BinaryIO | Any,
     *,
-    max_rows: int = 50000,
+    max_rows: int | None = None,
 ) -> pd.DataFrame:
     """Stream-parse linked RCN features and emit joined Warsaw rows.
 
     Args:
         gml_handle: Binary GML stream (zip member or BytesIO).
-        max_rows: Cap on joined output rows.
+        max_rows: Cap on joined output rows; ``None`` keeps every match.
 
     Returns:
         Frame with ``lon``, ``lat``, ``price_pln``, ``area_m2``, ``district``.
     """
+    row_cap = resolve_ingest_cap(max_rows)
     transactions: dict[str, dict[str, Any]] = {}
     properties: dict[str, dict[str, Any]] = {}
     parcels: dict[str, dict[str, Any]] = {}
@@ -277,13 +280,13 @@ def parse_rcn_gml_stream(
             "district": district or "rcn",
             "source": "rcn",
         })
-        if len(records) >= max_rows:
+        if reached_cap(len(records), row_cap):
             break
 
     # Fallback path for synthetic / flat GML used in unit tests: members that
     # already embed price + coords without xlink graph.
     if not records:
-        records = _parse_flat_feature_fallback(gml_handle, max_rows=max_rows)
+        records = _parse_flat_feature_fallback(gml_handle, max_rows=row_cap)
 
     return pd.DataFrame(records)
 
@@ -291,7 +294,7 @@ def parse_rcn_gml_stream(
 def _parse_flat_feature_fallback(
     gml_handle: BinaryIO | Any,
     *,
-    max_rows: int,
+    max_rows: int | None,
 ) -> list[dict[str, Any]]:
     """Parse self-contained feature members (unit-test / simplified GML)."""
     # Caller already consumed the stream — only used when primary pass empty
@@ -302,6 +305,7 @@ def _parse_flat_feature_fallback(
         gml_handle.seek(0)
     except Exception:
         return []
+    row_cap = resolve_ingest_cap(max_rows)
     records: list[dict[str, Any]] = []
     # Trusted synthetic / local GML fixtures only.
     context = ET.iterparse(gml_handle, events=("end",))  # nosec B314
@@ -368,7 +372,7 @@ def _parse_flat_feature_fallback(
             "source": "rcn",
         })
         elem.clear()
-        if len(records) >= max_rows:
+        if reached_cap(len(records), row_cap):
             break
     return records
 
@@ -377,9 +381,9 @@ def extract_rcn_transactions(
     zip_path: Path,
     output_parquet: Path,
     *,
-    max_rows: int = 50000,
+    max_rows: int | None = None,
 ) -> pd.DataFrame:
-    """Extract up to ``max_rows`` RCN transactions from a downloaded zip."""
+    """Extract RCN transactions from a downloaded zip (all rows unless capped)."""
     with zipfile.ZipFile(zip_path) as archive:
         gml_members = [m for m in archive.namelist() if m.lower().endswith(".gml")]
         if not gml_members:

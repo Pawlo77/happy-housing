@@ -87,13 +87,23 @@ def run_pipeline(
     download_remote: bool = True,
     use_osm: bool = True,
     scrape_otodom: bool = True,
-    otodom_max_pages: int = 50,
-    otodom_max_listings: int = 1200,
-    rcn_max_rows: int = 40000,
+    otodom_max_pages: int | None = None,
+    otodom_max_listings: int | None = None,
+    rcn_max_rows: int | None = None,
 ) -> dict[str, Path]:
     """Run the full local pipeline and return key output paths."""
     started = time.perf_counter()
     config = load_experiment_config(config_path)
+    limits = config.ingest
+    page_cap = (
+        otodom_max_pages if otodom_max_pages is not None else limits.otodom_max_pages
+    )
+    listing_cap = (
+        otodom_max_listings
+        if otodom_max_listings is not None
+        else limits.otodom_max_listings
+    )
+    rcn_cap = rcn_max_rows if rcn_max_rows is not None else limits.rcn_max_rows
     raw = config.data.raw_path()
     processed = config.data.processed_path()
     fixtures = config.data.fixtures_path()
@@ -113,8 +123,8 @@ def run_pipeline(
         try:
             otodom = scrape_otodom_warsaw(
                 otodom_parquet,
-                max_pages=otodom_max_pages,
-                max_listings=otodom_max_listings,
+                max_pages=page_cap,
+                max_listings=listing_cap,
             )
             otodom["source"] = "otodom"
             listings_parts.append(otodom)
@@ -143,7 +153,7 @@ def run_pipeline(
             timeout_s=1800.0,
         )
         try:
-            extract_rcn_transactions(zip_path, rcn_parquet, max_rows=rcn_max_rows)
+            extract_rcn_transactions(zip_path, rcn_parquet, max_rows=rcn_cap)
         except Exception as exc:
             logger.warning("RCN extract failed: %s", exc)
             pd.DataFrame(columns=["lon", "lat", "price_pln", "area_m2"]).to_parquet(

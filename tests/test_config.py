@@ -20,6 +20,24 @@ def test_load_default_experiment_yaml() -> None:
     assert config.data.fixtures == "data/fixtures"
     assert config.model.target == "price_per_m2"
     assert config.bbox.west < config.bbox.east
+    assert config.ingest.otodom_max_pages is None
+    assert config.ingest.otodom_max_listings is None
+    assert config.ingest.rcn_max_rows is None
+
+
+def test_ingest_limits_null_means_unlimited() -> None:
+    """YAML null / non-positive ingest caps resolve to unlimited."""
+    config = ExperimentConfig.from_dict({
+        "name": "caps",
+        "ingest": {
+            "otodom_max_pages": None,
+            "otodom_max_listings": 0,
+            "rcn_max_rows": 100,
+        },
+    })
+    assert config.ingest.otodom_max_pages is None
+    assert config.ingest.otodom_max_listings is None
+    assert config.ingest.rcn_max_rows == 100
 
 
 def test_experiment_config_requires_name() -> None:
