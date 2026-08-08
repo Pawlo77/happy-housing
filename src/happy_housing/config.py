@@ -311,6 +311,36 @@ class LoggingConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class RoutingConfig:
+    """Local routing service endpoints (OSRM car, OTP transit)."""
+
+    osrm_url: str = "http://127.0.0.1:5000"
+    """OSRM table API root for car commute minutes."""
+    otp_url: str = "http://127.0.0.1:8080"
+    """OpenTripPlanner 2 HTTP root for transit+walk plans."""
+    use_otp_transit: bool = False
+    """When true, pipeline fills ``transit_commute_min`` via OTP (slow if large)."""
+
+    def __post_init__(self) -> None:
+        _require_str("osrm_url", self.osrm_url)
+        _require_str("otp_url", self.otp_url)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-serializable representation of routing endpoints."""
+        return cast(dict[str, Any], _serialize(self))
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> Self:
+        """Build routing config from a mapping."""
+        mapping = _extract_mapping(data, name="RoutingConfig")
+        return cls(
+            osrm_url=str(mapping.get("osrm_url", "http://127.0.0.1:5000")),
+            otp_url=str(mapping.get("otp_url", "http://127.0.0.1:8080")),
+            use_otp_transit=bool(mapping.get("use_otp_transit", False)),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class ExperimentConfig:
     """Top-level experiment configuration."""
 
@@ -330,6 +360,8 @@ class ExperimentConfig:
     """Ingest download caps (default: unlimited)."""
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     """Package logging level for entrypoints."""
+    routing: RoutingConfig = field(default_factory=RoutingConfig)
+    """Local OSRM / OTP endpoints."""
     commute_target_lon: float = 20.9830
     """Rondo Daszyńskiego longitude (commute destination)."""
     commute_target_lat: float = 52.2300
@@ -381,6 +413,11 @@ class ExperimentConfig:
             if mapping.get("logging")
             else LoggingConfig()
         )
+        routing_config = (
+            RoutingConfig.from_dict(mapping["routing"])
+            if mapping.get("routing")
+            else RoutingConfig()
+        )
         name = str(mapping.get("name", "happy-housing"))
         return cls(
             name=name,
@@ -391,6 +428,7 @@ class ExperimentConfig:
             ingest_urls=urls_config,
             ingest=ingest_config,
             logging=logging_config,
+            routing=routing_config,
             commute_target_lon=float(mapping.get("commute_target_lon", 20.9830)),
             commute_target_lat=float(mapping.get("commute_target_lat", 52.2300)),
         )
@@ -419,7 +457,16 @@ def load_experiment_config(path: Path | str) -> ExperimentConfig:
         "experiment section must be a mapping.",
     )
     merged: dict[str, Any] = dict(experiment_section)
-    for key in ("mlflow", "data", "bbox", "model", "ingest_urls", "ingest", "logging"):
+    for key in (
+        "mlflow",
+        "data",
+        "bbox",
+        "model",
+        "ingest_urls",
+        "ingest",
+        "logging",
+        "routing",
+    ):
         if key in raw:
             merged[key] = raw[key]
     for key in ("commute_target_lon", "commute_target_lat"):

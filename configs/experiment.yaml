@@ -53,3 +53,9 @@ ingest:
 
 logging:
   level: INFO
+
+# Local routers (Docker). use_otp_transit=true fills transit_commute_min (slow on big sets).
+routing:
+  osrm_url: http://127.0.0.1:5000
+  otp_url: http://127.0.0.1:8080
+  use_otp_transit: false

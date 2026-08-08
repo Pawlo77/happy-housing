@@ -616,7 +616,10 @@ def _tab_pipeline() -> None:
                     st.error(f"Pipeline failed (exit {code})")
     st.caption(
         "Default ingest caps in configs/experiment.yaml are null (unlimited). "
-        "Set numeric caps there only if you need a smaller local slice."
+        "Set numeric caps there only if you need a smaller local slice. "
+        "Car commute uses local OSRM (docker/docker-compose.osrm.yml) with a "
+        "30 km/h distance fallback; set routing.use_otp_transit=true when OTP "
+        "Docker is up for transit_commute_min."
     )
 
 

@@ -23,7 +23,10 @@ from happy_housing.gis import (
     fetch_osm_shops,
     load_amenity_points,
 )
-from happy_housing.gis.routing import attach_commute_minutes
+from happy_housing.gis.routing import (
+    attach_commute_minutes,
+    attach_transit_commute_minutes,
+)
 from happy_housing.ingest import (
     build_gtfs_stop_hourly,
     download_file,
@@ -252,12 +255,26 @@ def run_pipeline(
         train_frame,
         dest_lon=config.commute_target_lon,
         dest_lat=config.commute_target_lat,
+        osrm_url=config.routing.osrm_url,
     )
+    if config.routing.use_otp_transit:
+        train_frame = attach_transit_commute_minutes(
+            train_frame,
+            dest_lon=config.commute_target_lon,
+            dest_lat=config.commute_target_lat,
+            otp_url=config.routing.otp_url,
+        )
 
     enriched_path = processed / "listings_enriched.parquet"
-    write_geoparquet(enriched, enriched_path)
-    # Persist commute column onto enriched parquet companion table.
-    train_frame.to_parquet(enriched_path, index=False)
+
+    def _write_enriched_geoparquet(frame: pd.DataFrame) -> None:
+        """Persist attribute frame with Hilbert-sorted GeoParquet geometry."""
+        geo = enriched.copy()
+        for col in frame.columns:
+            geo[col] = frame[col].to_numpy()
+        write_geoparquet(geo, enriched_path)
+
+    _write_enriched_geoparquet(train_frame)
 
     app_settings = load_app_settings(settings_path(processed))
     rcn_for_model = (
@@ -269,7 +286,7 @@ def run_pipeline(
             rcn_for_model,
             radius_m=float(app_settings.model_nbhd_radius_m),
         )
-        train_frame.to_parquet(enriched_path, index=False)
+        _write_enriched_geoparquet(train_frame)
 
     train_settings = TrainSettings(
         opt_metric=coerce_opt_metric(app_settings.model_opt_metric),
