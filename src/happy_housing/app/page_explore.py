@@ -64,9 +64,11 @@ from happy_housing.app.data import (
 from happy_housing.app.explore_nav import (
     EXPLORE_SECTIONS,
     OFFER_SELECT_KEY,
+    apply_explore_section_pending,
     listing_id_from_board_selection,
     listing_id_from_map_selection,
     prepare_offer_select_state,
+    request_explore_section,
 )
 from happy_housing.app.filters import (
     FilterState,
@@ -555,7 +557,7 @@ def _tab_map(
     if st.button("Open in Offer", type="primary", key=f"map_open_offer_{clicked}"):
         st.session_state["explore_offer_id"] = clicked
         st.session_state["explore_offer_force"] = True
-        st.session_state["explore_section"] = "Offer"
+        request_explore_section("Offer")
         st.rerun()
 
 
@@ -1120,7 +1122,7 @@ def _tab_board(
     mark_opened(impressions_file, listing_id)
     st.session_state["explore_offer_id"] = listing_id
     st.session_state["explore_offer_force"] = True
-    st.session_state["explore_section"] = "Offer"
+    request_explore_section("Offer")
     st.rerun()
 
 
@@ -1212,7 +1214,7 @@ def _tab_news(
                                 row["listing_id"]
                             )
                             st.session_state["explore_offer_force"] = True
-                            st.session_state["explore_section"] = "Offer"
+                            request_explore_section("Offer")
                             st.rerun()
 
     st.subheader("Starred changes")
@@ -1247,7 +1249,7 @@ def _tab_news(
                 ):
                     st.session_state["explore_offer_id"] = item.listing_id
                     st.session_state["explore_offer_force"] = True
-                    st.session_state["explore_section"] = "Offer"
+                    request_explore_section("Offer")
                     st.rerun()
             if item.kind == "removed":
                 st.warning(
@@ -1624,6 +1626,7 @@ def render_explore() -> None:
     rail_areas = load_rail_areas()
     airport = load_airport_areas()
 
+    apply_explore_section_pending()
     if "explore_section" not in st.session_state:
         st.session_state["explore_section"] = "Map"
     commute = resolve_commute_target(app_settings, config)

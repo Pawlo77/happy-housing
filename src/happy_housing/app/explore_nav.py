@@ -24,12 +24,34 @@ EXPLORE_PAGE_PATH: str = "explore"
 OFFER_SELECT_KEY: str = "explore_offer_select"
 """Session key for the Offer-tab listing selectbox."""
 
+EXPLORE_SECTION_KEY: str = "explore_section"
+"""Session key bound to the Explore ``st.tabs`` widget."""
+
+EXPLORE_SECTION_PENDING_KEY: str = "explore_section_pending"
+"""Queued section switch — applied before ``st.tabs`` is instantiated."""
+
+
+def request_explore_section(section: str) -> None:
+    """Queue an Explore tab switch (safe after ``st.tabs`` already ran)."""
+    if section not in EXPLORE_SECTIONS:
+        return
+    st.session_state[EXPLORE_SECTION_PENDING_KEY] = section
+
+
+def apply_explore_section_pending() -> None:
+    """Flush a queued tab switch into ``explore_section`` before the tabs widget."""
+    pending = st.session_state.pop(EXPLORE_SECTION_PENDING_KEY, None)
+    if pending is None:
+        return
+    if pending in EXPLORE_SECTIONS:
+        st.session_state[EXPLORE_SECTION_KEY] = pending
+
 
 def open_explore_offer(listing_id: str) -> None:
     """Jump to Explore → Offer for ``listing_id`` (session keys + switch_page)."""
     st.session_state["explore_offer_id"] = str(listing_id)
     st.session_state["explore_offer_force"] = True
-    st.session_state["explore_section"] = "Offer"
+    request_explore_section("Offer")
     st.switch_page(EXPLORE_PAGE_PATH)
 
 

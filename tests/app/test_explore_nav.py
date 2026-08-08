@@ -87,5 +87,23 @@ def test_open_explore_offer_sets_session_and_switches_page() -> None:
         open_explore_offer("RCN-605")
     assert session["explore_offer_id"] == "RCN-605"
     assert session["explore_offer_force"] is True
-    assert session["explore_section"] == "Offer"
+    assert session["explore_section_pending"] == "Offer"
+    assert "explore_section" not in session
     mock_st.switch_page.assert_called_once_with(EXPLORE_PAGE_PATH)
+
+
+def test_apply_explore_section_pending_moves_into_section_key() -> None:
+    from happy_housing.app.explore_nav import (
+        apply_explore_section_pending,
+        request_explore_section,
+    )
+
+    session: dict[str, object] = {}
+    mock_st = MagicMock()
+    mock_st.session_state = session
+    with patch("happy_housing.app.explore_nav.st", mock_st):
+        request_explore_section("Offer")
+        assert session["explore_section_pending"] == "Offer"
+        apply_explore_section_pending()
+    assert session.get("explore_section") == "Offer"
+    assert "explore_section_pending" not in session
