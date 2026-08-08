@@ -597,14 +597,29 @@ def metro_price_curve(frame: pd.DataFrame) -> pd.DataFrame:
 
 def aircraft_noise_ladder(frame: pd.DataFrame) -> pd.DataFrame:
     """Median zł/m² by aircraft Lden band (END contour lower edge)."""
-    empty = pd.DataFrame(columns=["lden_band", "n", "median_price_per_m2"])
+    return _db_band_ladder(frame, value_col="aircraft_lden_db", band_col="lden_band")
+
+
+def noise_total_ladder(frame: pd.DataFrame) -> pd.DataFrame:
+    """Median zł/m² by energy-sum total Lden band (all UM sources)."""
+    return _db_band_ladder(frame, value_col="noise_total_lden_db", band_col="lden_band")
+
+
+def _db_band_ladder(
+    frame: pd.DataFrame,
+    *,
+    value_col: str,
+    band_col: str,
+) -> pd.DataFrame:
+    """Shared Lden-style band ladder for aircraft / total / source columns."""
+    empty = pd.DataFrame(columns=[band_col, "n", "median_price_per_m2"])
     work = pd.DataFrame({
         "ppm": _num(frame, "price_per_m2"),
-        "lden": _num(frame, "aircraft_lden_db"),
+        "db": _num(frame, value_col),
     }).dropna(subset=["ppm"])
     if work.empty:
         return empty
-    work["lden"] = work["lden"].fillna(0.0)
+    work["db"] = work["db"].fillna(0.0)
     bins = [-0.1, 0.1, 45, 50, 55, 60, 65, 70, 100]
     labels = [
         "0 / below",
@@ -616,16 +631,149 @@ def aircraft_noise_ladder(frame: pd.DataFrame) -> pd.DataFrame:
         "65-70",
         "70+",
     ]
-    work["lden_band"] = pd.cut(
-        work["lden"], bins=bins, labels=labels, include_lowest=True, right=False
+    work[band_col] = pd.cut(
+        work["db"], bins=bins, labels=labels, include_lowest=True, right=False
     )
     return (
         work
-        .groupby("lden_band", observed=False)
+        .groupby(band_col, observed=False)
         .agg(n=("ppm", "size"), median_price_per_m2=("ppm", "median"))
         .reset_index()
         .loc[lambda d: d["n"] > 0]
-        .assign(lden_band=lambda d: d["lden_band"].astype(str))
+        .assign(**{band_col: lambda d: d[band_col].astype(str)})
+        .reset_index(drop=True)
+    )
+
+
+def high_noise_surcharge(frame: pd.DataFrame) -> dict[str, float]:
+    """Median zł/m² inside vs outside total Lden ≥55 dB."""
+    ppm = _num(frame, "price_per_m2")
+    flag = _num(frame, "in_high_noise")
+    work = pd.DataFrame({"ppm": ppm, "flag": flag}).dropna()
+    inside = work.loc[work["flag"] == 1, "ppm"]
+    outside = work.loc[work["flag"] != 1, "ppm"]
+    med_in = float(inside.median()) if not inside.empty else float("nan")
+    med_out = float(outside.median()) if not outside.empty else float("nan")
+    surcharge = (
+        (med_in / med_out - 1.0) * 100.0
+        if med_out and med_out == med_out and med_out > 0 and med_in == med_in
+        else float("nan")
+    )
+    return {
+        "n_inside": float(len(inside)),
+        "n_outside": float(len(outside)),
+        "median_inside": med_in,
+        "median_outside": med_out,
+        "surcharge_pct": surcharge,
+    }
+
+
+_NOISE_SOURCE_COLS: tuple[tuple[str, str], ...] = (
+    ("road", "road_lden_db"),
+    ("rail", "rail_lden_db"),
+    ("tram", "tram_lden_db"),
+    ("aircraft", "aircraft_lden_db"),
+    ("industry", "industry_lden_db"),
+)
+"""Display label → listing column for source exposure premiums."""
+
+
+def noise_source_premiums(
+    frame: pd.DataFrame,
+    *,
+    threshold_db: float = 55.0,
+) -> pd.DataFrame:
+    """Median zł/m² premium when each noise source is ≥ ``threshold_db``."""
+    empty = pd.DataFrame(
+        columns=[
+            "source",
+            "n_exposed",
+            "n_quiet",
+            "median_ppm_exposed",
+            "median_ppm_quiet",
+            "premium_pct",
+        ]
+    )
+    ppm = _num(frame, "price_per_m2")
+    rows: list[dict[str, float | str]] = []
+    for label, col in _NOISE_SOURCE_COLS:
+        level = _num(frame, col)
+        work = pd.DataFrame({"ppm": ppm, "db": level}).dropna(subset=["ppm"])
+        if work.empty:
+            continue
+        work["db"] = work["db"].fillna(0.0)
+        exposed = work.loc[work["db"] >= threshold_db, "ppm"]
+        quiet = work.loc[work["db"] < threshold_db, "ppm"]
+        med_e = float(exposed.median()) if not exposed.empty else float("nan")
+        med_q = float(quiet.median()) if not quiet.empty else float("nan")
+        premium = (
+            (med_e / med_q - 1.0) * 100.0
+            if med_q and med_q == med_q and med_q > 0 and med_e == med_e
+            else float("nan")
+        )
+        rows.append({
+            "source": label,
+            "n_exposed": float(len(exposed)),
+            "n_quiet": float(len(quiet)),
+            "median_ppm_exposed": med_e,
+            "median_ppm_quiet": med_q,
+            "premium_pct": premium,
+        })
+    if not rows:
+        return empty
+    return pd.DataFrame(rows)
+
+
+def distance_price_curve(
+    frame: pd.DataFrame,
+    *,
+    dist_col: str,
+    bins: list[float],
+    labels: list[str],
+    band_col: str,
+) -> pd.DataFrame:
+    """Median zł/m² by distance band for any metres column."""
+    empty = pd.DataFrame(columns=[band_col, "n", "median_price_per_m2"])
+    work = pd.DataFrame({
+        "ppm": _num(frame, "price_per_m2"),
+        "dist": _num(frame, dist_col),
+    }).dropna()
+    if work.empty:
+        return empty
+    work[band_col] = pd.cut(
+        work["dist"],
+        bins=bins,
+        labels=labels,
+        include_lowest=True,
+        right=False,
+    )
+    return (
+        work
+        .groupby(band_col, observed=False)
+        .agg(n=("ppm", "size"), median_price_per_m2=("ppm", "median"))
+        .reset_index()
+        .loc[lambda d: d["n"] > 0]
+        .assign(**{band_col: lambda d: d[band_col].astype(str)})
+        .reset_index(drop=True)
+    )
+
+
+def air_quality_ladder(frame: pd.DataFrame) -> pd.DataFrame:
+    """Median zł/m² by nearest-station AQI index."""
+    empty = pd.DataFrame(columns=["aqi_band", "n", "median_price_per_m2"])
+    work = pd.DataFrame({
+        "ppm": _num(frame, "price_per_m2"),
+        "aqi": _num(frame, "air_aq_index"),
+    }).dropna()
+    if work.empty:
+        return empty
+    work["aqi_band"] = work["aqi"].round().astype(int).astype(str)
+    return (
+        work
+        .groupby("aqi_band", observed=False)
+        .agg(n=("ppm", "size"), median_price_per_m2=("ppm", "median"))
+        .reset_index()
+        .sort_values("aqi_band")
         .reset_index(drop=True)
     )
 

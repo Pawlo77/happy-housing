@@ -863,8 +863,9 @@ def _tab_recommender(settings: AppSettings, settings_file: Path, proc: Path) -> 
 def _tab_stats(settings: AppSettings, settings_file: Path) -> None:
     """Stats page aggregation thresholds."""
     st.caption(
-        "Controls district scoreboards and hunt/watch list length. "
-        "Recalculate clears Streamlit caches so Stats reloads scored listings."
+        "Controls district scoreboards, hunt/watch length, and Model XAI "
+        "sample size. Recalculate clears Streamlit caches so Stats reloads "
+        "scored listings."
     )
     min_offers = st.number_input(
         "Min offers per district",
@@ -872,7 +873,7 @@ def _tab_stats(settings: AppSettings, settings_file: Path) -> None:
         max_value=200,
         value=int(settings.stats_min_district_offers),
         key="settings_stats_min_offers",
-        help="Districts below this count are hidden on Stats → Value.",
+        help="Districts below this count are hidden on Stats → Market.",
     )
     top_n = st.number_input(
         "Hunt / watch list size",
@@ -881,11 +882,28 @@ def _tab_stats(settings: AppSettings, settings_file: Path) -> None:
         value=int(settings.stats_top_n),
         key="settings_stats_top_n",
     )
+    shap_n = st.number_input(
+        "SHAP sample size (Model tab)",
+        min_value=20,
+        max_value=2000,
+        value=int(settings.stats_shap_sample_n),
+        key="settings_stats_shap_sample_n",
+        help="Larger = stabler global SHAP, slower page.",
+    )
+    xai_top = st.number_input(
+        "Top features on XAI charts",
+        min_value=5,
+        max_value=80,
+        value=int(settings.stats_xai_top_n),
+        key="settings_stats_xai_top_n",
+    )
     s1, s2, _s3 = st.columns([1, 1, 3])
     with s1:
         if st.button("Save Stats settings", type="primary", key="save_stats_settings"):
             settings.stats_min_district_offers = int(min_offers)
             settings.stats_top_n = int(top_n)
+            settings.stats_shap_sample_n = int(shap_n)
+            settings.stats_xai_top_n = int(xai_top)
             save_app_settings(settings_file, settings)
             st.success("Stats settings saved.")
     with s2:

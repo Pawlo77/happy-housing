@@ -107,7 +107,11 @@ class AppSettings:
     stats_min_district_offers: int = 5
     """Minimum offers before a district appears on Stats scoreboards."""
     stats_top_n: int = 15
-    """How many hunt / watch offers to list on Stats → Value."""
+    """How many hunt / watch offers to list on Stats → Market."""
+    stats_shap_sample_n: int = 300
+    """Max listings sampled for global mean |SHAP| on Stats → Model."""
+    stats_xai_top_n: int = 20
+    """How many features to show on importance / SHAP charts."""
     log_level: str = "INFO"
     """Package log level for the Streamlit app (DEBUG/INFO/WARNING/ERROR)."""
     model_opt_metric: str = "mae"
@@ -395,6 +399,17 @@ def load_app_settings(path: Path) -> AppSettings:
             ),
         ),
         stats_top_n=max(1, int(payload.get("stats_top_n", defaults.stats_top_n))),
+        stats_shap_sample_n=max(
+            20,
+            min(
+                2000,
+                int(payload.get("stats_shap_sample_n", defaults.stats_shap_sample_n)),
+            ),
+        ),
+        stats_xai_top_n=max(
+            5,
+            min(80, int(payload.get("stats_xai_top_n", defaults.stats_xai_top_n))),
+        ),
         log_level=_coerce_log_level(
             payload.get("log_level", defaults.log_level), defaults.log_level
         ),

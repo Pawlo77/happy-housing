@@ -53,21 +53,22 @@ Sidebar filters + map overlays. **Map / Spatial / Offer / Board / News / Chat / 
 
 Filterable market analytics for decisions — not a vanity dashboard:
 
-- **Sidebar filters** — districts, sources, months, valuation, aircraft Lden ≥55, price / area / rooms
-- **Overview** — inventory by zł/m² band, rooms, source mix, primary vs secondary
-- **Trends** — listing vs model medians over time, residual distribution
-- **Value** — district value board, ask vs RCN ink, hunt / watch lists
-- **Place** — Chopin Lden premium, commute / transit / metro / noise / fire curves, district mood
+- **Sidebar filters** — districts, sources, months, valuation, aircraft / total noise ≥55 dB, price / area / rooms
+- **Overview** — inventory mix, primary vs secondary, budget ladder
+- **Market** — trends, residual pressure, district value board, ask vs RCN ink, hunt / watch
+- **Livability** — UM noise premiums (total + sources), commute / transit / metro / bike, parks / traffic / zones / AQI
 - **Stock** — size / rooms / build-era mix
-- **Afford** — budget ladder (what total PLN buys in m² and zł/m²)
+- **Model** — LightGBM gain importance, global mean |SHAP|, example offer explanation
 
-Tunables: Admin → Stats.
+Tunables: Admin → Stats (including SHAP sample size).
 
 ![Stats — Overview](docs/screenshots/08-stats.png)
 
-![Stats — Value](docs/screenshots/08b-stats-value.png)
+![Stats — Market](docs/screenshots/08b-stats-market.png)
 
-![Stats — Afford](docs/screenshots/08c-stats-afford.png)
+![Stats — Livability](docs/screenshots/08c-stats-livability.png)
+
+![Stats — Model](docs/screenshots/08d-stats-model.png)
 
 ### Admin
 

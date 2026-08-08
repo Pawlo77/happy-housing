@@ -22,6 +22,8 @@ class StatsFilterState:
     """Listed months ``YYYY-MM``; empty means all."""
     oou: str = "(all)"
     """Aircraft Lden ≥55 dB: ``(all)``, ``inside``, or ``outside``."""
+    high_noise: str = "(all)"
+    """Total Lden ≥55 dB: ``(all)``, ``inside``, or ``outside``."""
     valuation: str = "(all)"
     """Residual side: ``(all)``, ``underpriced``, or ``overpriced``."""
     price_min: float | None = None
@@ -73,6 +75,10 @@ def apply_stats_filters(frame: pd.DataFrame, state: StatsFilterState) -> pd.Data
         mask &= pd.to_numeric(frame["in_oou"], errors="coerce").eq(1)
     elif state.oou == "outside" and "in_oou" in frame.columns:
         mask &= pd.to_numeric(frame["in_oou"], errors="coerce").eq(0)
+    if state.high_noise == "inside" and "in_high_noise" in frame.columns:
+        mask &= pd.to_numeric(frame["in_high_noise"], errors="coerce").eq(1)
+    elif state.high_noise == "outside" and "in_high_noise" in frame.columns:
+        mask &= pd.to_numeric(frame["in_high_noise"], errors="coerce").eq(0)
     if state.valuation == "underpriced" and "delta_price_per_m2" in frame.columns:
         mask &= pd.to_numeric(frame["delta_price_per_m2"], errors="coerce").lt(0)
     elif state.valuation == "overpriced" and "delta_price_per_m2" in frame.columns:

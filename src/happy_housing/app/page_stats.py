@@ -1,14 +1,14 @@
-"""Stats page: filterable business analytics for Warsaw housing decisions."""
+"""Stats page: filterable market analytics, livability, and model XAI."""
 
 from __future__ import annotations
 
 import logging
 
+import numpy as np
 import pandas as pd
 import streamlit as st
 
-from happy_housing.app.app_settings import load_app_settings, settings_path
-from happy_housing.app.board_table import filter_dataframe_text
+from happy_housing.app.app_settings import AppSettings, load_app_settings, settings_path
 from happy_housing.app.charts import (
     ASK_COLOR,
     INK_COLOR,
@@ -17,13 +17,14 @@ from happy_housing.app.charts import (
     SECONDARY,
     UNDERPRICED,
     bar_chart,
+    diverging_bar_chart,
     grouped_bar_chart,
     line_chart,
     multi_line_chart,
     scatter_chart,
     stacked_histogram,
 )
-from happy_housing.app.data import load_scored, processed_dir
+from happy_housing.app.data import load_scored, load_shap_bundle, processed_dir
 from happy_housing.app.explore_nav import (
     listing_id_from_board_selection,
     open_explore_offer,
@@ -32,17 +33,22 @@ from happy_housing.app.property_filter_ui import render_property_attr_filters
 from happy_housing.app.stats_filters import StatsFilterState, apply_stats_filters
 from happy_housing.app.stats_insights import (
     affordability_bands,
+    air_quality_ladder,
     aircraft_noise_ladder,
     ask_vs_ink,
     chopin_surcharge,
     commute_cost_curve,
     delta_volcano,
+    distance_price_curve,
     district_scoreboard,
+    high_noise_surcharge,
     market_kpis,
     market_segment_mix,
     market_temperature,
     metro_price_curve,
     monthly_trends,
+    noise_source_premiums,
+    noise_total_ladder,
     normalize_district,
     price_band_inventory,
     room_ladder,
@@ -55,7 +61,13 @@ from happy_housing.app.stats_insights import (
     transit_price_curve,
     year_paradox,
 )
+from happy_housing.app.stats_xai import booster_importance_table, mean_abs_shap_table
 from happy_housing.app.ui_help import STATS_FILTER_HELP
+from happy_housing.models.train import (
+    FEATURE_COLUMNS,
+    build_feature_matrix,
+    model_feature_columns,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -128,6 +140,12 @@ def _sidebar_filters(frame: pd.DataFrame) -> StatsFilterState:
         key="stats_oou",
         help=STATS_FILTER_HELP["oou"],
     )
+    high_noise = st.sidebar.selectbox(
+        "Total noise Lden ≥ 55 dB",
+        options=["(all)", "inside", "outside"],
+        key="stats_high_noise",
+        help=STATS_FILTER_HELP["high_noise"],
+    )
     price_range = st.sidebar.slider(
         "Listing zł/m²",
         min_value=float(ppm_min),
@@ -161,6 +179,7 @@ def _sidebar_filters(frame: pd.DataFrame) -> StatsFilterState:
         sources=list(picked_sources),
         months=list(picked_months),
         oou=str(oou),
+        high_noise=str(high_noise),
         valuation=str(valuation),
         price_min=float(price_range[0]),
         price_max=float(price_range[1]),
@@ -172,8 +191,8 @@ def _sidebar_filters(frame: pd.DataFrame) -> StatsFilterState:
     )
 
 
-def _kpi_row(kpis: dict[str, float]) -> None:
-    c1, c2, c3, c4, c5 = st.columns(5)
+def _kpi_row(kpis: dict[str, float], frame: pd.DataFrame) -> None:
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
     c1.metric("Offers in lens", f"{int(kpis['n_offers']):,}")
     med = kpis["median_price_per_m2"]
     c2.metric("Median zł/m²", f"{med:,.0f}" if med == med else "—")
@@ -186,13 +205,22 @@ def _kpi_row(kpis: dict[str, float]) -> None:
         "Share overpriced",
         f"{100 * share:.0f}%" if share == share else "—",
     )
+    if "in_high_noise" in frame.columns:
+        flag = pd.to_numeric(frame["in_high_noise"], errors="coerce")
+        noisy = float(flag.eq(1).mean()) if flag.notna().any() else float("nan")
+    else:
+        noisy = float("nan")
+    c6.metric(
+        "Share high noise",
+        f"{100 * noisy:.0f}%" if noisy == noisy else "—",
+        help="Total Lden ≥ 55 dB (UM 2022 energy sum).",
+    )
 
 
 def _tab_overview(frame: pd.DataFrame) -> None:
     _section(
-        "Inventory mix",
-        "Proptech-style supply snapshot — where listings cluster by price, "
-        "rooms, and source (ask vs ink).",
+        "1 · Inventory mix",
+        "Where supply clusters by zł/m², rooms, and ask vs transaction source.",
     )
     bands = price_band_inventory(frame)
     left, right = st.columns(2)
@@ -216,9 +244,8 @@ def _tab_overview(frame: pd.DataFrame) -> None:
 
     c1, c2 = st.columns(2)
     with c1:
-        rooms = rooms_inventory(frame)
         bar_chart(
-            rooms,
+            rooms_inventory(frame),
             x="n",
             y="rooms",
             title="Supply by rooms",
@@ -237,33 +264,14 @@ def _tab_overview(frame: pd.DataFrame) -> None:
                 title="Median zł/m² by source",
                 x_title="zł/m²",
             )
-            show = src.copy()
-            show["share"] = (show["share"] * 100).round(0)
-            st.dataframe(
-                show,
-                hide_index=True,
-                width="stretch",
-                column_config={
-                    "share": st.column_config.NumberColumn("Share", format="%.0f%%"),
-                    "median_ppm": st.column_config.NumberColumn(
-                        "Median zł/m²", format="%.0f"
-                    ),
-                    "median_delta": st.column_config.NumberColumn(
-                        "Median delta", format="%+.0f"
-                    ),
-                },
-            )
 
     seg = market_segment_mix(frame)
     _section(
-        "Primary vs secondary",
+        "2 · Primary vs secondary",
         "New-build share vs resale — useful when comparing ask premiums.",
     )
     if seg.empty:
-        st.info(
-            "No known primary/secondary market flag yet — "
-            "re-run pipeline so Otodom market / RCN rodzaj_rynku are scored."
-        )
+        st.info("No known primary/secondary market flag in the lens.")
     else:
         bar_chart(
             seg,
@@ -273,11 +281,38 @@ def _tab_overview(frame: pd.DataFrame) -> None:
             x_title="Offers",
         )
 
-
-def _tab_trends(frame: pd.DataFrame) -> None:
     _section(
-        "Price & fair-value trends",
-        "How listing and model medians move month-to-month in the current lens.",
+        "3 · Budget ladder",
+        "What total asking price buys — area and zł/m² by budget band.",
+    )
+    afford = affordability_bands(frame)
+    if afford.empty:
+        st.info("Need asking prices (price_pln) in the lens.")
+        return
+    a1, a2 = st.columns(2)
+    with a1:
+        bar_chart(
+            afford,
+            x="n",
+            y="price_band",
+            title="Offers by total price band",
+            color=PRIMARY,
+            x_title="Offers",
+        )
+    with a2:
+        line_chart(
+            afford,
+            x="price_band",
+            y="median_ppm",
+            title="Median zł/m² by budget band",
+            y_title="zł/m²",
+        )
+
+
+def _tab_market(frame: pd.DataFrame, *, min_offers: int, top_n: int) -> None:
+    _section(
+        "1 · Price & fair-value trends",
+        "Listing vs model medians month-to-month in the current lens.",
     )
     trends = monthly_trends(frame)
     if trends.empty or len(trends) < 2:
@@ -323,12 +358,11 @@ def _tab_trends(frame: pd.DataFrame) -> None:
             )
 
     _section(
-        "Residual pressure",
-        "Distribution of listing - model zł/m² — where the market sits vs fair value.",
+        "2 · Residual pressure",
+        "Distribution of listing - model zł/m².",
     )
-    volcano = delta_volcano(frame)
     stacked_histogram(
-        volcano,
+        delta_volcano(frame),
         value="delta",
         category="side",
         title="Delta distribution",
@@ -337,12 +371,9 @@ def _tab_trends(frame: pd.DataFrame) -> None:
         x_title="Delta zł/m²",
     )
 
-
-def _tab_value(frame: pd.DataFrame, *, min_offers: int, top_n: int) -> None:
     _section(
-        "District value board",
-        "Compare ask vs model by district. Negative median delta → model sees "
-        "more bargains.",
+        "3 · District value board",
+        "Ask vs model by district. Negative median delta → more bargains.",
     )
     board = district_scoreboard(frame, min_offers=min_offers)
     if board.empty:
@@ -357,7 +388,7 @@ def _tab_value(frame: pd.DataFrame, *, min_offers: int, top_n: int) -> None:
                 board.head(15),
                 x="median_delta",
                 y="district",
-                title="Median delta by district (most underpriced first)",
+                title="Median delta by district",
                 color=PRIMARY,
                 x_title="Median delta zł/m²",
             )
@@ -386,8 +417,8 @@ def _tab_value(frame: pd.DataFrame, *, min_offers: int, top_n: int) -> None:
             )
 
     _section(
-        "Ask vs ink",
-        "Otodom asking medians versus RCN transaction medians — listing premium.",
+        "4 · Ask vs ink",
+        "Otodom asking medians versus RCN transaction medians.",
     )
     gap = ask_vs_ink(frame, min_offers=max(2, min_offers // 2))
     if gap.empty:
@@ -424,101 +455,149 @@ def _tab_value(frame: pd.DataFrame, *, min_offers: int, top_n: int) -> None:
     }
 
     _section(
-        "Hunt list",
-        "Strongest model-underpriced offers in the lens — "
-        "click a row to open Explore → Offer.",
+        "5 · Hunt & watch",
+        "Strongest underpriced / overpriced offers — click a row → Explore Offer.",
     )
-    hunt = top_value_offers(frame, n=top_n, side="underpriced")
-    if hunt.empty:
-        st.info("No underpriced offers in the current lens.")
-    else:
-        hunt_q = st.text_input(
-            "Search hunt list",
-            key="stats_hunt_search",
-            placeholder="district, id, title…",
-        )
-        hunt_show = filter_dataframe_text(hunt, hunt_q)
-        st.caption(f"{len(hunt_show)} of {len(hunt)} rows · click row → Offer")
-        hunt_event = st.dataframe(
-            hunt_show,
-            hide_index=True,
-            width="stretch",
-            on_select="rerun",
-            selection_mode="single-row",
-            key="stats_hunt_table",
-            column_config=value_cols,
-        )
-        hunt_id = listing_id_from_board_selection(hunt_show, hunt_event)
-        if hunt_id is not None:
-            open_explore_offer(hunt_id)
-
-    _section(
-        "Watch list",
-        "Most overpriced vs the model — useful for negotiation or avoidance. "
-        "Click a row to open Explore → Offer.",
-    )
-    watch = top_value_offers(frame, n=top_n, side="overpriced")
-    if watch.empty:
-        st.info("No overpriced offers in the current lens.")
-    else:
-        watch_q = st.text_input(
-            "Search watch list",
-            key="stats_watch_search",
-            placeholder="district, id, title…",
-        )
-        watch_show = filter_dataframe_text(watch, watch_q)
-        st.caption(f"{len(watch_show)} of {len(watch)} rows · click row → Offer")
-        watch_event = st.dataframe(
-            watch_show,
-            hide_index=True,
-            width="stretch",
-            on_select="rerun",
-            selection_mode="single-row",
-            key="stats_watch_table",
-            column_config=value_cols,
-        )
-        watch_id = listing_id_from_board_selection(watch_show, watch_event)
-        if watch_id is not None:
-            open_explore_offer(watch_id)
+    hunt_col, watch_col = st.columns(2)
+    with hunt_col:
+        st.markdown("**Hunt (underpriced)**")
+        hunt = top_value_offers(frame, n=top_n, side="underpriced")
+        if hunt.empty:
+            st.info("No underpriced offers.")
+        else:
+            hunt_event = st.dataframe(
+                hunt,
+                hide_index=True,
+                width="stretch",
+                on_select="rerun",
+                selection_mode="single-row",
+                key="stats_hunt_table",
+                column_config=value_cols,
+            )
+            hunt_id = listing_id_from_board_selection(hunt, hunt_event)
+            if hunt_id is not None:
+                open_explore_offer(hunt_id)
+    with watch_col:
+        st.markdown("**Watch (overpriced)**")
+        watch = top_value_offers(frame, n=top_n, side="overpriced")
+        if watch.empty:
+            st.info("No overpriced offers.")
+        else:
+            watch_event = st.dataframe(
+                watch,
+                hide_index=True,
+                width="stretch",
+                on_select="rerun",
+                selection_mode="single-row",
+                key="stats_watch_table",
+                column_config=value_cols,
+            )
+            watch_id = listing_id_from_board_selection(watch, watch_event)
+            if watch_id is not None:
+                open_explore_offer(watch_id)
 
 
-def _tab_place(frame: pd.DataFrame) -> None:
+def _tab_livability(frame: pd.DataFrame) -> None:
     chopin = chopin_surcharge(frame)
+    noisy = high_noise_surcharge(frame)
     transit = transit_gravity(frame)
 
     _section(
-        "Location premiums",
-        "Commute, transit, metro, and aircraft-noise bands — classic livability "
-        "price curves from market-intelligence dashboards.",
+        "1 · Noise premiums",
+        "UM 2022 strategic maps — total energy-sum and per-source exposure "
+        "(≥55 dB) vs quieter stock.",
     )
     a, b, c, d = st.columns(4)
-    surcharge = chopin["surcharge_pct"]
     a.metric(
-        "Chopin surcharge",
-        f"{surcharge:+.1f}%" if surcharge == surcharge else "—",
-        help="Median zł/m² inside Lden ≥55 dB vs outside.",
-    )
-    b.metric(
-        "Inside Lden≥55 median",
-        f"{chopin['median_inside']:,.0f}"
-        if chopin["median_inside"] == chopin["median_inside"]
+        "High-noise surcharge",
+        f"{noisy['surcharge_pct']:+.1f}%"
+        if noisy["surcharge_pct"] == noisy["surcharge_pct"]
         else "—",
+        help="Median zł/m² inside total Lden ≥55 vs outside.",
+    )
+    denom = max(noisy["n_inside"] + noisy["n_outside"], 1.0)
+    b.metric(
+        "High-noise share",
+        f"{100 * noisy['n_inside'] / denom:.0f}%",
     )
     c.metric(
+        "Aircraft surcharge",
+        f"{chopin['surcharge_pct']:+.1f}%"
+        if chopin["surcharge_pct"] == chopin["surcharge_pct"]
+        else "—",
+    )
+    d.metric(
         "Transit ≤300 m",
         f"{100 * transit['share_within']:.0f}%"
         if transit["share_within"] == transit["share_within"]
         else "—",
     )
-    d.metric("Lden≥55 sample", f"{int(chopin['n_inside']):,}")
 
+    n1, n2 = st.columns(2)
+    with n1:
+        line_chart(
+            noise_total_ladder(frame),
+            x="lden_band",
+            y="median_price_per_m2",
+            title="Median zł/m² by total Lden",
+            y_title="zł/m²",
+        )
+    with n2:
+        line_chart(
+            aircraft_noise_ladder(frame),
+            x="lden_band",
+            y="median_price_per_m2",
+            title="Median zł/m² by aircraft Lden",
+            y_title="zł/m²",
+        )
+
+    premiums = noise_source_premiums(frame)
+    if not premiums.empty:
+        bar_chart(
+            premiums,
+            x="premium_pct",
+            y="source",
+            title="zł/m² premium when source ≥ 55 dB",
+            x_title="Premium vs quieter (%)",
+        )
+        st.dataframe(
+            premiums,
+            hide_index=True,
+            width="stretch",
+            column_config={
+                "n_exposed": st.column_config.NumberColumn("Exposed", format="%.0f"),
+                "n_quiet": st.column_config.NumberColumn("Quiet", format="%.0f"),
+                "median_ppm_exposed": st.column_config.NumberColumn(
+                    "Exposed zł/m²", format="%.0f"
+                ),
+                "median_ppm_quiet": st.column_config.NumberColumn(
+                    "Quiet zł/m²", format="%.0f"
+                ),
+                "premium_pct": st.column_config.NumberColumn(
+                    "Premium %", format="%+.1f"
+                ),
+            },
+        )
+
+    _section(
+        "2 · Access & mobility",
+        "Commute, transit, metro, bike paths — classic livability price curves.",
+    )
     left, right = st.columns(2)
     with left:
         line_chart(
             commute_cost_curve(frame),
             x="commute_bin",
             y="median_price_per_m2",
-            title="Median zł/m² by commute to Daszyńskiego",
+            title="Median zł/m² by commute",
+            y_title="zł/m²",
+        )
+        line_chart(
+            metro_price_curve(frame),
+            x="metro_band",
+            y="median_price_per_m2",
+            title="Median zł/m² by metro distance",
+            color=PRIMARY,
             y_title="zł/m²",
         )
     with right:
@@ -529,42 +608,100 @@ def _tab_place(frame: pd.DataFrame) -> None:
             title="Median zł/m² by transit-stop distance",
             y_title="zł/m²",
         )
-
-    m1, m2 = st.columns(2)
-    with m1:
         line_chart(
-            metro_price_curve(frame),
-            x="metro_band",
+            distance_price_curve(
+                frame,
+                dist_col="dist_bike_path_m",
+                bins=[0, 100, 250, 500, 1000, 50_000],
+                labels=["<100m", "100-250m", "250-500m", "500m-1km", "1km+"],
+                band_col="bike_band",
+            ),
+            x="bike_band",
             y="median_price_per_m2",
-            title="Median zł/m² by metro distance",
-            color=PRIMARY,
+            title="Median zł/m² by bike-path distance",
             y_title="zł/m²",
         )
-    with m2:
-        line_chart(
-            aircraft_noise_ladder(frame),
-            x="lden_band",
-            y="median_price_per_m2",
-            title="Median zł/m² by aircraft Lden band",
-            y_title="zł/m²",
-        )
-
-    line_chart(
-        safety_radius(frame),
-        x="fire_band",
-        y="median_price_per_m2",
-        title="Median zł/m² by fire-station distance",
-        y_title="zł/m²",
-    )
 
     _section(
-        "District mood",
-        "Bubbles: x = median ask, y = median delta, size = offers, "
-        "colour = residual IQR.",
+        "3 · Environment & restricted land",
+        "Traffic proxy, parks, air quality, fire stations, and zone proximity.",
     )
-    temp = market_temperature(frame)
+    e1, e2 = st.columns(2)
+    with e1:
+        line_chart(
+            distance_price_curve(
+                frame,
+                dist_col="dist_park_m",
+                bins=[0, 200, 500, 1000, 2000, 50_000],
+                labels=["<200m", "200-500m", "500m-1km", "1-2km", "2km+"],
+                band_col="park_band",
+            ),
+            x="park_band",
+            y="median_price_per_m2",
+            title="Median zł/m² by park distance",
+            y_title="zł/m²",
+        )
+        line_chart(
+            safety_radius(frame),
+            x="fire_band",
+            y="median_price_per_m2",
+            title="Median zł/m² by fire-station distance",
+            y_title="zł/m²",
+        )
+        line_chart(
+            air_quality_ladder(frame),
+            x="aqi_band",
+            y="median_price_per_m2",
+            title="Median zł/m² by nearest AQI",
+            y_title="zł/m²",
+        )
+    with e2:
+        line_chart(
+            distance_price_curve(
+                frame,
+                dist_col="dist_traffic_road_m",
+                bins=[0, 50, 100, 200, 500, 50_000],
+                labels=["<50m", "50-100m", "100-200m", "200-500m", "500m+"],
+                band_col="traffic_band",
+            ),
+            x="traffic_band",
+            y="median_price_per_m2",
+            title="Median zł/m² by drive-road distance",
+            y_title="zł/m²",
+        )
+        line_chart(
+            distance_price_curve(
+                frame,
+                dist_col="dist_rail_area_m",
+                bins=[0, 200, 500, 1000, 2000, 50_000],
+                labels=["<200m", "200-500m", "500m-1km", "1-2km", "2km+"],
+                band_col="rail_band",
+            ),
+            x="rail_band",
+            y="median_price_per_m2",
+            title="Median zł/m² by rail-yard distance",
+            y_title="zł/m²",
+        )
+        line_chart(
+            distance_price_curve(
+                frame,
+                dist_col="dist_military_m",
+                bins=[0, 500, 1000, 2000, 5000, 50_000],
+                labels=["<500m", "500m-1km", "1-2km", "2-5km", "5km+"],
+                band_col="military_band",
+            ),
+            x="military_band",
+            y="median_price_per_m2",
+            title="Median zł/m² by military-area distance",
+            y_title="zł/m²",
+        )
+
+    _section(
+        "4 · District mood",
+        "Bubbles: x = median ask, y = median delta, size = offers.",
+    )
     scatter_chart(
-        temp,
+        market_temperature(frame),
         x="median_ppm",
         y="median_delta",
         size="n",
@@ -607,61 +744,124 @@ def _tab_stock(frame: pd.DataFrame) -> None:
     )
 
 
-def _tab_afford(frame: pd.DataFrame) -> None:
+def _tab_model(frame: pd.DataFrame, settings: AppSettings) -> None:
     _section(
-        "Budget ladder",
-        "What total asking price buys — area and zł/m² by budget band "
-        "(affordability view common on buyer dashboards).",
+        "1 · What the model listens to",
+        "LightGBM gain importance from the trained booster, plus global mean "
+        "|SHAP| on a sample of the current lens.",
     )
-    afford = affordability_bands(frame)
-    if afford.empty:
-        st.info("Need asking prices (price_pln) in the lens.")
+    bundle = load_shap_bundle()
+    if bundle is None:
+        st.info("Model file missing — retrain from Admin → Pipeline.")
         return
+    booster, explainer = bundle
+    top_n = int(settings.stats_xai_top_n)
+    sample_n = int(settings.stats_shap_sample_n)
+
+    importance = booster_importance_table(booster, top_n=top_n)
     left, right = st.columns(2)
     with left:
-        bar_chart(
-            afford,
-            x="n",
-            y="price_band",
-            title="Offers by total price band",
-            color=PRIMARY,
-            x_title="Offers",
-        )
+        if importance.empty:
+            st.info("No feature importance available.")
+        else:
+            bar_chart(
+                importance,
+                x="importance",
+                y="feature",
+                title=f"Top {len(importance)} features (gain)",
+                color=PRIMARY,
+                x_title="Gain",
+            )
     with right:
-        bar_chart(
-            afford,
-            x="median_area_m2",
-            y="price_band",
-            title="Median area by budget",
-            x_title="m²",
+        with st.spinner(f"Computing SHAP on up to {sample_n:,} offers…"):
+            shap_table = mean_abs_shap_table(
+                booster,
+                explainer,
+                frame,
+                sample_n=sample_n,
+                top_n=top_n,
+            )
+        if shap_table.empty:
+            st.info("SHAP summary unavailable for this lens.")
+        else:
+            bar_chart(
+                shap_table,
+                x="mean_abs_shap",
+                y="feature",
+                title=f"Mean |SHAP| (sample ≤{sample_n})",
+                x_title="Mean |SHAP| zł/m²",
+            )
+            signed = shap_table.copy()
+            signed["side"] = np.where(
+                signed["mean_shap"] >= 0, "raises ask", "lowers ask"
+            )
+            diverging_bar_chart(
+                signed,
+                feature="feature",
+                value="mean_shap",
+                category="side",
+                title="Mean signed SHAP (direction)",
+                color_domain=["raises ask", "lowers ask"],
+                color_range=[OVERPRICED, UNDERPRICED],
+                x_title="Mean SHAP zł/m²",
+            )
+
+    cols = model_feature_columns(booster)
+    st.caption(
+        f"Booster uses **{len(cols)}** features "
+        f"(catalog has {len(FEATURE_COLUMNS)}). "
+        "Tune sample size in Admin → Stats."
+    )
+
+    _section(
+        "2 · Example offer explanation",
+        "SHAP for the strongest underpriced offer in the lens "
+        "(same idea as Explore → Offer → Explain).",
+    )
+    example = top_value_offers(frame, n=1, side="underpriced")
+    if example.empty:
+        st.info("No underpriced offer to explain in this lens.")
+        return
+    listing_id = str(example.iloc[0]["listing_id"])
+    st.markdown(f"**Listing** `{listing_id}`")
+    row = frame.loc[frame["listing_id"].astype(str) == listing_id]
+    if row.empty:
+        st.warning("Could not locate the example row in the lens.")
+        return
+    try:
+        features = build_feature_matrix(row, cols)
+        explanation = explainer(features)
+        values = np.asarray(explanation.values[0], dtype=float)
+        names = list(features.columns)
+        order = np.argsort(np.abs(values))[::-1][:top_n]
+        chart_df = pd.DataFrame({
+            "feature": [names[i] for i in order],
+            "shap": values[order],
+            "side": ["raises ask" if values[i] >= 0 else "lowers ask" for i in order],
+        })
+        diverging_bar_chart(
+            chart_df,
+            feature="feature",
+            value="shap",
+            category="side",
+            title="Feature contributions (SHAP)",
+            color_domain=["raises ask", "lowers ask"],
+            color_range=[OVERPRICED, UNDERPRICED],
+            x_title="SHAP contribution to predicted zł/m²",
         )
-    line_chart(
-        afford,
-        x="price_band",
-        y="median_ppm",
-        title="Median zł/m² by budget band",
-        y_title="zł/m²",
-    )
-    show = afford.copy()
-    show["share"] = (show["share"] * 100).round(0)
-    st.dataframe(
-        show,
-        hide_index=True,
-        width="stretch",
-        column_config={
-            "share": st.column_config.NumberColumn("Share", format="%.0f%%"),
-            "median_area_m2": st.column_config.NumberColumn("Median m²", format="%.0f"),
-            "median_ppm": st.column_config.NumberColumn("Median zł/m²", format="%.0f"),
-        },
-    )
+        if st.button("Open this offer in Explore", key="stats_xai_open_offer"):
+            open_explore_offer(listing_id)
+    except Exception as exc:
+        st.warning(f"SHAP unavailable: {exc}")
 
 
 def render_stats() -> None:
     """Render filterable Stats analytics for buyers and investors."""
     logger.info("Rendering Stats")
     st.caption(
-        "Inventory, trends, district value, livability premiums, stock mix, and "
-        "affordability — sidebar filters apply to every chart."
+        "Five focused lenses: inventory → market value → livability "
+        "(noise / access / environment) → stock mix → model XAI. "
+        "Sidebar filters apply everywhere."
     )
 
     try:
@@ -686,50 +886,33 @@ def render_stats() -> None:
         st.warning("No offers match the current filters — widen the lens.")
         st.stop()
 
-    _kpi_row(market_kpis(filtered))
+    _kpi_row(market_kpis(filtered), filtered)
     st.caption(
         f"Lens: **{len(filtered):,}** / {len(frame):,} scored offers · "
         "open outliers on Explore."
     )
 
-    (
-        tab_overview,
-        tab_trends,
-        tab_value,
-        tab_place,
-        tab_stock,
-        tab_afford,
-    ) = st.tabs(
-        [
-            "Overview",
-            "Trends",
-            "Value",
-            "Place",
-            "Stock",
-            "Afford",
-        ],
+    tab_overview, tab_market, tab_live, tab_stock, tab_model = st.tabs(
+        ["Overview", "Market", "Livability", "Stock", "Model"],
         key="stats_main_tabs",
         on_change="rerun",
     )
     with tab_overview:
         if tab_overview.open:
             _tab_overview(filtered)
-    with tab_trends:
-        if tab_trends.open:
-            _tab_trends(filtered)
-    with tab_value:
-        if tab_value.open:
-            _tab_value(
+    with tab_market:
+        if tab_market.open:
+            _tab_market(
                 filtered,
                 min_offers=settings.stats_min_district_offers,
                 top_n=settings.stats_top_n,
             )
-    with tab_place:
-        if tab_place.open:
-            _tab_place(filtered)
+    with tab_live:
+        if tab_live.open:
+            _tab_livability(filtered)
     with tab_stock:
         if tab_stock.open:
             _tab_stock(filtered)
-    with tab_afford:
-        if tab_afford.open:
-            _tab_afford(filtered)
+    with tab_model:
+        if tab_model.open:
+            _tab_model(filtered, settings)

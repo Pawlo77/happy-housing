@@ -182,6 +182,10 @@ STATS_FILTER_HELP: dict[str, str] = {
         "Aircraft Lden ≥55 dB filter. Inside bands ≈ worse noise livability "
         "and often softer willingness-to-pay."
     ),
+    "high_noise": (
+        "Total energy-sum Lden ≥55 dB (road+rail+tram+aircraft+industry). "
+        "Stronger city-wide noise cut than aircraft-only."
+    ),
     "price": "Listing zł/m² range — price attractiveness band for Stats.",
     "area": "Floor-area range — unit size affects both price and living space.",
     "rooms": "Room-count range — layout livability and price tier.",

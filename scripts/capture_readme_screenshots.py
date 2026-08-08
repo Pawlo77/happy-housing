@@ -74,7 +74,7 @@ def main() -> None:
             print(f"skip Explore Chat: {exc}")
 
         _nav(page, "Stats")
-        page.get_by_text("sidebar filters apply", exact=False).first.wait_for(
+        page.get_by_text("Five focused lenses", exact=False).first.wait_for(
             timeout=60_000
         )
         page.wait_for_timeout(4000)
@@ -85,17 +85,23 @@ def main() -> None:
             print(f"skip Stats Overview tab: {exc}")
         _shot(page, "08-stats.png")
         try:
-            page.get_by_role("tab", name="Value").click()
+            page.get_by_role("tab", name="Market").click()
             page.wait_for_timeout(3000)
-            _shot(page, "08b-stats-value.png")
+            _shot(page, "08b-stats-market.png")
         except Exception as exc:
-            print(f"skip Stats Value: {exc}")
+            print(f"skip Stats Market: {exc}")
         try:
-            page.get_by_role("tab", name="Afford").click()
-            page.wait_for_timeout(3000)
-            _shot(page, "08c-stats-afford.png")
+            page.get_by_role("tab", name="Livability").click()
+            page.wait_for_timeout(4000)
+            _shot(page, "08c-stats-livability.png")
         except Exception as exc:
-            print(f"skip Stats Afford: {exc}")
+            print(f"skip Stats Livability: {exc}")
+        try:
+            page.get_by_role("tab", name="Model").click()
+            page.wait_for_timeout(8000)
+            _shot(page, "08d-stats-model.png")
+        except Exception as exc:
+            print(f"skip Stats Model: {exc}")
 
         _nav(page, "Admin")
         page.wait_for_timeout(3000)
