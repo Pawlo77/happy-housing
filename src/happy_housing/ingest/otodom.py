@@ -179,6 +179,38 @@ def _char_map(characteristics: object) -> dict[str, str]:
     return out
 
 
+def flags_from_extras_and_tags(
+    *,
+    extras: set[str],
+    tags: set[str],
+    floor_label: str | None,
+    floor_no: int | float | None,
+) -> dict[str, int]:
+    """Derive boolean amenity / attic flags from Otodom extras and search tags."""
+    tag_u = {str(t).upper() for t in tags}
+    extras_l = {str(e).lower() for e in extras}
+    has_garage = int("garage" in extras_l or bool({"GARAGE"} & tag_u))
+    has_outdoor_parking = int(
+        "parking" in extras_l or bool({"PARKING_SPOT", "PARKING"} & tag_u)
+    )
+    # If both garage and parking tokens exist, keep both flags.
+    has_basement = int("basement" in extras_l or "BASEMENT" in tag_u)
+    label = str(floor_label or "").upper()
+    is_attic = int(
+        label in {"GARRET", "ATTIC"} or (floor_no is not None and int(floor_no) >= 99)
+    )
+    return {
+        "has_balcony": int("balcony" in extras_l or "BALCONY" in tag_u),
+        "has_garage": has_garage,
+        "has_outdoor_parking": has_outdoor_parking,
+        "has_lift": int("lift" in extras_l or bool({"LIFT", "ELEVATOR"} & tag_u)),
+        "has_terrace": int("terrace" in extras_l or "TERRACE" in tag_u),
+        "has_garden": int("garden" in extras_l or "GARDEN" in tag_u),
+        "has_basement": has_basement,
+        "is_attic": is_attic,
+    }
+
+
 def flatten_otodom_ad(ad: dict[str, Any]) -> dict[str, Any]:
     """Flatten an Otodom detail ``ad`` payload into listing columns."""
     coords = (ad.get("location") or {}).get("coordinates") or {}
@@ -227,6 +259,14 @@ def flatten_otodom_ad(ad: dict[str, Any]) -> dict[str, Any]:
     if "agency" in advertiser or "agency" in extras:
         is_private = 0
 
+    flags = flags_from_extras_and_tags(
+        extras=extras,
+        tags=set(),
+        floor_label=chars.get("floor_no"),
+        floor_no=floor_no,
+    )
+    estate = str(ad.get("estate") or chars.get("estate") or "").strip().upper() or None
+
     return {
         "lat": float(lat) if lat is not None else None,
         "lon": float(lon) if lon is not None else None,
@@ -236,6 +276,7 @@ def flatten_otodom_ad(ad: dict[str, Any]) -> dict[str, Any]:
         "market": market or None,
         "market_primary": 1 if market == "primary" else (0 if market else None),
         "building_type": chars.get("building_type"),
+        "estate": estate,
         "floor_no": floor_no,
         "building_floors_num": building_floors_num,
         "construction_status": chars.get("construction_status"),
@@ -245,11 +286,14 @@ def flatten_otodom_ad(ad: dict[str, Any]) -> dict[str, Any]:
         "heating": chars.get("heating"),
         "rent": rent,
         "rooms": rooms,
-        "has_balcony": 1 if "balcony" in extras else 0,
-        "has_garage": 1 if "garage" in extras or "parking" in extras else 0,
-        "has_lift": 1 if "lift" in extras else 0,
-        "has_terrace": 1 if "terrace" in extras else 0,
-        "has_garden": 1 if "garden" in extras else 0,
+        "has_balcony": flags["has_balcony"],
+        "has_garage": flags["has_garage"],
+        "has_outdoor_parking": flags["has_outdoor_parking"],
+        "has_lift": flags["has_lift"],
+        "has_terrace": flags["has_terrace"],
+        "has_garden": flags["has_garden"],
+        "has_basement": flags["has_basement"],
+        "is_attic": flags["is_attic"],
         "is_private_owner": is_private,
         "advertiser_type": advertiser or None,
         "characteristics_json": json.dumps(
@@ -448,6 +492,12 @@ def _normalize_search_item(item: dict[str, Any]) -> dict[str, Any]:
     tags = _tags_from_search(item)
     floor_no = parse_floor_no(item.get("floorNumber"))
     is_private = item.get("isPrivateOwner")
+    flags = flags_from_extras_and_tags(
+        extras=set(),
+        tags=tags,
+        floor_label=str(item.get("floorNumber") or "") or None,
+        floor_no=floor_no,
+    )
     return {
         "listing_id": f"OTO-{item.get('id')}",
         "otodom_id": item.get("id"),
@@ -470,11 +520,14 @@ def _normalize_search_item(item: dict[str, Any]) -> dict[str, Any]:
         "is_private_owner": (
             1 if is_private is True else (0 if is_private is False else None)
         ),
-        "has_balcony": 1 if "BALCONY" in tags else 0,
-        "has_garage": 1 if {"GARAGE", "PARKING_SPOT", "PARKING"} & tags else 0,
-        "has_lift": 1 if "LIFT" in tags or "ELEVATOR" in tags else 0,
-        "has_terrace": 1 if "TERRACE" in tags else 0,
-        "has_garden": 1 if "GARDEN" in tags else 0,
+        "has_balcony": flags["has_balcony"],
+        "has_garage": flags["has_garage"],
+        "has_outdoor_parking": flags["has_outdoor_parking"],
+        "has_lift": flags["has_lift"],
+        "has_terrace": flags["has_terrace"],
+        "has_garden": flags["has_garden"],
+        "has_basement": flags["has_basement"],
+        "is_attic": flags["is_attic"],
         "tags_json": json.dumps(sorted(tags), ensure_ascii=False),
         "lat": None,
         "lon": None,
@@ -728,9 +781,12 @@ def scrape_otodom_warsaw(
         for flag in (
             "has_balcony",
             "has_garage",
+            "has_outdoor_parking",
             "has_lift",
             "has_terrace",
             "has_garden",
+            "has_basement",
+            "is_attic",
         ):
             out[flag] = max(int(row.get(flag) or 0), int(detail.get(flag) or 0))
         if (
