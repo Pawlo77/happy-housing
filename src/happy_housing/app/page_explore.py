@@ -93,6 +93,7 @@ from happy_housing.app.preferences import (
     preferences_path,
     save_preferences,
 )
+from happy_housing.app.property_filter_ui import render_property_attr_filters
 from happy_housing.app.recommender import (
     impressions_path,
     load_impressions,
@@ -241,6 +242,7 @@ def _sidebar_filters(frame: pd.DataFrame) -> tuple[FilterState, bool]:
             "Offer tab stays unfiltered by star."
         ),
     )
+    prop = render_property_attr_filters("explore")
     return (
         FilterState(
             district=district,
@@ -248,6 +250,7 @@ def _sidebar_filters(frame: pd.DataFrame) -> tuple[FilterState, bool]:
             oou=oou,
             max_price_per_m2=float(max_ppm),
             max_age_months=max_age_months,
+            **prop,
         ),
         starred_only,
     )

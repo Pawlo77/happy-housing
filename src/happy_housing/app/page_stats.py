@@ -29,6 +29,7 @@ from happy_housing.app.explore_nav import (
     listing_id_from_board_selection,
     open_explore_offer,
 )
+from happy_housing.app.property_filter_ui import render_property_attr_filters
 from happy_housing.app.stats_filters import StatsFilterState, apply_stats_filters
 from happy_housing.app.stats_insights import (
     affordability_bands,
@@ -153,6 +154,9 @@ def _sidebar_filters(frame: pd.DataFrame) -> StatsFilterState:
         help=STATS_FILTER_HELP["rooms"],
     )
 
+    with st.sidebar:
+        prop = render_property_attr_filters("stats")
+
     return StatsFilterState(
         districts=list(picked_districts),
         sources=list(picked_sources),
@@ -165,6 +169,7 @@ def _sidebar_filters(frame: pd.DataFrame) -> StatsFilterState:
         area_max=float(area_range[1]),
         rooms_min=int(rooms_range[0]),
         rooms_max=int(rooms_range[1]),
+        **prop,
     )
 
 

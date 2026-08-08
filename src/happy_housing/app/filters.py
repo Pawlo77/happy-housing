@@ -7,6 +7,8 @@ from datetime import date
 
 import pandas as pd
 
+from happy_housing.app.listing_attrs import apply_property_attr_filters
+
 
 @dataclass(slots=True)
 class FilterState:
@@ -22,6 +24,24 @@ class FilterState:
     """Upper bound on listing zł/m²."""
     max_age_months: int | None = None
     """Keep offers with age ≤ this many months; ``None`` = no age filter."""
+    object_type: str = "(all)"
+    """``flat`` / ``house`` / ``(all)``."""
+    ownership: str = "(all)"
+    """``full`` / ``usufruct`` / ``other`` / ``(all)``."""
+    has_garage: str = "(all)"
+    has_outdoor_parking: str = "(all)"
+    has_basement: str = "(all)"
+    has_balcony: str = "(all)"
+    has_garden: str = "(all)"
+    has_terrace: str = "(all)"
+    is_attic: str = "(all)"
+    needs_renovation: str = "(all)"
+    plumbing_replaced: str = "(all)"
+    wiring_replaced: str = "(all)"
+    floor_min: int | None = None
+    floor_max: int | None = None
+    year_built_min: int | None = None
+    year_renovated_min: int | None = None
 
 
 def offer_age_months(
@@ -88,7 +108,26 @@ def apply_filters(
     if state.max_age_months is not None:
         ages = offer_age_months(frame, as_of=as_of)
         mask &= ages.notna() & ages.le(float(state.max_age_months))
-    return frame.loc[mask].reset_index(drop=True)
+    filtered = frame.loc[mask].reset_index(drop=True)
+    return apply_property_attr_filters(
+        filtered,
+        object_type=state.object_type,
+        ownership=state.ownership,
+        has_garage=state.has_garage,
+        has_outdoor_parking=state.has_outdoor_parking,
+        has_basement=state.has_basement,
+        has_balcony=state.has_balcony,
+        has_garden=state.has_garden,
+        has_terrace=state.has_terrace,
+        is_attic=state.is_attic,
+        needs_renovation=state.needs_renovation,
+        plumbing_replaced=state.plumbing_replaced,
+        wiring_replaced=state.wiring_replaced,
+        floor_min=state.floor_min,
+        floor_max=state.floor_max,
+        year_built_min=state.year_built_min,
+        year_renovated_min=state.year_renovated_min,
+    )
 
 
 def apply_starred_only(
