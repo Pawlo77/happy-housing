@@ -47,3 +47,24 @@ def test_idw_baseline_predicts_finite() -> None:
     preds = idw_neighborhood_baseline(listings, _rcn_frame(), radius_m=800.0)
     assert len(preds) == 1
     assert preds[0] == preds[0]  # not NaN
+
+
+def test_neighborhood_excludes_self_sale_at_same_coords() -> None:
+    """RCN row at identical lat/lon must not enter its own nbhd aggregates."""
+    rcn = pd.DataFrame({
+        "listing_id": ["RCN-1", "RCN-2"],
+        "lon": [21.0, 21.001],
+        "lat": [52.23, 52.231],
+        "price_per_m2": [10_000.0, 20_000.0],
+    })
+    listings = pd.DataFrame({
+        "listing_id": ["RCN-1"],
+        "lon": [21.0],
+        "lat": [52.23],
+        "price_per_m2": [10_000.0],
+    })
+    out = attach_neighborhood_rcn_features(listings, rcn, radius_m=500.0)
+    # Only RCN-2 should remain as a comp (~111m away)
+    assert float(out.iloc[0]["nbhd_rcn_n"]) == 1.0
+    assert float(out.iloc[0]["nbhd_rcn_median_ppm"]) == 20_000.0
+    assert float(out.iloc[0]["nbhd_rcn_nearest_m"]) > 5.0

@@ -43,11 +43,20 @@ CORE_FEATURE_COLUMNS: tuple[str, ...] = (
     "has_balcony",
     "has_garage",
     "has_lift",
+    "has_terrace",
+    "has_garden",
     "is_private_owner",
     "rent",
+    "building_type",
+    "heating",
+    "construction_status",
+    "building_material",
+    "district",
     "aircraft_lden_db",
     "aircraft_lnight_db",
     "in_oou",
+    "road_lden_db",
+    "rail_lden_db",
     "dist_hospital_m",
     "dist_fire_station_m",
     "dist_police_m",
@@ -59,11 +68,23 @@ CORE_FEATURE_COLUMNS: tuple[str, ...] = (
     "dist_transit_stop_m",
     "dist_metro_m",
     "dist_park_m",
+    "dist_school_m",
+    "dist_shop_m",
     "dist_daszynskiego_m",
     "commute_min",
+    "transit_commute_min",
     "dist_gunb_m",
 )
 """Structural + GIS features (always included)."""
+
+CATEGORICAL_FEATURE_COLUMNS: tuple[str, ...] = (
+    "building_type",
+    "heating",
+    "construction_status",
+    "building_material",
+    "district",
+)
+"""Otodom string attributes encoded as LightGBM categories."""
 
 FEATURE_COLUMNS: tuple[str, ...] = CORE_FEATURE_COLUMNS + NEIGHBORHOOD_FEATURE_COLUMNS
 """Full default feature list including neighborhood RCN comps."""
@@ -77,6 +98,9 @@ _HPO_SPACE: dict[str, list[Any]] = {
     "colsample_bytree": [0.8, 1.0],
 }
 """LightGBM hyperparameter search space for ParameterSampler."""
+
+_LABEL_SOURCES_OTODOM: frozenset[str] = frozenset({"otodom", "fixture"})
+"""Sources treated as ask-price labels when ``train_otodom_labels_only``."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,6 +119,18 @@ class TrainSettings:
     """Include RCN neighborhood features when present on the frame."""
     random_state: int = 42
     """RNG seed for splits and HPO sampling."""
+    train_otodom_labels_only: bool = True
+    """Drop RCN deed rows from training labels (comps still OK as features)."""
+
+
+@dataclass(frozen=True, slots=True)
+class SplitBundle:
+    """One fold's features + target."""
+
+    features: pd.DataFrame
+    """Feature matrix rows."""
+    target: pd.Series
+    """Aligned target values."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,6 +159,8 @@ class TrainResult:
     """Final test metrics of the production model."""
     baseline_metrics: dict[str, float] = field(default_factory=dict)
     """Neighborhood IDW baseline metrics on the test fold (if available)."""
+    train_medians: dict[str, float] = field(default_factory=dict)
+    """Numeric impute medians from the train fold."""
 
 
 def active_feature_columns(*, use_neighborhood: bool = True) -> tuple[str, ...]:
@@ -145,19 +183,114 @@ def model_feature_columns(model: lgb.Booster | lgb.LGBMRegressor) -> tuple[str, 
     return FEATURE_COLUMNS
 
 
+def check_feature_coverage(
+    frame: pd.DataFrame,
+    feature_columns: tuple[str, ...],
+    *,
+    max_missing_fraction: float = 0.85,
+    min_usable: int = 8,
+) -> None:
+    """Raise when too few feature columns have any non-null signal."""
+    del max_missing_fraction  # kept for call-site compat
+    missing = [c for c in feature_columns if c not in frame.columns]
+    usable = 0
+    for col in feature_columns:
+        if col not in frame.columns:
+            continue
+        if col in CATEGORICAL_FEATURE_COLUMNS:
+            if frame[col].notna().any():
+                usable += 1
+            continue
+        if pd.to_numeric(frame[col], errors="coerce").notna().any():
+            usable += 1
+    if usable < min_usable:
+        raise ValueError(
+            f"Feature coverage too low: only {usable} usable columns "
+            f"(need ≥{min_usable}); missing={missing[:12]}"
+        )
+    if missing:
+        logger.warning("Model features absent on frame: %s", missing)
+
+
 def build_feature_matrix(
     frame: pd.DataFrame,
     feature_columns: tuple[str, ...] | None = None,
+    *,
+    train_medians: pd.Series | dict[str, float] | None = None,
 ) -> pd.DataFrame:
-    """Select and impute model features."""
+    """Select features; impute numerics with train medians (or frame medians)."""
     cols = feature_columns if feature_columns is not None else FEATURE_COLUMNS
-    work = frame.copy()
-    for col in cols:
-        if col not in work.columns:
-            work[col] = float("nan")
-    features = work.loc[:, list(cols)].apply(pd.to_numeric, errors="coerce")
-    medians = features.median(numeric_only=True)
-    return features.fillna(medians).fillna(0.0)
+    raw = _raw_feature_frame(frame, cols)
+    numeric_cols = [c for c in cols if c not in CATEGORICAL_FEATURE_COLUMNS]
+    if train_medians is None:
+        medians = (
+            raw
+            .loc[:, numeric_cols]
+            .apply(pd.to_numeric, errors="coerce")
+            .median(numeric_only=True)
+        )
+    else:
+        medians = pd.Series(train_medians)
+    return _impute_with_medians(raw, medians, cols)
+
+
+def split_train_val_test(
+    features: pd.DataFrame,
+    target: pd.Series,
+    frame: pd.DataFrame,
+    *,
+    test_size: float,
+    val_size: float,
+    random_state: int,
+) -> tuple[SplitBundle, SplitBundle, SplitBundle]:
+    """Time-aware split when ``listed_at`` present; else random IID."""
+    test_size = float(np.clip(test_size, 0.1, 0.4))
+    val_size = float(np.clip(val_size, 0.05, 0.35))
+    n = len(features)
+    if "listed_at" in frame.columns and n >= 20:
+        order = (
+            pd
+            .to_datetime(frame.loc[features.index, "listed_at"], errors="coerce")
+            .fillna(pd.Timestamp("1970-01-01", tz="UTC"))
+            .sort_values()
+            .index
+        )
+        features = features.loc[order]
+        target = target.loc[order]
+        n_test = max(1, round(n * test_size))
+        n_val = max(1, round(n * val_size))
+        n_train = n - n_test - n_val
+        if n_train < 5:
+            n_train = max(5, n - n_test - 1)
+            n_val = max(1, n - n_train - n_test)
+        train_idx = features.index[:n_train]
+        val_idx = features.index[n_train : n_train + n_val]
+        test_idx = features.index[n_train + n_val :]
+        return (
+            SplitBundle(features.loc[train_idx], target.loc[train_idx]),
+            SplitBundle(features.loc[val_idx], target.loc[val_idx]),
+            SplitBundle(features.loc[test_idx], target.loc[test_idx]),
+        )
+
+    features_tv, features_test, y_tv, y_test = train_test_split(
+        features,
+        target,
+        test_size=test_size,
+        random_state=random_state,
+    )
+    val_fraction_of_tv = val_size / max(1e-6, (1.0 - test_size))
+    val_fraction_of_tv = float(np.clip(val_fraction_of_tv, 0.05, 0.5))
+    features_train, features_val, y_train, y_val = train_test_split(
+        features_tv,
+        y_tv,
+        test_size=val_fraction_of_tv,
+        random_state=random_state,
+    )
+    return (
+        SplitBundle(features_train, y_train),
+        SplitBundle(features_val, y_val),
+        SplitBundle(features_test, y_test),
+    )
 
 
 def _fit_lgbm(
@@ -166,6 +299,13 @@ def _fit_lgbm(
     params: dict[str, Any],
     random_state: int,
 ) -> lgb.LGBMRegressor:
+    work = features_train.copy()
+    cat_in_frame: list[str] = []
+    for col in CATEGORICAL_FEATURE_COLUMNS:
+        if col not in work.columns:
+            continue
+        work[col] = work[col].astype(str).fillna("unknown").astype("category")
+        cat_in_frame.append(col)
     model = lgb.LGBMRegressor(
         n_estimators=int(params["n_estimators"]),
         learning_rate=float(params["learning_rate"]),
@@ -176,7 +316,11 @@ def _fit_lgbm(
         random_state=random_state,
         verbosity=-1,
     )
-    model.fit(features_train, y_train)
+    model.fit(
+        work,
+        y_train,
+        categorical_feature=cat_in_frame or "auto",
+    )
     return model
 
 
@@ -242,31 +386,49 @@ def train_price_model(
     if model_config.target not in frame.columns:
         raise ValueError(f"Target column missing: {model_config.target}")
 
-    features = build_feature_matrix(frame, feature_cols)
-    target = pd.to_numeric(frame[model_config.target], errors="coerce")
-    mask = target.notna() & features.notna().all(axis=1)
-    features = features.loc[mask]
-    target = target.loc[mask]
-    if len(features) < 10:
-        raise ValueError(f"Need ≥10 labeled rows to train; got {len(features)}")
+    work = frame
+    if settings.train_otodom_labels_only and "source" in frame.columns:
+        sources = frame["source"].astype(str).str.lower()
+        work = frame.loc[sources.isin(_LABEL_SOURCES_OTODOM)].copy()
+        logger.info(
+            "Train labels filtered to Otodom/fixture: %s → %s rows",
+            len(frame),
+            len(work),
+        )
 
-    test_size = float(np.clip(settings.test_size, 0.1, 0.4))
-    val_size = float(np.clip(settings.val_size, 0.05, 0.35))
-    features_tv, features_test, y_tv, y_test = train_test_split(
-        features,
+    check_feature_coverage(work, feature_cols, max_missing_fraction=0.9)
+
+    # Unfilled matrix — medians from train fold only after split.
+    raw_features = _raw_feature_frame(work, feature_cols)
+    target = pd.to_numeric(work[model_config.target], errors="coerce")
+    mask = target.notna()
+    raw_features = raw_features.loc[mask]
+    target = target.loc[mask]
+    if len(raw_features) < 10:
+        raise ValueError(f"Need ≥10 labeled rows to train; got {len(raw_features)}")
+
+    train_b, val_b, test_b = split_train_val_test(
+        raw_features,
         target,
-        test_size=test_size,
+        work.loc[raw_features.index],
+        test_size=settings.test_size,
+        val_size=settings.val_size,
         random_state=settings.random_state,
     )
-    # val_size is fraction of the *full* dataset ≈ of tv: val/(1-test)
-    val_fraction_of_tv = val_size / max(1e-6, (1.0 - test_size))
-    val_fraction_of_tv = float(np.clip(val_fraction_of_tv, 0.05, 0.5))
-    features_train, features_val, y_train, y_val = train_test_split(
-        features_tv,
-        y_tv,
-        test_size=val_fraction_of_tv,
-        random_state=settings.random_state,
+
+    numeric_cols = [c for c in feature_cols if c not in CATEGORICAL_FEATURE_COLUMNS]
+    train_medians = (
+        train_b.features
+        .loc[:, numeric_cols]
+        .apply(pd.to_numeric, errors="coerce")
+        .median(numeric_only=True)
     )
+    features_train = _impute_with_medians(train_b.features, train_medians, feature_cols)
+    features_val = _impute_with_medians(val_b.features, train_medians, feature_cols)
+    features_test = _impute_with_medians(test_b.features, train_medians, feature_cols)
+    y_train, y_val, y_test = train_b.target, val_b.target, test_b.target
+    features_tv = pd.concat([features_train, features_val], axis=0)
+    y_tv = pd.concat([y_train, y_val], axis=0)
 
     candidates = _hpo_candidates(
         model_config,
@@ -329,18 +491,10 @@ def train_price_model(
         "r2": float(test_metrics["r2"]),
         **baseline_metrics,
     }
-    logger.info(
-        "Train done opt=%s best_val_%s=%s test_mae=%s test_r2=%s",
-        opt_metric,
-        opt_metric,
-        best_val_metrics.get(opt_metric),
-        test_metrics.get("mae"),
-        test_metrics.get("r2"),
-    )
     return TrainResult(
         model=final_model,
         metrics=metrics,
-        feature_names=list(features.columns),
+        feature_names=list(feature_cols),
         features_train=features_tv,
         features_test=features_test,
         y_test=y_test,
@@ -349,7 +503,47 @@ def train_price_model(
         val_metrics=best_val_metrics,
         test_metrics=test_metrics,
         baseline_metrics=baseline_metrics,
+        train_medians={str(k): float(v) for k, v in train_medians.items()},
     )
+
+
+def _raw_feature_frame(
+    frame: pd.DataFrame,
+    feature_columns: tuple[str, ...],
+) -> pd.DataFrame:
+    """Feature frame with NaNs preserved (no impute) for split-then-impute."""
+    work = frame.copy()
+    for col in feature_columns:
+        if col not in work.columns:
+            work[col] = float("nan") if col not in CATEGORICAL_FEATURE_COLUMNS else None
+    pieces: list[pd.Series] = []
+    for col in feature_columns:
+        if col in CATEGORICAL_FEATURE_COLUMNS:
+            pieces.append(
+                work[col].astype(str).fillna("unknown").astype("category").rename(col)
+            )
+        else:
+            pieces.append(pd.to_numeric(work[col], errors="coerce").rename(col))
+    return pd.concat(pieces, axis=1)
+
+
+def _impute_with_medians(
+    features: pd.DataFrame,
+    medians: pd.Series,
+    feature_columns: tuple[str, ...],
+) -> pd.DataFrame:
+    """Apply train-fold medians to numeric columns; keep categories."""
+    out = features.copy()
+    for col in feature_columns:
+        if col in CATEGORICAL_FEATURE_COLUMNS:
+            if col in out.columns:
+                out[col] = out[col].astype(str).fillna("unknown").astype("category")
+            continue
+        fill = float(medians[col]) if col in medians.index else 0.0
+        if fill != fill:
+            fill = 0.0
+        out[col] = pd.to_numeric(out[col], errors="coerce").fillna(fill)
+    return out.loc[:, list(feature_columns)]
 
 
 def predict_price_per_m2(
@@ -358,12 +552,123 @@ def predict_price_per_m2(
     *,
     use_neighborhood: bool = True,
 ) -> np.ndarray:
-    """Predict zł/m² for enriched listing rows."""
+    """Score listings with a fitted model (feature matrix aligned to booster)."""
     cols = model_feature_columns(model)
     if not cols:
         cols = active_feature_columns(use_neighborhood=use_neighborhood)
     features = build_feature_matrix(frame, cols)
+    # Align category levels for LightGBM
+    for col in CATEGORICAL_FEATURE_COLUMNS:
+        if col in features.columns:
+            features[col] = (
+                features[col].astype(str).fillna("unknown").astype("category")
+            )
     return np.asarray(model.predict(features), dtype=float)
+
+
+def oof_predict_price_per_m2(
+    frame: pd.DataFrame,
+    model_config: ModelConfig,
+    train_settings: TrainSettings,
+    *,
+    n_splits: int = 5,
+) -> np.ndarray:
+    """Out-of-fold predictions for train-label rows; final-model style for others.
+
+    Rows excluded from training (e.g. RCN when Otodom-only) are scored with a
+    model fit on all train labels so Explore deltas stay honest on asks.
+    """
+    from sklearn.model_selection import KFold
+
+    settings = train_settings
+    feature_cols = active_feature_columns(use_neighborhood=settings.use_neighborhood)
+    preds = np.full(len(frame), np.nan, dtype=float)
+    work = frame
+    label_mask = pd.Series(True, index=frame.index)
+    if settings.train_otodom_labels_only and "source" in frame.columns:
+        sources = frame["source"].astype(str).str.lower()
+        label_mask = sources.isin(_LABEL_SOURCES_OTODOM)
+
+    labeled_idx = frame.index[label_mask].to_list()
+    if len(labeled_idx) < max(10, n_splits * 2):
+        # Too small for OOF — fall back to in-sample after a quick fit
+        result = train_price_model(frame, model_config, settings)
+        return predict_price_per_m2(
+            result.model, frame, use_neighborhood=settings.use_neighborhood
+        )
+
+    raw = _raw_feature_frame(frame, feature_cols)
+    target = pd.to_numeric(frame[model_config.target], errors="coerce")
+    usable = [i for i in labeled_idx if target.loc[i] == target.loc[i]]
+    if len(usable) < max(10, n_splits * 2):
+        result = train_price_model(frame, model_config, settings)
+        return predict_price_per_m2(
+            result.model, frame, use_neighborhood=settings.use_neighborhood
+        )
+
+    kf = KFold(
+        n_splits=min(n_splits, len(usable) // 2),
+        shuffle=True,
+        random_state=settings.random_state,
+    )
+    usable_arr = np.asarray(usable)
+    params = _default_params(model_config)
+    for train_pos, test_pos in kf.split(usable_arr):
+        train_ids = usable_arr[train_pos]
+        test_ids = usable_arr[test_pos]
+        medians = (
+            raw
+            .loc[
+                train_ids,
+                [c for c in feature_cols if c not in CATEGORICAL_FEATURE_COLUMNS],
+            ]
+            .apply(pd.to_numeric, errors="coerce")
+            .median(numeric_only=True)
+        )
+        x_tr = _impute_with_medians(raw.loc[train_ids], medians, feature_cols)
+        x_te = _impute_with_medians(raw.loc[test_ids], medians, feature_cols)
+        y_tr = target.loc[train_ids]
+        fold_model = _fit_lgbm(x_tr, y_tr, params, settings.random_state)
+        for col in CATEGORICAL_FEATURE_COLUMNS:
+            if col in x_te.columns:
+                x_te[col] = x_te[col].astype(str).fillna("unknown").astype("category")
+        fold_pred = fold_model.predict(x_te)
+        preds[frame.index.get_indexer(test_ids)] = np.asarray(fold_pred, dtype=float)
+
+    # Non-label rows: fit on all labels, score once
+    other_ids = [i for i in frame.index if i not in set(usable)]
+    if other_ids:
+        medians = (
+            raw
+            .loc[
+                usable,
+                [c for c in feature_cols if c not in CATEGORICAL_FEATURE_COLUMNS],
+            ]
+            .apply(pd.to_numeric, errors="coerce")
+            .median(numeric_only=True)
+        )
+        x_all = _impute_with_medians(raw.loc[usable], medians, feature_cols)
+        y_all = target.loc[usable]
+        full_model = _fit_lgbm(x_all, y_all, params, settings.random_state)
+        x_other = _impute_with_medians(raw.loc[other_ids], medians, feature_cols)
+        for col in CATEGORICAL_FEATURE_COLUMNS:
+            if col in x_other.columns:
+                x_other[col] = (
+                    x_other[col].astype(str).fillna("unknown").astype("category")
+                )
+        other_pred = full_model.predict(x_other)
+        preds[frame.index.get_indexer(other_ids)] = np.asarray(other_pred, dtype=float)
+
+    # Fill any remaining NaN (failed folds) with full-model on labels
+    missing = np.isnan(preds)
+    if missing.any():
+        result = train_price_model(frame, model_config, settings)
+        fill = predict_price_per_m2(
+            result.model, frame, use_neighborhood=settings.use_neighborhood
+        )
+        preds[missing] = fill[missing]
+    del work
+    return preds
 
 
 def shap_explanation_for_row(
@@ -378,6 +683,11 @@ def shap_explanation_for_row(
     if not cols:
         cols = active_feature_columns(use_neighborhood=use_neighborhood)
     features = build_feature_matrix(frame, cols)
+    for col in CATEGORICAL_FEATURE_COLUMNS:
+        if col in features.columns:
+            features[col] = (
+                features[col].astype(str).fillna("unknown").astype("category")
+            )
     explainer = shap.TreeExplainer(model)
     explanation = explainer(features)
     return explanation[row_index]

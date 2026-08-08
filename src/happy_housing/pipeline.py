@@ -25,6 +25,11 @@ from happy_housing.app.metadata import (
     RunMetadata,
     write_run_metadata,
 )
+from happy_housing.app.pipeline_ingest import (
+    resolve_ingest_flags,
+    resolve_ingest_limits,
+    resolve_ingest_urls,
+)
 from happy_housing.config import load_experiment_config
 from happy_housing.gis import (
     enrich_listings,
@@ -57,6 +62,7 @@ from happy_housing.models.metrics import coerce_opt_metric
 from happy_housing.models.neighborhood import attach_neighborhood_rcn_features
 from happy_housing.models.train import (
     TrainSettings,
+    oof_predict_price_per_m2,
     predict_price_per_m2,
     run_training_with_mlflow,
 )
@@ -119,26 +125,44 @@ def _rcn_as_listings(rcn: pd.DataFrame) -> pd.DataFrame:
 def run_pipeline(
     config_path: Path | str = Path("configs/experiment.yaml"),
     *,
-    download_remote: bool = True,
-    use_osm: bool = True,
-    scrape_otodom: bool = True,
+    download_remote: bool | None = None,
+    use_osm: bool | None = None,
+    scrape_otodom: bool | None = None,
     otodom_max_pages: int | None = None,
     otodom_max_listings: int | None = None,
     rcn_max_rows: int | None = None,
 ) -> dict[str, Path]:
-    """Run the full local pipeline and return key output paths."""
+    """Run the full local pipeline and return key output paths.
+
+    ``download_remote`` True/False forces all remote sources on/off; ``None``
+    uses Admin Pipeline overrides when saved, else downloads everything.
+    Explicit ``otodom_max_*`` / ``rcn_max_rows`` kwargs override resolved caps.
+    """
     from happy_housing.logging_config import configure_logging
 
     started = time.perf_counter()
     config = load_experiment_config(config_path)
     configure_logging(config.logging.level, force=False)
-    logger.info(
-        "Pipeline start (download_remote=%s use_osm=%s scrape_otodom=%s)",
-        download_remote,
-        use_osm,
-        scrape_otodom,
+    processed = config.data.processed_path()
+    app_settings = load_app_settings(settings_path(processed))
+    limits = resolve_ingest_limits(app_settings, config)
+    urls = resolve_ingest_urls(app_settings, config)
+    flags = resolve_ingest_flags(
+        app_settings,
+        config,
+        download_remote=download_remote,
+        use_osm=use_osm,
+        scrape_otodom=scrape_otodom,
     )
-    limits = config.ingest
+    logger.info(
+        "Pipeline start (gtfs=%s gios=%s rcn=%s gunb=%s osm=%s otodom=%s)",
+        flags.download_gtfs,
+        flags.download_gios,
+        flags.download_rcn,
+        flags.download_gunb,
+        flags.use_osm,
+        flags.scrape_otodom,
+    )
     page_cap = (
         otodom_max_pages if otodom_max_pages is not None else limits.otodom_max_pages
     )
@@ -149,7 +173,6 @@ def run_pipeline(
     )
     rcn_cap = rcn_max_rows if rcn_max_rows is not None else limits.rcn_max_rows
     raw = config.data.raw_path()
-    processed = config.data.processed_path()
     fixtures = config.data.fixtures_path()
     cache = config.data.cache_path()
     for path in (raw, processed, cache):
@@ -163,7 +186,7 @@ def run_pipeline(
     fixture_listings["source"] = "fixture"
     listings_parts.append(fixture_listings)
 
-    if scrape_otodom:
+    if flags.scrape_otodom:
         try:
             otodom = scrape_otodom_warsaw(
                 otodom_parquet,
@@ -189,11 +212,23 @@ def run_pipeline(
     rcn_parquet = processed / "rcn_transactions.parquet"
     gunb_parquet = processed / "gunb_mazowieckie.parquet"
 
-    if download_remote:
-        download_gtfs_stops(config.ingest_urls.gtfs_zip, raw, gtfs_parquet)
-        fetch_gios_stations(config.ingest_urls.gios_stations, gios_parquet)
+    def _ensure_empty(path: Path, cols: list[str]) -> None:
+        if not path.exists():
+            pd.DataFrame(columns=cols).to_parquet(path, index=False)
+
+    if flags.download_gtfs:
+        download_gtfs_stops(urls.gtfs_zip, raw, gtfs_parquet)
+    else:
+        _ensure_empty(gtfs_parquet, ["stop_id", "stop_lat", "stop_lon"])
+
+    if flags.download_gios:
+        fetch_gios_stations(urls.gios_stations, gios_parquet)
+    else:
+        _ensure_empty(gios_parquet, ["station_id", "lat", "lon", "name", "city"])
+
+    if flags.download_rcn:
         zip_path = download_file(
-            config.ingest_urls.rcn_zip,
+            urls.rcn_zip,
             raw / "rcn_warsaw.zip",
             timeout_s=1800.0,
         )
@@ -204,21 +239,18 @@ def run_pipeline(
             pd.DataFrame(columns=["lon", "lat", "price_pln", "area_m2"]).to_parquet(
                 rcn_parquet, index=False
             )
+    else:
+        _ensure_empty(rcn_parquet, ["lon", "lat", "price_pln", "area_m2"])
+
+    if flags.download_gunb:
         download_gunb_mazowieckie(
             raw,
             gunb_parquet,
-            url=config.ingest_urls.gunb_zip,
+            url=urls.gunb_zip,
             fixture_path=fixtures / "gunb_points.json",
         )
     else:
-        for path, cols in (
-            (gtfs_parquet, ["stop_id", "stop_lat", "stop_lon"]),
-            (gios_parquet, ["station_id", "lat", "lon", "name", "city"]),
-            (rcn_parquet, ["lon", "lat", "price_pln", "area_m2"]),
-            (gunb_parquet, ["lon", "lat"]),
-        ):
-            if not path.exists():
-                pd.DataFrame(columns=cols).to_parquet(path, index=False)
+        _ensure_empty(gunb_parquet, ["lon", "lat"])
 
     rcn = pd.read_parquet(rcn_parquet)
     rcn_listings = _rcn_as_listings(rcn)
@@ -241,7 +273,7 @@ def run_pipeline(
         build_gtfs_stop_hourly(gtfs_zip, hourly_path)
     gios_stations = pd.read_parquet(gios_parquet)
     aq_missing = any(col not in gios_stations.columns for col in AIR_QUALITY_COLUMNS)
-    if download_remote or aq_missing:
+    if flags.download_gios or aq_missing:
         gios_stations = enrich_stations_with_air_quality(
             gios_stations,
             fixture_path=fixtures / "gios_air_quality.json",
@@ -249,7 +281,7 @@ def run_pipeline(
         gios_stations.to_parquet(gios_parquet, index=False)
     gunb = gunb_points_gdf(pd.read_parquet(gunb_parquet))
 
-    if use_osm:
+    if flags.use_osm:
         amenities = fetch_osm_amenities(
             config.bbox.as_tuple(),
             cache,
@@ -277,7 +309,6 @@ def run_pipeline(
         fixture_path=fixtures / "schools.geojson",
     )
 
-    app_settings = load_app_settings(settings_path(processed))
     commute = resolve_commute_target(app_settings, config)
     logger.info(
         "Commute target %s (%.5f, %.5f)", commute.label, commute.lon, commute.lat
@@ -346,6 +377,7 @@ def run_pipeline(
         hpo_trials=int(app_settings.model_hpo_trials),
         use_neighborhood=bool(app_settings.model_use_neighborhood),
         random_state=int(config.model.random_state),
+        train_otodom_labels_only=bool(app_settings.train_otodom_labels_only),
     )
     model_path = processed / "lightgbm_price_per_m2.txt"
     result = run_training_with_mlflow(
@@ -355,11 +387,20 @@ def run_pipeline(
         train_settings=train_settings,
         rcn=rcn_for_model if app_settings.model_use_neighborhood else None,
     )
-    train_frame["model_price_per_m2"] = predict_price_per_m2(
-        result.model,
-        train_frame,
-        use_neighborhood=bool(app_settings.model_use_neighborhood),
-    )
+    try:
+        train_frame["model_price_per_m2"] = oof_predict_price_per_m2(
+            train_frame,
+            config.model,
+            train_settings,
+            n_splits=5,
+        )
+    except Exception as exc:
+        logger.warning("OOF scoring failed (%s); falling back to in-sample", exc)
+        train_frame["model_price_per_m2"] = predict_price_per_m2(
+            result.model,
+            train_frame,
+            use_neighborhood=bool(app_settings.model_use_neighborhood),
+        )
     train_frame["delta_price_per_m2"] = (
         train_frame["price_per_m2"] - train_frame["model_price_per_m2"]
     )

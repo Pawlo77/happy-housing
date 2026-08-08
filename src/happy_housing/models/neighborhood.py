@@ -1,10 +1,8 @@
-"""Neighborhood historical-price features from RCN transactions.
+"""RCN neighborhood spatial features (self-excluded comps for fair-value priors).
 
-RCN sales are an independent register (not the Otodom listing being scored),
-so spatial aggregates do not leak the target label from the train/test split.
-Local comparable sales are a strong fair-value prior for Warsaw flats — we
-attach median / mean / count / nearest distance and an IDW baseline used as a
-second model logged in MLflow for comparison.
+When RCN deeds are also training labels, comps at the same coordinates or with
+the same ``listing_id`` are excluded so neighborhood aggregates do not leak
+the target. Otodom asks never match RCN ids, so their comps stay intact.
 """
 
 from __future__ import annotations
@@ -19,6 +17,9 @@ logger = logging.getLogger(__name__)
 
 _EARTH_RADIUS_M = 6_371_000.0
 """Mean Earth radius for haversine BallTree queries (metres)."""
+
+_SELF_EXCLUDE_M = 5.0
+"""Exclude RCN comps within this distance of the listing (self / duplicate)."""
 
 NEIGHBORHOOD_FEATURE_COLUMNS: tuple[str, ...] = (
     "nbhd_rcn_median_ppm",
@@ -64,6 +65,10 @@ def attach_neighborhood_rcn_features(
 ) -> pd.DataFrame:
     """Attach local RCN zł/m² aggregates to each listing row.
 
+    Excludes comps at the same coordinates (≤5 m) and comps whose
+    ``listing_id`` matches the query row when both have ids — avoids
+    RCN-as-label self-inclusion when deeds are also training rows.
+
     Args:
         listings: Rows with ``lat`` / ``lon``.
         rcn: Historical transactions with ``lat`` / ``lon`` / price.
@@ -96,6 +101,16 @@ def attach_neighborhood_rcn_features(
     tree = BallTree(rcn_coords[valid_rcn], metric="haversine")
     radius_rad = float(radius_m) / _EARTH_RADIUS_M
     ppm = comps.loc[valid_rcn, "price_per_m2"].to_numpy(dtype=float)
+    rcn_ids = (
+        comps.loc[valid_rcn, "listing_id"].astype(str).to_numpy()
+        if "listing_id" in comps.columns
+        else None
+    )
+    listing_ids = (
+        out["listing_id"].astype(str).to_numpy()
+        if "listing_id" in out.columns
+        else None
+    )
 
     medians = np.full(len(out), np.nan)
     means = np.full(len(out), np.nan)
@@ -124,6 +139,14 @@ def attach_neighborhood_rcn_features(
         else:
             neighbors = np.asarray(neighbors, dtype=int)
             dists_m = np.asarray(dists_rad, dtype=float) * _EARTH_RADIUS_M
+
+        keep = dists_m > _SELF_EXCLUDE_M
+        if listing_ids is not None and rcn_ids is not None:
+            keep &= rcn_ids[neighbors] != listing_ids[row_i]
+        neighbors = neighbors[keep]
+        dists_m = dists_m[keep]
+        if len(neighbors) == 0:
+            continue
 
         values = ppm[neighbors]
         counts[row_i] = float(len(values))

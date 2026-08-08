@@ -40,6 +40,11 @@ from happy_housing.app.llm_metrics import (
     purpose_stats_frame,
     summarize_llm_calls,
 )
+from happy_housing.app.pipeline_ingest import (
+    resolve_ingest_flags,
+    resolve_ingest_limits,
+    resolve_ingest_urls,
+)
 from happy_housing.app.preferences import load_preferences, preferences_path
 from happy_housing.app.recommender import (
     clear_recommendation_memory,
@@ -78,16 +83,10 @@ def _tab_general(settings: AppSettings, settings_file: Path, proc: Path) -> None
     """Paths, commute target, cache clear, and log level."""
     config = load_config()
     meta = load_metadata()
-    st.caption("Experiment paths and last pipeline refresh (edit YAML for caps).")
-    c1, c2, c3 = st.columns(3)
+    st.caption("Experiment paths and last pipeline refresh.")
+    c1, c2 = st.columns(2)
     c1.metric("Processed dir", config.data.processed_path().name)
     c2.metric(
-        "Otodom page cap",
-        "∞"
-        if config.ingest.otodom_max_pages is None
-        else str(config.ingest.otodom_max_pages),
-    )
-    c3.metric(
         "Last refresh",
         (
             meta.refreshed_at[:19].replace("T", " ")
@@ -236,7 +235,7 @@ def _tab_general(settings: AppSettings, settings_file: Path, proc: Path) -> None
         "HAPPY_HOUSING_LOG_LEVEL overrides when set at process start.",
         key="settings_log_level",
     )
-    g1, g2 = st.columns(2)
+    g1, g2, _g3 = st.columns([1, 1, 3])
     with g1:
         if st.button("Save logging settings", key="save_logging_settings"):
             settings.log_level = str(log_level)
@@ -619,7 +618,7 @@ def _tab_stats(settings: AppSettings, settings_file: Path) -> None:
         value=int(settings.stats_top_n),
         key="settings_stats_top_n",
     )
-    s1, s2 = st.columns(2)
+    s1, s2, _s3 = st.columns([1, 1, 3])
     with s1:
         if st.button("Save Stats settings", type="primary", key="save_stats_settings"):
             settings.stats_min_district_offers = int(min_offers)
@@ -644,35 +643,94 @@ def _tab_stats(settings: AppSettings, settings_file: Path) -> None:
                     )
 
 
-def _tab_pipeline() -> None:
-    """Otodom scrape and full remodel triggers."""
+def _apply_pipeline_widgets(
+    settings: AppSettings,
+    *,
+    otodom_unlimited: bool,
+    max_pages: int | None,
+    max_listings: int | None,
+    incremental: bool,
+    download_rcn: bool,
+    rcn_unlimited: bool,
+    rcn_max_rows: int | None,
+    rcn_zip_url: str,
+    download_gtfs: bool,
+    gtfs_zip_url: str,
+    download_gios: bool,
+    gios_stations_url: str,
+    download_gunb: bool,
+    gunb_zip_url: str,
+    use_osm: bool,
+    scrape_in_pipe: bool,
+) -> None:
+    """Copy Pipeline tab widget values onto ``settings`` (overrides on)."""
+    settings.pipeline_overrides_enabled = True
+    settings.otodom_max_pages = None if otodom_unlimited else max_pages
+    settings.otodom_max_listings = None if otodom_unlimited else max_listings
+    settings.otodom_incremental = bool(incremental)
+    settings.download_rcn = bool(download_rcn)
+    settings.rcn_max_rows = None if rcn_unlimited else rcn_max_rows
+    settings.rcn_zip_url = str(rcn_zip_url).strip()
+    settings.download_gtfs = bool(download_gtfs)
+    settings.gtfs_zip_url = str(gtfs_zip_url).strip()
+    settings.download_gios = bool(download_gios)
+    settings.gios_stations_url = str(gios_stations_url).strip()
+    settings.download_gunb = bool(download_gunb)
+    settings.gunb_zip_url = str(gunb_zip_url).strip()
+    settings.use_osm = bool(use_osm)
+    settings.scrape_otodom_in_pipeline = bool(scrape_in_pipe)
+
+
+def _tab_pipeline(settings: AppSettings, settings_file: Path) -> None:
+    """Otodom scrape and full remodel with Admin ingest overrides."""
+    config = load_config()
+    limits = resolve_ingest_limits(settings, config)
+    urls = resolve_ingest_urls(settings, config)
+    flags = resolve_ingest_flags(settings, config)
+
     st.caption(
-        "Full-source downloads can take hours (Otodom detail crawl + multi-GB RCN)."
+        "Full-source downloads can take hours (Otodom detail crawl + multi-GB RCN). "
+        "UM parks WFS + GIOŚ AQ; strategic noise WMS-only / EEA aircraft; "
+        "Admin caps override YAML when saved."
     )
-    st.subheader("Otodom scrape")
-    download_all = st.checkbox(
-        "Download all Otodom Warsaw flats (ignore page/listing caps)",
-        value=True,
+
+    st.subheader("Otodom")
+    otodom_unlimited = st.checkbox(
+        "Unlimited (ignore page/listing caps)",
+        value=limits.otodom_max_pages is None and limits.otodom_max_listings is None,
         help="Uses every search page Otodom reports. Rate-limited; can take hours.",
+        key="pipe_otodom_unlimited",
     )
+    max_pages: int | None = None
+    max_listings: int | None = None
+    if not otodom_unlimited:
+        max_pages = int(
+            st.number_input(
+                "Max search pages",
+                min_value=1,
+                max_value=5000,
+                value=int(limits.otodom_max_pages or 50),
+                key="pipe_otodom_max_pages",
+            )
+        )
+        max_listings = int(
+            st.number_input(
+                "Max listings",
+                min_value=10,
+                max_value=100_000,
+                value=int(limits.otodom_max_listings or 1200),
+                key="pipe_otodom_max_listings",
+            )
+        )
     incremental = st.checkbox(
         "Incremental (new/updated only)",
-        value=True,
+        value=bool(limits.otodom_incremental),
         help=(
             "Sort newest-first, stop once known pages repeat, skip unchanged "
             "detail fetches, merge into existing parquet."
         ),
-        key="otodom_incremental",
+        key="pipe_otodom_incremental",
     )
-    max_pages = None
-    max_listings = None
-    if not download_all:
-        max_pages = int(
-            st.number_input("Max search pages", min_value=1, max_value=5000, value=50)
-        )
-        max_listings = int(
-            st.number_input("Max listings", min_value=10, max_value=100_000, value=1200)
-        )
     if st.button("Run Otodom scrape", type="primary", key="run_otodom"):
         out_path = processed_dir() / "otodom_listings.parquet"
         pages_arg = "None" if max_pages is None else str(int(max_pages))
@@ -715,74 +773,173 @@ def _tab_pipeline() -> None:
                     logger.error("Otodom scrape failed (exit %s)", code)
                     st.error(f"Scrape failed (exit {code})")
 
-    st.subheader("Remodel / full pipeline")
-    download_remote = st.checkbox(
-        "Re-download GTFS / GIOŚ / RCN / GUNB (full sources)",
-        value=True,
+    st.subheader("RCN")
+    download_rcn = st.checkbox(
+        "Download RCN",
+        value=bool(flags.download_rcn),
         help="RCN GML is multi-GB; full parse can take a long time.",
+        key="pipe_download_rcn",
     )
-    scrape_otodom = st.checkbox(
-        "Scrape Otodom inside pipeline (full, per config ingest limits)",
-        value=True,
+    rcn_unlimited = st.checkbox(
+        "Unlimited RCN rows",
+        value=limits.rcn_max_rows is None,
+        key="pipe_rcn_unlimited",
     )
-    use_osm = st.checkbox(
-        "Fetch OSM amenities + shops (else fixture/cache)", value=True
-    )
-    st.caption(
-        "Pipeline also downloads UM Warszawa PLACE_SKWERY parks "
-        "(testmapa WFS → dist_park_m), and GIOŚ v1 AQI + PM10/PM2.5/NO2 "
-        "for Warsaw stations (model features with dist_air_station_m). "
-        "Strategic road/rail noise on testmapa is WMS-only for now — "
-        "aircraft Lden still from EEA END."
-    )
-    if st.button(
-        "Run pipeline (enrich + train + score)", type="primary", key="run_pipe"
-    ):
-        cmd = [
-            sys.executable,
-            "-c",
-            (
-                "from happy_housing.pipeline import run_pipeline; "
-                f"run_pipeline(download_remote={download_remote!r}, "
-                f"use_osm={use_osm!r}, scrape_otodom={scrape_otodom!r})"
-            ),
-        ]
-        logger.info(
-            "Admin starting pipeline (download_remote=%s use_osm=%s scrape_otodom=%s)",
-            download_remote,
-            use_osm,
-            scrape_otodom,
+    rcn_max_rows: int | None = None
+    if not rcn_unlimited:
+        rcn_max_rows = int(
+            st.number_input(
+                "Max RCN rows",
+                min_value=1,
+                max_value=10_000_000,
+                value=int(limits.rcn_max_rows or 50_000),
+                key="pipe_rcn_max_rows",
+            )
         )
-        with st.spinner("Running pipeline (full RCN/Otodom may take hours)…"):
-            try:
-                code, log = _run_command(cmd, timeout_s=24 * 3600)
-            except subprocess.TimeoutExpired:
-                logger.error("Pipeline timed out")
-                st.error("Pipeline timed out.")
-            else:
-                st.code(log[-12000:] or "(no output)")
-                if code == 0:
-                    clear_data_caches()
-                    logger.info("Pipeline finished successfully")
-                    st.success("Pipeline finished — Home metrics refreshed.")
-                else:
-                    logger.error("Pipeline failed (exit %s)", code)
-                    st.error(f"Pipeline failed (exit {code})")
-    st.caption(
-        "Default ingest caps in configs/experiment.yaml are null (unlimited). "
-        "Set numeric caps there only if you need a smaller local slice. "
-        "Car commute uses local OSRM (docker/docker-compose.osrm.yml) with a "
-        "30 km/h distance fallback; set routing.use_otp_transit=true when OTP "
-        "Docker is up for transit_commute_min."
+    rcn_zip_url = st.text_input(
+        "RCN zip URL",
+        value=urls.rcn_zip,
+        key="pipe_rcn_zip_url",
     )
+
+    st.subheader("GTFS")
+    download_gtfs = st.checkbox(
+        "Download GTFS",
+        value=bool(flags.download_gtfs),
+        key="pipe_download_gtfs",
+    )
+    gtfs_zip_url = st.text_input(
+        "GTFS zip URL",
+        value=urls.gtfs_zip,
+        key="pipe_gtfs_zip_url",
+    )
+
+    st.subheader("GIOŚ")
+    download_gios = st.checkbox(
+        "Download GIOŚ",
+        value=bool(flags.download_gios),
+        key="pipe_download_gios",
+    )
+    gios_stations_url = st.text_input(
+        "GIOŚ stations URL",
+        value=urls.gios_stations,
+        key="pipe_gios_stations_url",
+    )
+
+    st.subheader("GUNB")
+    download_gunb = st.checkbox(
+        "Download GUNB",
+        value=bool(flags.download_gunb),
+        key="pipe_download_gunb",
+    )
+    gunb_zip_url = st.text_input(
+        "GUNB zip URL",
+        value=urls.gunb_zip,
+        key="pipe_gunb_zip_url",
+    )
+
+    st.subheader("OSM")
+    use_osm = st.checkbox(
+        "Fetch OSM amenities + shops (else fixture/cache)",
+        value=bool(flags.use_osm),
+        key="pipe_use_osm",
+    )
+
+    st.subheader("Remodel")
+    scrape_in_pipe = st.checkbox(
+        "Scrape Otodom inside pipeline",
+        value=bool(flags.scrape_otodom),
+        key="pipe_scrape_otodom",
+    )
+    p1, p2, _p3 = st.columns([1, 1, 3])
+    with p1:
+        if st.button("Save Pipeline settings", key="save_pipeline_settings"):
+            _apply_pipeline_widgets(
+                settings,
+                otodom_unlimited=otodom_unlimited,
+                max_pages=max_pages,
+                max_listings=max_listings,
+                incremental=incremental,
+                download_rcn=download_rcn,
+                rcn_unlimited=rcn_unlimited,
+                rcn_max_rows=rcn_max_rows,
+                rcn_zip_url=rcn_zip_url,
+                download_gtfs=download_gtfs,
+                gtfs_zip_url=gtfs_zip_url,
+                download_gios=download_gios,
+                gios_stations_url=gios_stations_url,
+                download_gunb=download_gunb,
+                gunb_zip_url=gunb_zip_url,
+                use_osm=use_osm,
+                scrape_in_pipe=scrape_in_pipe,
+            )
+            save_app_settings(settings_file, settings)
+            st.success("Pipeline settings saved (overrides YAML ingest).")
+    with p2:
+        if st.button(
+            "Run pipeline (enrich + train + score)",
+            type="primary",
+            key="run_pipe",
+        ):
+            _apply_pipeline_widgets(
+                settings,
+                otodom_unlimited=otodom_unlimited,
+                max_pages=max_pages,
+                max_listings=max_listings,
+                incremental=incremental,
+                download_rcn=download_rcn,
+                rcn_unlimited=rcn_unlimited,
+                rcn_max_rows=rcn_max_rows,
+                rcn_zip_url=rcn_zip_url,
+                download_gtfs=download_gtfs,
+                gtfs_zip_url=gtfs_zip_url,
+                download_gios=download_gios,
+                gios_stations_url=gios_stations_url,
+                download_gunb=download_gunb,
+                gunb_zip_url=gunb_zip_url,
+                use_osm=use_osm,
+                scrape_in_pipe=scrape_in_pipe,
+            )
+            save_app_settings(settings_file, settings)
+            cmd = [
+                sys.executable,
+                "-c",
+                "from happy_housing.pipeline import run_pipeline; run_pipeline()",
+            ]
+            logger.info(
+                "Admin starting pipeline (overrides saved; resolve via AppSettings)"
+            )
+            with st.spinner("Running pipeline (full RCN/Otodom may take hours)…"):
+                try:
+                    code, log = _run_command(cmd, timeout_s=24 * 3600)
+                except subprocess.TimeoutExpired:
+                    logger.error("Pipeline timed out")
+                    st.error("Pipeline timed out.")
+                else:
+                    st.code(log[-12000:] or "(no output)")
+                    if code == 0:
+                        clear_data_caches()
+                        logger.info("Pipeline finished successfully")
+                        st.success("Pipeline finished — Home metrics refreshed.")
+                    else:
+                        logger.error("Pipeline failed (exit %s)", code)
+                        st.error(f"Pipeline failed (exit {code})")
 
 
 def _tab_model(settings: AppSettings, settings_file: Path) -> None:
     """Price-model HPO metric, validation split, neighborhood comps."""
+    from happy_housing.models.train import CORE_FEATURE_COLUMNS, FEATURE_COLUMNS
+
+    n_core = len(CORE_FEATURE_COLUMNS)
+    n_full = len(FEATURE_COLUMNS)
+    nbhd_note = (
+        f" · **{n_full}** with RCN nbhd" if settings.model_use_neighborhood else ""
+    )
     st.caption(
-        "Fair-price LightGBM: train / validation / test splits. "
-        "HPO picks hyperparameters on validation using the metric below; "
-        "test is held out for final report. Default objective is MAE (zł/m²)."
+        f"Fair-price LightGBM · **{n_core}** core features{nbhd_note}. "
+        "HPO on validation; test held out. "
+        "Retrain via Admin → Pipeline after feature or data changes. "
+        "Scored deltas use out-of-fold predictions for train labels."
     )
     metric = st.selectbox(
         "Optimization metric (validation)",
@@ -811,12 +968,22 @@ def _tab_model(settings: AppSettings, settings_file: Path) -> None:
         help="1 = use YAML defaults only (no search).",
         key="settings_model_hpo_trials",
     )
+    train_asks_only = st.checkbox(
+        "Train on Otodom/fixture asks only (RCN = comps, not labels)",
+        value=bool(settings.train_otodom_labels_only),
+        help=(
+            "Avoids mixing deed prices with asks and reduces RCN self-leak "
+            "when neighborhood features are on."
+        ),
+        key="settings_train_otodom_only",
+    )
     use_nbhd = st.checkbox(
         "Use RCN neighborhood historical prices",
         value=bool(settings.model_use_neighborhood),
         help=(
             "Adds local comparable-sale features (median/mean/IDW zł/m²) and "
-            "logs an IDW baseline model in MLflow for comparison."
+            "logs an IDW baseline model in MLflow for comparison. "
+            "Self-sales are excluded from each listing's comps."
         ),
         key="settings_model_use_nbhd",
     )
@@ -834,11 +1001,13 @@ def _tab_model(settings: AppSettings, settings_file: Path) -> None:
         settings.model_hpo_trials = int(trials)
         settings.model_use_neighborhood = bool(use_nbhd)
         settings.model_nbhd_radius_m = float(radius)
+        settings.train_otodom_labels_only = bool(train_asks_only)
         save_app_settings(settings_file, settings)
         st.success(
             f"Model settings saved · optimize {settings.model_opt_metric} "
             f"({metric_direction(coerce_opt_metric(settings.model_opt_metric))}) "
-            f"· {settings.model_hpo_trials} trials."
+            f"· {settings.model_hpo_trials} trials"
+            f"{' · Otodom labels only' if train_asks_only else ''}."
         )
 
 
@@ -873,4 +1042,4 @@ def render_admin() -> None:
     with model_tab:
         _tab_model(settings, settings_file)
     with pipeline_tab:
-        _tab_pipeline()
+        _tab_pipeline(settings, settings_file)
