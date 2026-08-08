@@ -47,6 +47,7 @@ _SEMANTIC_SHAPES: dict[str, str] = {
     "transit": "circle",
     "commute": "pin",
     "focus": "pin",
+    "address": "pin",
     # High-visibility sports defaults (Explore map on by default).
     "gym": "rounded_square",
     "outdoor_gym": "bar",

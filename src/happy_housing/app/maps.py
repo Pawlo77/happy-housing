@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import Any
 
 import geopandas as gpd
@@ -68,6 +69,21 @@ _AMENITY_RGBA: dict[str, list[int]] = {
     "police": [29, 78, 216, 210],
 }
 """RGBA fills for amenity scatters."""
+
+ADDRESS_FOCUS_ZOOM: float = 16.0
+"""Street-level zoom when the Explore map is centered on a searched address."""
+
+
+@dataclass(frozen=True, slots=True)
+class MapAddressFocus:
+    """Active Explore Map address pin (Nominatim pick)."""
+
+    lon: float
+    """WGS84 longitude."""
+    lat: float
+    """WGS84 latitude."""
+    label: str
+    """Display name from the geocoder."""
 
 
 def basemap_style(mode: str) -> str | dict[str, Any]:
@@ -637,6 +653,63 @@ def commute_target_layer(
         msg = "commute target icon unexpectedly empty"
         raise RuntimeError(msg)
     return layer
+
+
+def address_search_layer(
+    lon: float,
+    lat: float,
+    *,
+    label: str = "Address",
+) -> pdk.Layer:
+    """Pin for an Explore Map address search result."""
+    data = pd.DataFrame([
+        {
+            "lon": float(lon),
+            "lat": float(lat),
+            "tooltip_name": str(label),
+            "tooltip_detail": "Searched address",
+        }
+    ])
+    layer = _icon(
+        data,
+        layer_id="address-search",
+        kind="address",
+        fill_color=[220, 38, 38, 240],
+        size=40,
+        size_min_pixels=24,
+        size_max_pixels=48,
+    )
+    if layer is None:
+        msg = "address search icon unexpectedly empty"
+        raise RuntimeError(msg)
+    return layer
+
+
+def explore_map_camera(
+    listings: pd.DataFrame,
+    *,
+    focus: MapAddressFocus | None,
+    fallback_lat: float,
+    fallback_lon: float,
+    default_zoom: float = 10.5,
+) -> tuple[float, float, float]:
+    """Latitude, longitude, zoom for the Explore Map initial view."""
+    if focus is not None:
+        return float(focus.lat), float(focus.lon), float(ADDRESS_FOCUS_ZOOM)
+    if not listings.empty and "lat" in listings.columns and "lon" in listings.columns:
+        return (
+            float(listings["lat"].mean()),
+            float(listings["lon"].mean()),
+            float(default_zoom),
+        )
+    return float(fallback_lat), float(fallback_lon), float(default_zoom)
+
+
+def explore_map_selection_key(focus: MapAddressFocus | None) -> str:
+    """pydeck chart key — remount when address focus changes so the view recenters."""
+    if focus is None:
+        return "explore_map_deck"
+    return f"explore_map_deck_{focus.lon:.5f}_{focus.lat:.5f}"
 
 
 def commute_compare_layers(

@@ -78,12 +78,23 @@ from happy_housing.app.filters import (
     apply_starred_only,
     offer_age_months,
 )
+from happy_housing.app.geocode import (
+    format_place_option_labels,
+    live_search_ready,
+    resolve_place_pick,
+    search_places,
+)
 from happy_housing.app.llm_metrics import llm_metrics_path
 from happy_housing.app.map_layers import LayerFlags, explore_datasets_needed
 from happy_housing.app.maps import (
+    ADDRESS_FOCUS_ZOOM,
+    MapAddressFocus,
+    address_search_layer,
     basemap_style,
     build_explore_layers,
     build_spatial_layers,
+    explore_map_camera,
+    explore_map_selection_key,
     focus_marker_layer,
     render_deck,
 )
@@ -513,6 +524,124 @@ def _render_explore_sidebar(
     return state, starred_only, flags, hour, basemap
 
 
+@st.cache_data(ttl=300, show_spinner=False)  # type: ignore[misc]
+def _cached_explore_place_search(
+    query: str,
+) -> tuple[dict[str, float | str | int], ...]:
+    """Cached Nominatim hits for Explore Map address search."""
+    hits = search_places(query)
+    return tuple(
+        {
+            "label": h.label,
+            "lon": h.lon,
+            "lat": h.lat,
+            "osm_id": h.osm_id,
+            "osm_type": h.osm_type,
+        }
+        for h in hits
+    )
+
+
+def _read_explore_map_focus() -> MapAddressFocus | None:
+    """Load address focus from session, or ``None`` when cleared / invalid."""
+    lon = st.session_state.get("explore_map_focus_lon")
+    lat = st.session_state.get("explore_map_focus_lat")
+    label = st.session_state.get("explore_map_focus_label")
+    if lon is None or lat is None:
+        return None
+    try:
+        return MapAddressFocus(
+            lon=float(lon),
+            lat=float(lat),
+            label=str(label or "Address").strip() or "Address",
+        )
+    except (TypeError, ValueError):
+        return None
+
+
+def _clear_explore_map_focus() -> None:
+    """Drop Explore Map address pin + search seed."""
+    for key in (
+        "explore_map_focus_lon",
+        "explore_map_focus_lat",
+        "explore_map_focus_label",
+        "explore_map_search_seed",
+    ):
+        st.session_state.pop(key, None)
+
+
+def _render_explore_address_search() -> MapAddressFocus | None:
+    """Nominatim address search above the Explore Map; centers + zooms on pick."""
+    search_seed = str(st.session_state.get("explore_map_search_seed") or "").strip()
+    hit_rows: tuple[dict[str, float | str | int], ...] = ()
+    if live_search_ready(search_seed):
+        try:
+            hit_rows = _cached_explore_place_search(search_seed)
+        except Exception as exc:
+            st.error(f"Address search failed: {exc}")
+            hit_rows = ()
+    option_labels = format_place_option_labels(hit_rows)
+    c_search, c_clear = st.columns([5, 1])
+    with c_search:
+        place_pick = st.selectbox(
+            "Search address",
+            options=option_labels,
+            index=None,
+            placeholder="Type a Warsaw address, press Enter, then pick a match…",
+            accept_new_options=True,
+            key="explore_map_place_combo",
+            help=(
+                "OpenStreetMap Nominatim (Poland / Warsaw-biased). "
+                "Picking a match centers the map and zooms to street level."
+            ),
+        )
+    with c_clear:
+        st.write("")  # align with selectbox
+        if st.button(
+            "Clear",
+            key="explore_map_clear_address",
+            help="Remove the address pin and restore the default map view.",
+            disabled=_read_explore_map_focus() is None and not search_seed,
+        ):
+            _clear_explore_map_focus()
+            st.rerun()
+
+    if place_pick:
+        chosen = resolve_place_pick(str(place_pick), hit_rows, option_labels)
+        if chosen is not None and isinstance(chosen, dict):
+            new_lon = float(str(chosen["lon"]))
+            new_lat = float(str(chosen["lat"]))
+            new_label = str(chosen["label"])[:160]
+            current = _read_explore_map_focus()
+            changed = (
+                current is None
+                or abs(current.lon - new_lon) > 1e-6
+                or abs(current.lat - new_lat) > 1e-6
+                or current.label != new_label
+            )
+            if changed:
+                st.session_state["explore_map_focus_lon"] = new_lon
+                st.session_state["explore_map_focus_lat"] = new_lat
+                st.session_state["explore_map_focus_label"] = new_label
+                st.rerun()
+        elif live_search_ready(place_pick):
+            needle = str(place_pick).strip()
+            if needle[:3].rstrip(". ").isdigit() and ". " in needle:
+                needle = needle.split(". ", 1)[-1].strip()
+            if needle != search_seed:
+                st.session_state["explore_map_search_seed"] = needle
+                st.rerun()
+            elif not hit_rows:
+                st.caption("No matches for this query.")
+            else:
+                st.caption(f"{len(hit_rows)} matches — pick one from the list.")
+
+    focus = _read_explore_map_focus()
+    if focus is not None:
+        st.caption(f"Centered on **{focus.label}** · zoom {ADDRESS_FOCUS_ZOOM:g}")
+    return focus
+
+
 def _tab_map(
     filtered: pd.DataFrame,
     *,
@@ -543,6 +672,7 @@ def _tab_map(
     """Market map with toggleable livability overlays."""
     if filtered.empty and flags.offers:
         st.warning("No offers match filters — disable Offers or widen filters.")
+    focus = _render_explore_address_search()
     layers = build_explore_layers(
         listings=filtered,
         flags=flags,
@@ -568,27 +698,34 @@ def _tab_map(
         hour=hour,
         commute_label=commute_label,
     )
+    if focus is not None:
+        layers.append(address_search_layer(focus.lon, focus.lat, label=focus.label))
     if not layers:
         st.info("Enable at least one map layer in the sidebar.")
         return
-    if not filtered.empty:
-        lat = float(filtered["lat"].mean())
-        lon = float(filtered["lon"].mean())
-    else:
-        lat, lon = commute_lat, commute_lon
+    lat, lon, zoom = explore_map_camera(
+        filtered,
+        focus=focus,
+        fallback_lat=commute_lat,
+        fallback_lon=commute_lon,
+    )
     event = render_deck(
         layers,
         latitude=lat,
         longitude=lon,
-        zoom=10.5,
+        zoom=zoom,
         map_style=basemap_style(basemap),
-        selection_key="explore_map_deck",
+        selection_key=explore_map_selection_key(focus),
     )
     if not flags.offers or filtered.empty:
         return
     clicked = listing_id_from_map_selection(event)
     if clicked is None:
-        st.caption("Click an offer pin to preview it and open the Offer tab.")
+        st.caption(
+            "Click an offer pin to preview it and open the Offer tab."
+            if focus is None
+            else "Address pin centered · click an offer pin to preview."
+        )
         return
     hit = filtered.loc[filtered["listing_id"].astype(str) == clicked]
     if hit.empty:
