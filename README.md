@@ -6,7 +6,7 @@
 
 Asking prices alone mislead. Two similar flats can differ by metro access, aircraft noise, nearby construction, air quality, or commute time to the centre. This project joins those signals with transaction history and listings so you can judge whether an offer is expensive, fair, or a bargain — with an explanation, not a black box.
 
-![Home — market pulse](docs/screenshots/01-home.png)
+![Home — About](docs/screenshots/01-home.png)
 
 ## Who it is for
 
@@ -20,7 +20,10 @@ Streamlit multipage UI: **Home · Explore · Stats · Admin**.
 
 ### Home
 
-Brand strip, scored-offer KPIs, market pulse charts, model hold-out metrics, and open-data source inventory (row counts + last fetch).
+Default **About** tab (purpose and how to read the numbers), then market pulse
+charts, model hold-out metrics, and open-data source inventory.
+
+![Home — Market pulse](docs/screenshots/01b-home-pulse.png)
 
 ![Home — Model](docs/screenshots/02-home-model.png)
 

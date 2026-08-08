@@ -1,4 +1,4 @@
-"""Home page: interactive market overview, sources with URLs, model story."""
+"""Home page: about, market overview, sources with URLs, model story."""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ from happy_housing.app.data import (
     processed_dir,
     scored_path,
 )
+from happy_housing.app.home_about import ABOUT_SECTIONS
 from happy_housing.app.home_hero import format_hero_stats
 from happy_housing.app.home_stats import counts_frame, market_summary
 from happy_housing.app.metadata import (
@@ -42,6 +43,16 @@ def _hero(refreshed: str | None, n_offers: int, r2: float | None) -> None:
     c1.metric("Scored offers", stats.offers_label)
     c2.metric("Hold-out R²", stats.r2_label)
     c3.metric("Last refresh (UTC)", stats.refreshed_label)
+
+
+def _tab_about() -> None:
+    """Business purpose of the tool in plain language."""
+    st.caption(
+        "A short orientation before the charts — what the tool does and how to read it."
+    )
+    for section in ABOUT_SECTIONS:
+        st.subheader(section.title)
+        st.markdown(section.body)
 
 
 def _kpi_strip(summary: dict[str, Any], duration_s: float | None) -> None:
@@ -244,11 +255,14 @@ def render_home() -> None:
 
     _hero(refreshed, summary["n_offers"], r2)
 
-    overview, model_tab, sources_tab = st.tabs([
+    about_tab, overview, model_tab, sources_tab = st.tabs([
+        "About",
         "Market pulse",
         "Model",
         "Data sources",
     ])
+    with about_tab:
+        _tab_about()
     with overview:
         if frame.empty:
             st.info("No scored offers yet — run Admin → pipeline.")

@@ -42,6 +42,8 @@ def main() -> None:
         page.wait_for_timeout(3000)
 
         _shot(page, "01-home.png")
+        _tab(page, "Market pulse")
+        _shot(page, "01b-home-pulse.png")
         _tab(page, "Model")
         _shot(page, "02-home-model.png")
         _tab(page, "Data sources")
