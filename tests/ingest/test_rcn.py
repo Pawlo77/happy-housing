@@ -101,3 +101,15 @@ def test_extract_rcn_transactions_from_zip(tmp_path: Path) -> None:
     assert len(frame) == 2
     assert "price_per_m2" in frame.columns
     assert float(frame.iloc[0]["price_per_m2"]) == pytest.approx(850000 / 48.5)
+
+
+def test_extract_rcn_transactions_from_fixture_gml(tmp_path: Path) -> None:
+    """Committed RCN sample GML loads through the zip extractor path."""
+    gml = Path("data/fixtures/rcn_sample.gml").read_text(encoding="utf-8")
+    zip_path = tmp_path / "rcn_fixture.zip"
+    with zipfile.ZipFile(zip_path, "w") as archive:
+        archive.writestr("rcn_sample.gml", gml)
+    out = tmp_path / "rcn.parquet"
+    frame = extract_rcn_transactions(zip_path, out, max_rows=10)
+    assert len(frame) == 2
+    assert out.exists()

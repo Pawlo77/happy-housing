@@ -1,0 +1,16 @@
+[
+  {
+    "Identyfikator stacji": 1,
+    "Nazwa stacji": "Warszawa-Śródmieście",
+    "WGS84 φ N": 52.2297,
+    "WGS84 λ E": 21.0122,
+    "Nazwa miasta": "Warszawa"
+  },
+  {
+    "Identyfikator stacji": 2,
+    "Nazwa stacji": "Warszawa-Ursynów",
+    "WGS84 φ N": 52.1410,
+    "WGS84 λ E": 21.0340,
+    "Nazwa miasta": "Warszawa"
+  }
+]

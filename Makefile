@@ -8,7 +8,7 @@ export OMP_NUM_THREADS=1
 
 .DEFAULT_GOAL := help
 
-.PHONY: help install update clean prek prek-all check tests coverage mlflow mlflow-stop datasets otodom pipeline app
+.PHONY: help install update clean prek prek-all check tests coverage mlflow mlflow-stop datasets otodom pipeline app ingest-gtfs ingest-gios ingest-rcn ingest-gunb ingest-otodom osrm-prepare
 
 MLFLOW_HOST ?= 127.0.0.1
 MLFLOW_PORT ?= 5005
@@ -49,10 +49,33 @@ coverage: ## Run tests with coverage report
 	uv run pytest --cov=./src/happy_housing --cov-report=term-missing tests/
 
 datasets: ## Download GTFS, GIOŚ, RCN, GUNB into data/ (full sources)
-	uv run python -c "from pathlib import Path; from happy_housing.config import load_experiment_config; from happy_housing.ingest import download_gtfs_stops, fetch_gios_stations, download_file; from happy_housing.ingest.rcn import extract_rcn_transactions; from happy_housing.ingest.gunb import download_gunb_mazowieckie; c=load_experiment_config(Path('configs/experiment.yaml')); r=c.data.raw_path(); p=c.data.processed_path(); f=c.data.fixtures_path(); r.mkdir(parents=True, exist_ok=True); p.mkdir(parents=True, exist_ok=True); download_gtfs_stops(c.ingest_urls.gtfs_zip, r, p/'gtfs_stops.parquet'); fetch_gios_stations(c.ingest_urls.gios_stations, p/'gios_stations.parquet'); z=download_file(c.ingest_urls.rcn_zip, r/'rcn_warsaw.zip', timeout_s=1800); extract_rcn_transactions(z, p/'rcn_transactions.parquet', max_rows=c.ingest.rcn_max_rows); download_gunb_mazowieckie(r, p/'gunb_mazowieckie.parquet', fixture_path=f/'gunb_points.json')"
+	uv run python -c "from pathlib import Path; from happy_housing.config import load_experiment_config; from happy_housing.ingest import download_gtfs_stops, fetch_gios_stations, download_file; from happy_housing.ingest.rcn import extract_rcn_transactions; from happy_housing.ingest.gunb import download_gunb_mazowieckie; c=load_experiment_config(Path('configs/experiment.yaml')); r=c.data.raw_path(); p=c.data.processed_path(); f=c.data.fixtures_path(); r.mkdir(parents=True, exist_ok=True); p.mkdir(parents=True, exist_ok=True); download_gtfs_stops(c.ingest_urls.gtfs_zip, r, p/'gtfs_stops.parquet'); fetch_gios_stations(c.ingest_urls.gios_stations, p/'gios_stations.parquet', fixture_path=f/'gios_stations.json'); z=download_file(c.ingest_urls.rcn_zip, r/'rcn_warsaw.zip', timeout_s=1800); extract_rcn_transactions(z, p/'rcn_transactions.parquet', max_rows=c.ingest.rcn_max_rows); download_gunb_mazowieckie(r, p/'gunb_mazowieckie.parquet', fixture_path=f/'gunb_points.json')"
+
+ingest-gtfs: ## Download GTFS stops + hourly departures
+	uv run python -c "from pathlib import Path; from happy_housing.config import load_experiment_config; from happy_housing.ingest import download_gtfs_stops; c=load_experiment_config(Path('configs/experiment.yaml')); download_gtfs_stops(c.ingest_urls.gtfs_zip, c.data.raw_path(), c.data.processed_path()/'gtfs_stops.parquet')"
+
+ingest-gios: ## Download GIOŚ stations (fixture fallback)
+	uv run python -c "from pathlib import Path; from happy_housing.config import load_experiment_config; from happy_housing.ingest import fetch_gios_stations; c=load_experiment_config(Path('configs/experiment.yaml')); fetch_gios_stations(c.ingest_urls.gios_stations, c.data.processed_path()/'gios_stations.parquet', fixture_path=c.data.fixtures_path()/'gios_stations.json')"
+
+ingest-rcn: ## Download + parse RCN GML zip
+	uv run python -c "from pathlib import Path; from happy_housing.config import load_experiment_config; from happy_housing.ingest import download_file; from happy_housing.ingest.rcn import extract_rcn_transactions; c=load_experiment_config(Path('configs/experiment.yaml')); z=download_file(c.ingest_urls.rcn_zip, c.data.raw_path()/'rcn_warsaw.zip', timeout_s=1800); extract_rcn_transactions(z, c.data.processed_path()/'rcn_transactions.parquet', max_rows=c.ingest.rcn_max_rows)"
+
+ingest-gunb: ## Download GUNB Mazowieckie CSV (fixture fallback)
+	uv run python -c "from pathlib import Path; from happy_housing.config import load_experiment_config; from happy_housing.ingest.gunb import download_gunb_mazowieckie; c=load_experiment_config(Path('configs/experiment.yaml')); download_gunb_mazowieckie(c.data.raw_path(), c.data.processed_path()/'gunb_mazowieckie.parquet', fixture_path=c.data.fixtures_path()/'gunb_points.json')"
+
+ingest-otodom: ## Alias for otodom scrape
+	$(MAKE) otodom
 
 otodom: ## Scrape all Otodom Warsaw flats (rate-limited; uses config ingest caps)
 	uv run python -c "from pathlib import Path; from happy_housing.config import load_experiment_config; from happy_housing.ingest.otodom import scrape_otodom_warsaw; c=load_experiment_config(Path('configs/experiment.yaml')); scrape_otodom_warsaw(Path('data/processed/otodom_listings.parquet'), max_pages=c.ingest.otodom_max_pages, max_listings=c.ingest.otodom_max_listings)"
+
+osrm-prepare: ## Download Mazowieckie PBF and build OSRM MLD graph into docker/data/osrm
+	@mkdir -p docker/data/osrm
+	@echo "Download https://download.geofabrik.de/europe/poland/mazowieckie-latest.osm.pbf into docker/data/osrm/"
+	@echo "Then run: docker run --rm -v \"$$(pwd)/docker/data/osrm:/data\" ghcr.io/project-osrm/osrm-backend:latest osrm-extract -p /opt/car.lua /data/mazowieckie-latest.osm.pbf"
+	@echo "Then: docker run --rm -v \"$$(pwd)/docker/data/osrm:/data\" ghcr.io/project-osrm/osrm-backend:latest osrm-partition /data/mazowieckie-latest.osrm"
+	@echo "Then: docker run --rm -v \"$$(pwd)/docker/data/osrm:/data\" ghcr.io/project-osrm/osrm-backend:latest osrm-customize /data/mazowieckie-latest.osrm"
+	@echo "Start: docker compose -f docker/docker-compose.osrm.yml up"
 
 pipeline: ## Full ingest → GIS → score → MLflow train
 	uv run python -m happy_housing.pipeline

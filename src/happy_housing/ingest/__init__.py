@@ -94,7 +94,12 @@ def download_gtfs_stops(
         Stops dataframe.
     """
     zip_path = download_file(url, raw_dir / "gtfs_warsaw.zip", timeout_s=600.0)
-    with zipfile.ZipFile(zip_path) as archive:
+    return export_gtfs_stops_from_zip(zip_path, output_parquet)
+
+
+def export_gtfs_stops_from_zip(gtfs_zip: Path, output_parquet: Path) -> pd.DataFrame:
+    """Export ``stops.txt`` from a local GTFS zip and build hourly counts."""
+    with zipfile.ZipFile(gtfs_zip) as archive:
         stop_name = next(
             name for name in archive.namelist() if Path(name).name == "stops.txt"
         )
@@ -108,7 +113,7 @@ def download_gtfs_stops(
     stops.to_parquet(output_parquet, index=False)
     logger.info("Wrote %s GTFS stops to %s", len(stops), output_parquet)
     hourly_path = output_parquet.with_name("gtfs_stop_hourly.parquet")
-    build_gtfs_stop_hourly(zip_path, hourly_path)
+    build_gtfs_stop_hourly(gtfs_zip, hourly_path)
     return stops
 
 
@@ -171,16 +176,55 @@ def _parse_gios_station_row(row: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
-def fetch_gios_stations(url: str, output_parquet: Path) -> pd.DataFrame:
+def fetch_gios_stations(
+    url: str,
+    output_parquet: Path,
+    *,
+    fixture_path: Path | None = None,
+) -> pd.DataFrame:
     """Fetch all GIOŚ v1 stations (paginated) into parquet.
 
     Args:
         url: GIOŚ stations endpoint.
         output_parquet: Destination parquet path.
+        fixture_path: Optional offline JSON list used when the HTTP fetch fails.
 
     Returns:
         Stations dataframe with ``station_id``, ``lat``, ``lon``, ``name``.
     """
+    try:
+        frame = _fetch_gios_stations_http(url)
+    except (OSError, requests.RequestException, ValueError, TypeError) as exc:
+        if fixture_path is None or not fixture_path.exists():
+            raise
+        logger.warning("GIOŚ fetch failed (%s); using fixture %s", exc, fixture_path)
+        frame = load_gios_stations_json(fixture_path)
+    if frame.empty:
+        raise ValueError("GIOŚ station response produced zero rows.")
+    frame = frame.drop_duplicates(subset=["station_id"], keep="last")
+    output_parquet.parent.mkdir(parents=True, exist_ok=True)
+    frame.to_parquet(output_parquet, index=False)
+    logger.info("Wrote %s GIOŚ stations to %s", len(frame), output_parquet)
+    return frame
+
+
+def load_gios_stations_json(path: Path) -> pd.DataFrame:
+    """Load GIOŚ stations from a fixture JSON array of API-shaped rows."""
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, list):
+        raise ValueError("GIOŚ fixture must be a JSON array.")
+    records: list[dict[str, Any]] = []
+    for row in payload:
+        if not isinstance(row, dict):
+            continue
+        parsed = _parse_gios_station_row(row)
+        if parsed is not None:
+            records.append(parsed)
+    return pd.DataFrame(records)
+
+
+def _fetch_gios_stations_http(url: str) -> pd.DataFrame:
+    """Paginated HTTP fetch of GIOŚ stations."""
     records: list[dict[str, Any]] = []
     page = 0
     page_size = 500
@@ -212,15 +256,7 @@ def fetch_gios_stations(url: str, output_parquet: Path) -> pd.DataFrame:
         if page > 100:
             logger.warning("GIOŚ pagination stopped after 100 pages")
             break
-
-    frame = pd.DataFrame(records)
-    if frame.empty:
-        raise ValueError("GIOŚ station response produced zero rows.")
-    frame = frame.drop_duplicates(subset=["station_id"], keep="last")
-    output_parquet.parent.mkdir(parents=True, exist_ok=True)
-    frame.to_parquet(output_parquet, index=False)
-    logger.info("Wrote %s GIOŚ stations to %s", len(frame), output_parquet)
-    return frame
+    return pd.DataFrame(records)
 
 
 def sample_rcn_from_zip(
