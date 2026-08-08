@@ -14,19 +14,29 @@ logger = logging.getLogger(__name__)
 
 
 def write_geoparquet(gdf: gpd.GeoDataFrame, path: Path) -> Path:
-    """Write a GeoDataFrame to parquet with WKT geometry, Hilbert-ish order."""
+    """Write listings with WKT geometry, bbox columns, and Z-order locality sort.
+
+    Uses Morton/Z-order on lon/lat ranks as a fast Hilbert-family locality key
+    (true Hilbert curves need heavier deps; Z-order still clusters neighbors).
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     frame = gdf.copy()
-    # Approx spatial locality: interleave lon/lat ranks (cheap Hilbert proxy).
     if not frame.empty and "geometry" in frame.columns:
         xs = frame.geometry.x
         ys = frame.geometry.y
+        bounds = frame.geometry.bounds
+        frame["lon"] = xs
+        frame["lat"] = ys
+        frame["bbox_minx"] = bounds.minx
+        frame["bbox_miny"] = bounds.miny
+        frame["bbox_maxx"] = bounds.maxx
+        frame["bbox_maxy"] = bounds.maxy
         rx = xs.rank(method="average").astype("uint32")
         ry = ys.rank(method="average").astype("uint32")
         frame["_hilbert"] = _morton_interleave16(rx.to_numpy(), ry.to_numpy())
         frame = frame.sort_values("_hilbert").drop(columns=["_hilbert"])
-    frame["geometry_wkt"] = frame.geometry.to_wkt()
-    table = pd.DataFrame(frame.drop(columns=["geometry"]))
+        frame["geometry_wkt"] = frame.geometry.to_wkt()
+    table = pd.DataFrame(frame.drop(columns=["geometry"], errors="ignore"))
     table.to_parquet(path, index=False)
     logger.info("Wrote %s rows to %s", len(table), path)
     return path
@@ -89,3 +99,26 @@ def query_listings(
     where_sql = " AND ".join(clauses)
     sql = f"SELECT * FROM read_parquet(?) WHERE {where_sql}"  # nosec B608
     return conn.execute(sql, params).df()
+
+
+def query_listings_bbox(
+    conn: duckdb.DuckDBPyConnection,
+    parquet_path: Path,
+    *,
+    west: float,
+    south: float,
+    east: float,
+    north: float,
+) -> pd.DataFrame:
+    """BBox prune using covering columns written by ``write_geoparquet``."""
+    sql = """
+        SELECT * FROM read_parquet(?)
+        WHERE bbox_maxx >= ?
+          AND bbox_minx <= ?
+          AND bbox_maxy >= ?
+          AND bbox_miny <= ?
+    """
+    return conn.execute(
+        sql,
+        [str(parquet_path), west, east, south, north],
+    ).df()
