@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from happy_housing.ingest.gunb import gunb_points_gdf
+from happy_housing.ingest.gunb import _frame_from_wfs_geojson, gunb_points_gdf
 
 
 def test_gunb_points_gdf_from_lon_lat() -> None:
@@ -24,3 +24,19 @@ def test_gunb_points_gdf_empty_without_coords() -> None:
     frame = pd.DataFrame({"adres": ["x"]})
     gdf = gunb_points_gdf(frame)
     assert gdf.empty
+
+
+def test_frame_from_wfs_geojson() -> None:
+    payload = {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [21.0, 52.2]},
+                "properties": {"adres": "x", "numer_decyzji": "1"},
+            }
+        ],
+    }
+    frame = _frame_from_wfs_geojson(payload)
+    assert len(frame) == 1
+    assert float(frame.iloc[0]["lon"]) == 21.0

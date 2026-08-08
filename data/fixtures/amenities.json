@@ -7,5 +7,8 @@
   {"amenity": "fire_station", "name": "JRG 15", "lon": 20.950, "lat": 52.250},
   {"amenity": "police", "name": "KSP Warszawa", "lon": 21.012, "lat": 52.232},
   {"amenity": "police", "name": "Komisariat Mokotów", "lon": 21.020, "lat": 52.200},
-  {"amenity": "police", "name": "Komisariat Wola", "lon": 20.970, "lat": 52.235}
+  {"amenity": "police", "name": "Komisariat Wola", "lon": 20.970, "lat": 52.235},
+  {"amenity": "subway", "name": "Metro Centrum", "lon": 21.0122, "lat": 52.2297},
+  {"amenity": "subway", "name": "Metro Politechnika", "lon": 21.0100, "lat": 52.2200},
+  {"amenity": "subway", "name": "Metro Ratusz Arsenał", "lon": 21.0000, "lat": 52.2440}
 ]

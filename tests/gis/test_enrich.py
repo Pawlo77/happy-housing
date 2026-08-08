@@ -15,10 +15,10 @@ def test_oou_flag_and_distances(tmp_path: Path) -> None:
     oou_path = tmp_path / "oou.geojson"
     load_or_create_oou_polygon(oou_path)
     amenities = gpd.GeoDataFrame(
-        {"amenity": ["hospital", "fire_station", "police"]},
+        {"amenity": ["hospital", "fire_station", "police", "subway"]},
         geometry=gpd.points_from_xy(
-            [21.0, 20.98, 21.02],
-            [52.22, 52.21, 52.23],
+            [21.0, 20.98, 21.02, 21.01],
+            [52.22, 52.21, 52.23, 52.229],
         ),
         crs="EPSG:4326",
     )
@@ -43,5 +43,6 @@ def test_oou_flag_and_distances(tmp_path: Path) -> None:
     assert "in_oou" in enriched.columns
     assert enriched["in_oou"].isin([0, 1]).all()
     assert enriched["dist_transit_stop_m"].notna().all()
+    assert enriched["dist_metro_m"].notna().all()
     assert enriched["dist_daszynskiego_m"].notna().all()
     assert int(enriched["in_oou"].sum()) >= 1

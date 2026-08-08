@@ -55,6 +55,7 @@ def livability_rows(row: pd.Series) -> pd.DataFrame:
         ("in_oou", "OOU / aircraft zone", "flag"),
         ("commute_min", "Commute to Daszyńskiego", "min"),
         ("dist_transit_stop_m", "Nearest transit stop", "m"),
+        ("dist_metro_m", "Nearest metro", "m"),
         ("dist_hospital_m", "Nearest hospital", "m"),
         ("dist_fire_station_m", "Nearest fire station", "m"),
         ("dist_police_m", "Nearest police", "m"),

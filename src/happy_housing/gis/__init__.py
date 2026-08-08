@@ -107,6 +107,7 @@ def fetch_osm_amenities(
 
     tag_filter: dict[str, str | list[str]] = tags or {
         "amenity": ["hospital", "fire_station", "police"],
+        "station": "subway",
     }
     west, south, east, north = bbox
     frame = gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
@@ -125,8 +126,14 @@ def fetch_osm_amenities(
             projected = frame.to_crs("EPSG:2180")
             frame["geometry"] = projected.geometry.centroid.to_crs("EPSG:4326")
             frame = gpd.GeoDataFrame(frame, geometry="geometry", crs="EPSG:4326")
+            if "amenity" not in frame.columns:
+                frame["amenity"] = None
+            if "station" in frame.columns:
+                subway = frame["station"].astype(str).eq("subway")
+                frame.loc[subway, "amenity"] = "subway"
             keep = [c for c in ("amenity", "name", "geometry") if c in frame.columns]
             frame = frame[keep]
+            frame = frame[frame["amenity"].notna()]
     except Exception as exc:
         logger.warning("OSMnx amenity fetch failed: %s", exc)
 
@@ -217,6 +224,7 @@ def enrich_listings(
         ("hospital", "dist_hospital_m"),
         ("fire_station", "dist_fire_station_m"),
         ("police", "dist_police_m"),
+        ("subway", "dist_metro_m"),
     )
     for amenity_value, col in amenity_cols:
         if not amenities.empty and "amenity" in amenities.columns:

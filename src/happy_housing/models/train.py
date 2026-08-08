@@ -32,6 +32,7 @@ FEATURE_COLUMNS: tuple[str, ...] = (
     "dist_police_m",
     "dist_air_station_m",
     "dist_transit_stop_m",
+    "dist_metro_m",
     "dist_daszynskiego_m",
     "commute_min",
     "dist_gunb_m",
