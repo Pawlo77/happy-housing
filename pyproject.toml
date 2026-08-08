@@ -138,6 +138,8 @@ module = [
   "pandas.*",
   "matplotlib",
   "matplotlib.*",
+  "altair",
+  "altair.*",
   "pyproj",
   "pyproj.*",
   "requests",

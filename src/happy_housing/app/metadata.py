@@ -11,6 +11,18 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True, slots=True)
+class DataSource:
+    """Attributed open-data / listing source shown on Home."""
+
+    name: str
+    """Short display name."""
+    url: str
+    """Canonical https homepage or docs URL."""
+    role: str
+    """What this source contributes to the model or UI."""
+
+
 @dataclass(slots=True)
 class RunMetadata:
     """Snapshot of the last pipeline/training run shown on Home."""
@@ -76,16 +88,47 @@ def load_run_metadata(path: Path) -> RunMetadata | None:
         return None
 
 
-DEFAULT_SOURCES: list[str] = [
-    "Otodom (public listing pages)",
-    "UM Warszawa RCN (transaction GML)",
-    "OpenStreetMap / OSMnx amenities",
-    "ZTM Warsaw GTFS via mkuran.pl",
-    "GIOŚ air-quality stations (API v1)",
-    "GUNB building permits (CSV when available)",
-    "Chopin OOU restricted-use zone (bootstrap/open polygon)",
-]
-"""Human-readable data source attributions."""
+DEFAULT_SOURCE_CATALOG: tuple[DataSource, ...] = (
+    DataSource(
+        name="Otodom (public listing pages)",
+        url="https://www.otodom.pl/",
+        role="Asking prices, photos, and listing URLs for Warsaw flats.",
+    ),
+    DataSource(
+        name="UM Warszawa RCN (transaction GML)",
+        url="https://mapa.um.warszawa.pl/",
+        role="Notarial transaction prices for fair-value context.",
+    ),
+    DataSource(
+        name="OpenStreetMap / OSMnx amenities",
+        url="https://www.openstreetmap.org/",
+        role="Hospital, fire, and police amenity distances.",
+    ),
+    DataSource(
+        name="ZTM Warsaw GTFS via mkuran.pl",
+        url="https://mkuran.pl/gtfs/",
+        role="Transit stop proximity from the public Warsaw GTFS feed.",
+    ),
+    DataSource(
+        name="GIOŚ air-quality stations (API v1)",
+        url="https://powietrze.gios.gov.pl/",
+        role="Nearest air-quality station distance.",
+    ),
+    DataSource(
+        name="GUNB building permits (CSV when available)",
+        url="https://wyszukiwarka.gunb.gov.pl/",
+        role="Nearby construction / permit activity proxy.",
+    ),
+    DataSource(
+        name="Chopin OOU restricted-use zone",
+        url="https://www.lotnisko-chopina.pl/",
+        role="Aircraft restricted-use zone flag (noise/livability proxy).",
+    ),
+)
+"""Canonical data sources with URLs for the Home page."""
+
+DEFAULT_SOURCES: list[str] = [src.name for src in DEFAULT_SOURCE_CATALOG]
+"""Human-readable data source names stored in run metadata."""
 
 DEFAULT_METHODOLOGY: str = (
     "LightGBM regresses asking/transaction zł/m² from property traits "
@@ -95,3 +138,13 @@ DEFAULT_METHODOLOGY: str = (
     "Commute minutes use local OSRM when available, else a 30 km/h distance proxy."
 )
 """Short modeling methodology blurb."""
+
+METHODOLOGY_STEPS: tuple[str, ...] = (
+    "Ingest Otodom asks and UM Warszawa RCN transactions into one universe.",
+    "Enrich each pin with OOU membership and nearest amenity / transit / "
+    "air / GUNB distances.",
+    "Attach commute minutes via local OSRM, or a 30 km/h distance proxy.",
+    "Train LightGBM on hold-out zł/m²; log MAE/R² and the booster to MLflow.",
+    "Score every offer; Explore explains residuals with SHAP TreeExplainer.",
+)
+"""Step-wise methodology bullets for the Home Model tab."""
