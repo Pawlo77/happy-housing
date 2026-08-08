@@ -735,7 +735,7 @@ def _render_offer_gallery(row: pd.Series) -> None:
     photos = image_urls_from_row(row)
     if photos:
         if len(photos) == 1:
-            st.image(photos[0], use_container_width=True)
+            st.image(photos[0], width="stretch")
         else:
             labels = [f"Photo {i + 1} / {len(photos)}" for i in range(len(photos))]
             pick = st.selectbox(
@@ -745,13 +745,13 @@ def _render_offer_gallery(row: pd.Series) -> None:
                 label_visibility="collapsed",
             )
             idx = labels.index(str(pick))
-            st.image(photos[idx], use_container_width=True)
+            st.image(photos[idx], width="stretch")
             st.caption(f"{idx + 1} of {len(photos)} photos")
     plans = floor_plan_urls_from_row(row)
     if plans:
         st.markdown("##### Floor plan")
         for i, url in enumerate(plans):
-            st.image(url, use_container_width=True, caption=f"Layout {i + 1}")
+            st.image(url, width="stretch", caption=f"Layout {i + 1}")
 
 
 _DELTA_COLORS_HELP = "listing - model zł/m² (negative = model sees a bargain)"

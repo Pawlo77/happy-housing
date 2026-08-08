@@ -174,7 +174,7 @@ def render_assistant_tab(
     left, right = st.columns([1, 2.4])
     with left:
         st.caption("Conversations")
-        if st.button("New chat", key="assistant_tab_new", use_container_width=True):
+        if st.button("New chat", key="assistant_tab_new", width="stretch"):
             conv = create_conversation(db, title="New chat")
             st.session_state[ACTIVE_CONV_KEY] = conv.id
             st.rerun()
@@ -184,7 +184,7 @@ def render_assistant_tab(
             if st.button(
                 f"{'● ' if selected else ''}{label}",
                 key=f"assistant_tab_pick_{conv.id}",
-                use_container_width=True,
+                width="stretch",
                 type="primary" if selected else "secondary",
             ):
                 st.session_state[ACTIVE_CONV_KEY] = conv.id
