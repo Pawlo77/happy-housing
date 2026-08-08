@@ -47,17 +47,21 @@ Sidebar filters + map overlays. **Map / Offer / Board / News**:
 
 Filterable market analytics for decisions — not a vanity dashboard:
 
-- **Filters** — districts, sources, months, valuation side, OOU, price / area / rooms
+- **Sidebar filters** — districts, sources, months, valuation, aircraft Lden ≥55, price / area / rooms
+- **Overview** — inventory by zł/m² band, rooms, source mix, primary vs secondary
 - **Trends** — listing vs model medians over time, residual distribution
 - **Value** — district value board, ask vs RCN ink, hunt / watch lists
-- **Place** — Chopin/OOU premium, commute & transit price curves, district mood
+- **Place** — Chopin Lden premium, commute / transit / metro / noise / fire curves, district mood
 - **Stock** — size / rooms / build-era mix
+- **Afford** — budget ladder (what total PLN buys in m² and zł/m²)
 
 Tunables: Admin → Stats.
 
-![Stats — Trends](docs/screenshots/08-stats.png)
+![Stats — Overview](docs/screenshots/08-stats.png)
 
 ![Stats — Value](docs/screenshots/08b-stats-value.png)
+
+![Stats — Afford](docs/screenshots/08c-stats-afford.png)
 
 ### Admin
 

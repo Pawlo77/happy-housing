@@ -63,6 +63,11 @@ def main() -> None:
         _nav(page, "Stats")
         page.get_by_text("Market analytics", exact=False).first.wait_for(timeout=60_000)
         page.wait_for_timeout(4000)
+        try:
+            _tab(page, "Overview")
+            page.wait_for_timeout(2000)
+        except Exception as exc:
+            print(f"skip Stats Overview tab: {exc}")
         _shot(page, "08-stats.png")
         try:
             page.get_by_role("tab", name="Value").click()
@@ -70,6 +75,12 @@ def main() -> None:
             _shot(page, "08b-stats-value.png")
         except Exception as exc:
             print(f"skip Stats Value: {exc}")
+        try:
+            page.get_by_role("tab", name="Afford").click()
+            page.wait_for_timeout(3000)
+            _shot(page, "08c-stats-afford.png")
+        except Exception as exc:
+            print(f"skip Stats Afford: {exc}")
 
         _nav(page, "Admin")
         page.wait_for_timeout(3000)

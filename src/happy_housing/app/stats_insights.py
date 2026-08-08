@@ -484,3 +484,210 @@ def market_kpis(frame: pd.DataFrame) -> dict[str, float]:
         "median_delta": float(delta.median()) if delta.notna().any() else float("nan"),
         "share_overpriced": share_over,
     }
+
+
+def price_band_inventory(frame: pd.DataFrame) -> pd.DataFrame:
+    """Offer volume and residual by listing zł/m² bands (inventory pressure)."""
+    empty = pd.DataFrame(columns=["price_band", "n", "share", "median_delta"])
+    work = pd.DataFrame({
+        "ppm": _num(frame, "price_per_m2"),
+        "delta": _num(frame, "delta_price_per_m2"),
+    }).dropna(subset=["ppm"])
+    if work.empty:
+        return empty
+    bins = [0, 12_000, 15_000, 18_000, 22_000, 28_000, 40_000, 200_000]
+    labels = [
+        "<12k",
+        "12-15k",
+        "15-18k",
+        "18-22k",
+        "22-28k",
+        "28-40k",
+        "40k+",
+    ]
+    work["price_band"] = pd.cut(
+        work["ppm"], bins=bins, labels=labels, include_lowest=True, right=False
+    )
+    grouped = (
+        work
+        .groupby("price_band", observed=False)
+        .agg(n=("ppm", "size"), median_delta=("delta", "median"))
+        .reset_index()
+    )
+    grouped = grouped.loc[grouped["n"] > 0].copy()
+    total = float(grouped["n"].sum()) or 1.0
+    grouped["share"] = grouped["n"] / total
+    grouped["price_band"] = grouped["price_band"].astype(str)
+    return grouped.reset_index(drop=True)
+
+
+def source_mix_summary(frame: pd.DataFrame) -> pd.DataFrame:
+    """Ask vs transaction source mix with median zł/m² and delta."""
+    empty = pd.DataFrame(columns=["source", "n", "share", "median_ppm", "median_delta"])
+    if frame.empty or "source" not in frame.columns:
+        return empty
+    work = pd.DataFrame({
+        "source": frame["source"].astype(str).str.casefold(),
+        "ppm": _num(frame, "price_per_m2"),
+        "delta": _num(frame, "delta_price_per_m2"),
+    })
+    grouped = (
+        work
+        .groupby("source", dropna=True)
+        .agg(
+            n=("source", "size"),
+            median_ppm=("ppm", "median"),
+            median_delta=("delta", "median"),
+        )
+        .reset_index()
+    )
+    if grouped.empty:
+        return empty
+    total = float(grouped["n"].sum()) or 1.0
+    grouped["share"] = grouped["n"] / total
+    return grouped.sort_values("n", ascending=False).reset_index(drop=True)
+
+
+def rooms_inventory(frame: pd.DataFrame) -> pd.DataFrame:
+    """Supply mix by room count — what the market is stocking."""
+    empty = pd.DataFrame(columns=["rooms", "n", "share", "median_ppm"])
+    work = pd.DataFrame({
+        "rooms": _num(frame, "rooms"),
+        "ppm": _num(frame, "price_per_m2"),
+    }).dropna(subset=["rooms"])
+    if work.empty:
+        return empty
+    work["rooms"] = work["rooms"].round().astype(int)
+    grouped = (
+        work
+        .groupby("rooms", observed=True)
+        .agg(n=("rooms", "size"), median_ppm=("ppm", "median"))
+        .reset_index()
+    )
+    total = float(grouped["n"].sum()) or 1.0
+    grouped["share"] = grouped["n"] / total
+    return grouped.sort_values("rooms").reset_index(drop=True)
+
+
+def metro_price_curve(frame: pd.DataFrame) -> pd.DataFrame:
+    """Median zł/m² by metro-station distance (walkability premium)."""
+    work = pd.DataFrame({
+        "ppm": _num(frame, "price_per_m2"),
+        "dist": _num(frame, "dist_metro_m"),
+    }).dropna()
+    if work.empty:
+        return pd.DataFrame(columns=["metro_band", "n", "median_price_per_m2"])
+    bins = [0, 300, 600, 1000, 1500, 3000, 50000]
+    labels = ["<300m", "300-600m", "600m-1km", "1-1.5km", "1.5-3km", "3km+"]
+    work["metro_band"] = pd.cut(
+        work["dist"], bins=bins, labels=labels, include_lowest=True, right=False
+    )
+    return (
+        work
+        .groupby("metro_band", observed=False)
+        .agg(n=("ppm", "size"), median_price_per_m2=("ppm", "median"))
+        .reset_index()
+        .loc[lambda d: d["n"] > 0]
+        .assign(metro_band=lambda d: d["metro_band"].astype(str))
+        .reset_index(drop=True)
+    )
+
+
+def aircraft_noise_ladder(frame: pd.DataFrame) -> pd.DataFrame:
+    """Median zł/m² by aircraft Lden band (END contour lower edge)."""
+    empty = pd.DataFrame(columns=["lden_band", "n", "median_price_per_m2"])
+    work = pd.DataFrame({
+        "ppm": _num(frame, "price_per_m2"),
+        "lden": _num(frame, "aircraft_lden_db"),
+    }).dropna(subset=["ppm"])
+    if work.empty:
+        return empty
+    work["lden"] = work["lden"].fillna(0.0)
+    bins = [-0.1, 0.1, 50, 55, 60, 65, 70, 100]
+    labels = ["0 / below", "1-50", "50-55", "55-60", "60-65", "65-70", "70+"]
+    work["lden_band"] = pd.cut(
+        work["lden"], bins=bins, labels=labels, include_lowest=True, right=False
+    )
+    return (
+        work
+        .groupby("lden_band", observed=False)
+        .agg(n=("ppm", "size"), median_price_per_m2=("ppm", "median"))
+        .reset_index()
+        .loc[lambda d: d["n"] > 0]
+        .assign(lden_band=lambda d: d["lden_band"].astype(str))
+        .reset_index(drop=True)
+    )
+
+
+def affordability_bands(frame: pd.DataFrame) -> pd.DataFrame:
+    """Total asking-price bands with typical area — what money buys."""
+    empty = pd.DataFrame(
+        columns=["price_band", "n", "share", "median_area_m2", "median_ppm"]
+    )
+    work = pd.DataFrame({
+        "price": _num(frame, "price_pln"),
+        "area": _num(frame, "area_m2"),
+        "ppm": _num(frame, "price_per_m2"),
+    }).dropna(subset=["price"])
+    if work.empty:
+        return empty
+    bins = [
+        0,
+        500_000,
+        750_000,
+        1_000_000,
+        1_250_000,
+        1_500_000,
+        2_000_000,
+        20_000_000,
+    ]
+    labels = [
+        "<0.5M",
+        "0.5-0.75M",
+        "0.75-1M",
+        "1-1.25M",
+        "1.25-1.5M",
+        "1.5-2M",
+        "2M+",
+    ]
+    work["price_band"] = pd.cut(
+        work["price"], bins=bins, labels=labels, include_lowest=True, right=False
+    )
+    grouped = (
+        work
+        .groupby("price_band", observed=False)
+        .agg(
+            n=("price", "size"),
+            median_area_m2=("area", "median"),
+            median_ppm=("ppm", "median"),
+        )
+        .reset_index()
+    )
+    grouped = grouped.loc[grouped["n"] > 0].copy()
+    total = float(grouped["n"].sum()) or 1.0
+    grouped["share"] = grouped["n"] / total
+    grouped["price_band"] = grouped["price_band"].astype(str)
+    return grouped.reset_index(drop=True)
+
+
+def market_segment_mix(frame: pd.DataFrame) -> pd.DataFrame:
+    """Primary vs secondary market share and median zł/m²."""
+    empty = pd.DataFrame(columns=["segment", "n", "share", "median_ppm"])
+    if frame.empty or "market_primary" not in frame.columns:
+        return empty
+    flag = _num(frame, "market_primary")
+    work = pd.DataFrame({
+        "segment": np.where(flag.fillna(0) >= 0.5, "primary", "secondary"),
+        "ppm": _num(frame, "price_per_m2"),
+    })
+    grouped = (
+        work
+        .groupby("segment", dropna=True)
+        .agg(n=("segment", "size"), median_ppm=("ppm", "median"))
+        .reset_index()
+    )
+    if grouped.empty:
+        return empty
+    total = float(grouped["n"].sum()) or 1.0
+    grouped["share"] = grouped["n"] / total
+    return grouped.sort_values("segment").reset_index(drop=True)
