@@ -7,6 +7,7 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
+import geopandas as gpd
 import pandas as pd
 
 from happy_housing.app.app_settings import (
@@ -30,6 +31,7 @@ from happy_housing.gis import (
     fetch_osm_amenities,
     fetch_osm_shops,
     load_amenity_points,
+    load_shop_points,
 )
 from happy_housing.gis.routing import (
     attach_commute_minutes,
@@ -50,7 +52,7 @@ from happy_housing.ingest.gunb import download_gunb_mazowieckie, gunb_points_gdf
 from happy_housing.ingest.market import ensure_market_primary
 from happy_housing.ingest.otodom import scrape_otodom_warsaw
 from happy_housing.ingest.rcn import extract_rcn_transactions
-from happy_housing.ingest.warsaw_map import fetch_warsaw_parks
+from happy_housing.ingest.warsaw_map import fetch_warsaw_parks, fetch_warsaw_schools
 from happy_housing.models.metrics import coerce_opt_metric
 from happy_housing.models.neighborhood import attach_neighborhood_rcn_features
 from happy_housing.models.train import (
@@ -253,17 +255,26 @@ def run_pipeline(
             cache,
             fixture_path=fixtures / "amenities.json",
         )
-        fetch_osm_shops(
+        shops = fetch_osm_shops(
             config.bbox.as_tuple(),
             cache,
             fixture_path=fixtures / "shops.json",
         )
     else:
         amenities = load_amenity_points(fixtures / "amenities.json")
+        shops_cache = cache / "osm_shops.geojson"
+        if shops_cache.exists():
+            shops = gpd.read_file(shops_cache)
+        else:
+            shops = load_shop_points(fixtures / "shops.json")
 
     parks = fetch_warsaw_parks(
         cache,
         fixture_path=fixtures / "parks.geojson",
+    )
+    schools = fetch_warsaw_schools(
+        cache,
+        fixture_path=fixtures / "schools.geojson",
     )
 
     app_settings = load_app_settings(settings_path(processed))
@@ -272,6 +283,8 @@ def run_pipeline(
         "Commute target %s (%.5f, %.5f)", commute.label, commute.lon, commute.lat
     )
 
+    road_lden_path = fixtures / "road_lden.geojson"
+    rail_lden_path = fixtures / "rail_lden.geojson"
     enriched = enrich_listings(
         listings,
         projected_crs=config.bbox.projected_crs,
@@ -282,8 +295,12 @@ def run_pipeline(
         commute_lat=commute.lat,
         gunb_points=gunb,
         parks=parks,
+        schools=schools,
+        shops=shops,
         aircraft_lden_path=fixtures / "chopin_aircraft_lden.geojson",
         aircraft_lnight_path=fixtures / "chopin_aircraft_lnight.geojson",
+        road_lden_path=road_lden_path if road_lden_path.exists() else None,
+        rail_lden_path=rail_lden_path if rail_lden_path.exists() else None,
     )
     train_frame = pd.DataFrame(enriched.drop(columns=["geometry"], errors="ignore"))
     train_frame = attach_commute_minutes(

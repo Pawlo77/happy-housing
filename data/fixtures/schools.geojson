@@ -1,0 +1,44 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "SP Testowa Wola"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          20.975,
+          52.233
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "SP Testowa Centrum"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          21.005,
+          52.228
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "SP Testowa Mokot\u00f3w"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          21.02,
+          52.2
+        ]
+      }
+    }
+  ]
+}

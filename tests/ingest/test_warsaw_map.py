@@ -1,4 +1,4 @@
-"""Tests for UM Warszawa WFS parks (PLACE_SKWERY) ingest."""
+"""Tests for UM Warszawa WFS parks / schools ingest."""
 
 from __future__ import annotations
 
@@ -8,6 +8,8 @@ from unittest.mock import MagicMock, patch
 from happy_housing.ingest.warsaw_map import (
     WARSAW_WFS_URL,
     fetch_warsaw_parks,
+    fetch_warsaw_schools,
+    fetch_warsaw_wfs_layer,
     normalize_warsaw_crs,
 )
 
@@ -92,3 +94,65 @@ def test_fetch_warsaw_parks_uses_cache(tmp_path: Path) -> None:
         out = fetch_warsaw_parks(tmp_path)
     get.assert_not_called()
     assert len(out) == 1
+
+
+def test_fetch_warsaw_wfs_layer_caches_under_custom_name(tmp_path: Path) -> None:
+    """Generic WFS fetch writes the requested cache filename."""
+    mock_resp = MagicMock()
+    mock_resp.content = _SAMPLE_GML
+    mock_resp.raise_for_status = MagicMock()
+    with patch(
+        "happy_housing.ingest.warsaw_map.requests.get",
+        return_value=mock_resp,
+    ):
+        frame = fetch_warsaw_wfs_layer(
+            tmp_path,
+            type_name="ns92528565:PLACE_SKWERY",
+            cache_name="custom_layer.geojson",
+            force_refresh=True,
+        )
+    assert len(frame) == 1
+    assert (tmp_path / "custom_layer.geojson").exists()
+
+
+def test_fetch_warsaw_schools_uses_fixture_when_wfs_fails(tmp_path: Path) -> None:
+    """Schools fall back to fixture GeoJSON and cache warsaw_schools.geojson."""
+    fixture = Path("data/fixtures/schools.geojson")
+    with patch(
+        "happy_housing.ingest.warsaw_map.requests.get",
+        side_effect=RuntimeError("offline"),
+    ):
+        schools = fetch_warsaw_schools(
+            tmp_path,
+            fixture_path=fixture,
+            force_refresh=True,
+        )
+    assert len(schools) >= 2
+    assert schools.crs is not None
+    assert "4326" in str(schools.crs)
+    assert (tmp_path / "warsaw_schools.geojson").exists()
+    assert "name" in schools.columns
+
+
+def test_fetch_warsaw_schools_tries_candidate_type_names(tmp_path: Path) -> None:
+    """First failing typeName is skipped; successful candidate is cached."""
+    fail = MagicMock()
+    fail.raise_for_status.side_effect = RuntimeError("404")
+    ok = MagicMock()
+    ok.content = _SAMPLE_GML
+    ok.raise_for_status = MagicMock()
+    with patch(
+        "happy_housing.ingest.warsaw_map.requests.get",
+        side_effect=[fail, ok],
+    ) as get:
+        schools = fetch_warsaw_schools(
+            tmp_path,
+            type_names=(
+                "ns92528565:SZKOLY",
+                "ns92528565:OBWODY_SZKOL_PODSTAWOWYCH",
+            ),
+            force_refresh=True,
+        )
+    assert get.call_count == 2
+    assert len(schools) == 1
+    assert (tmp_path / "warsaw_schools.geojson").exists()

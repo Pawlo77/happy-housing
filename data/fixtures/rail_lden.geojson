@@ -1,0 +1,40 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "lden_db": 60,
+        "indicator": "Lden",
+        "source": "fixture rail"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              21.0,
+              52.225
+            ],
+            [
+              21.03,
+              52.225
+            ],
+            [
+              21.03,
+              52.24
+            ],
+            [
+              21.0,
+              52.24
+            ],
+            [
+              21.0,
+              52.225
+            ]
+          ]
+        ]
+      }
+    }
+  ]
+}

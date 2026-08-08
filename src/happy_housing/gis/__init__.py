@@ -1,4 +1,4 @@
-"""Spatial enrichment: aircraft noise bands, amenity distances, transit proxies."""
+"""Spatial enrichment: noise bands, amenity / school / shop distances, transit."""
 
 from __future__ import annotations
 
@@ -347,6 +347,29 @@ def fetch_osm_shops(
     return frame
 
 
+def _points_for_nearest(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Use centroids when features are polygons (school catchments, parks)."""
+    if gdf.empty:
+        return gdf
+    out = gdf.copy()
+    geom_types = set(out.geometry.geom_type.unique())
+    if geom_types <= {"Point", "MultiPoint"}:
+        return out
+    projected = out.to_crs("EPSG:2180")
+    out["geometry"] = projected.geometry.centroid.to_crs(out.crs or "EPSG:4326")
+    return gpd.GeoDataFrame(out, geometry="geometry", crs=out.crs or "EPSG:4326")
+
+
+def load_shop_points(path: Path) -> gpd.GeoDataFrame:
+    """Load shop points from a JSON list with lon/lat/shop fields."""
+    frame = pd.read_json(path)
+    return gpd.GeoDataFrame(
+        frame,
+        geometry=gpd.points_from_xy(frame["lon"], frame["lat"]),
+        crs="EPSG:4326",
+    )
+
+
 def enrich_listings(
     listings: pd.DataFrame,
     *,
@@ -358,10 +381,14 @@ def enrich_listings(
     commute_lat: float,
     gunb_points: gpd.GeoDataFrame | None = None,
     parks: gpd.GeoDataFrame | None = None,
+    schools: gpd.GeoDataFrame | None = None,
+    shops: gpd.GeoDataFrame | None = None,
     aircraft_lden_path: Path | None = None,
     aircraft_lnight_path: Path | None = None,
+    road_lden_path: Path | None = None,
+    rail_lden_path: Path | None = None,
 ) -> gpd.GeoDataFrame:
-    """Attach noise, amenity, park, air, transit, GUNB, commute features."""
+    """Attach noise, amenity, park, school, shop, air, transit, GUNB, commute."""
     gdf = listings_to_gdf(listings)
     lden = (
         load_noise_contours(aircraft_lden_path, "lden_db")
@@ -378,6 +405,24 @@ def enrich_listings(
         )
     )
     gdf = attach_aircraft_noise_levels(gdf, lden=lden, lnight=lnight)
+
+    road = (
+        load_noise_contours(road_lden_path, "lden_db")
+        if road_lden_path is not None
+        else gpd.GeoDataFrame(
+            columns=["lden_db", "geometry"], geometry=[], crs="EPSG:4326"
+        )
+    )
+    rail = (
+        load_noise_contours(rail_lden_path, "lden_db")
+        if rail_lden_path is not None
+        else gpd.GeoDataFrame(
+            columns=["lden_db", "geometry"], geometry=[], crs="EPSG:4326"
+        )
+    )
+    gdf = attach_contour_level(gdf, road, "lden_db", "road_lden_db")
+    gdf = attach_contour_level(gdf, rail, "lden_db", "rail_lden_db")
+
     amenity_cols = (
         ("hospital", "dist_hospital_m"),
         ("fire_station", "dist_fire_station_m"),
@@ -395,6 +440,25 @@ def enrich_listings(
         gdf = nearest_distance_meters(gdf, parks, projected_crs, "dist_park_m")
     else:
         gdf["dist_park_m"] = float("nan")
+
+    school_src: gpd.GeoDataFrame | None = None
+    if schools is not None and not schools.empty:
+        school_src = _points_for_nearest(schools)
+    elif not amenities.empty and "amenity" in amenities.columns:
+        osm_schools = amenities[amenities["amenity"] == "school"]
+        if not osm_schools.empty:
+            school_src = _points_for_nearest(osm_schools)
+    if school_src is not None:
+        gdf = nearest_distance_meters(gdf, school_src, projected_crs, "dist_school_m")
+    else:
+        gdf["dist_school_m"] = float("nan")
+
+    if shops is not None and not shops.empty:
+        gdf = nearest_distance_meters(
+            gdf, _points_for_nearest(shops), projected_crs, "dist_shop_m"
+        )
+    else:
+        gdf["dist_shop_m"] = float("nan")
 
     if not gios_stations.empty:
         air = gpd.GeoDataFrame(
