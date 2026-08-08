@@ -30,6 +30,12 @@ def test_round_trip_settings(tmp_path: Path) -> None:
             lm_model="other-model",
             recommender_top_n=7,
             ai_review_on_offer_open=False,
+            ai_review_system_prompt="Custom review prompt.",
+            ai_review_include_proximity=False,
+            ai_review_max_description_chars=1200,
+            buyer_pref_notes="Prefer Wola",
+            buyer_max_price_pln=800_000.0,
+            buyer_avoid_oou=True,
             news_history_cap=50,
             recommender_demotion_alpha=2.5,
             stats_min_district_offers=8,
@@ -45,6 +51,12 @@ def test_round_trip_settings(tmp_path: Path) -> None:
     assert loaded.lm_model == "other-model"
     assert loaded.recommender_top_n == 7
     assert loaded.ai_review_on_offer_open is False
+    assert loaded.ai_review_system_prompt == "Custom review prompt."
+    assert loaded.ai_review_include_proximity is False
+    assert loaded.ai_review_max_description_chars == 1200
+    assert loaded.buyer_pref_notes == "Prefer Wola"
+    assert loaded.buyer_max_price_pln == 800_000.0
+    assert loaded.buyer_avoid_oou is True
     assert loaded.news_history_cap == 50
     assert loaded.recommender_demotion_alpha == 2.5
     assert loaded.stats_min_district_offers == 8

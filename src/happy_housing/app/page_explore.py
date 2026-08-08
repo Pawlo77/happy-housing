@@ -16,9 +16,10 @@ import streamlit as st
 from happy_housing.app.ai_review import (
     get_or_create_review,
     load_review,
+    review_context_hash,
     reviews_db_path,
 )
-from happy_housing.app.app_settings import load_app_settings, settings_path
+from happy_housing.app.app_settings import AppSettings, load_app_settings, settings_path
 from happy_housing.app.charts import OVERPRICED, UNDERPRICED, diverging_bar_chart
 from happy_housing.app.data import (
     load_amenities,
@@ -313,19 +314,26 @@ def _price_metrics(row: pd.Series) -> None:
         )
 
 
-def _trigger_ai_review(row: pd.Series, *, model: str, enabled: bool) -> None:
+def _trigger_ai_review(
+    row: pd.Series,
+    *,
+    model: str,
+    enabled: bool,
+    settings: AppSettings,
+) -> None:
     """Load or generate AI review when Overview opens; cache in DuckDB."""
     if not enabled:
         return
     db = reviews_db_path(processed_dir())
     listing_id = str(row.get("listing_id") or "")
-    cached = load_review(db, listing_id, model=model)
+    ctx = review_context_hash(settings)
+    cached = load_review(db, listing_id, model=model, context_hash=ctx)
     if cached is not None:
         st.session_state[f"ai_review_{listing_id}"] = cached.review_text
         return
     with st.spinner(f"Asking {model} for an offer review…"):
         try:
-            review = get_or_create_review(db, row, model=model)
+            review = get_or_create_review(db, row, model=model, settings=settings)
             st.session_state[f"ai_review_{listing_id}"] = review.review_text
         except Exception as exc:
             logger.warning("AI review failed for %s: %s", listing_id, exc)
@@ -377,6 +385,7 @@ def _tab_offer(
     stars_file: Path,
     lm_model: str,
     ai_review_on_open: bool,
+    app_settings: AppSettings,
     oou: gpd.GeoDataFrame | None,
     amenities: gpd.GeoDataFrame,
     shops: pd.DataFrame,
@@ -442,7 +451,12 @@ def _tab_offer(
     ])
 
     with overview:
-        _trigger_ai_review(row, model=lm_model, enabled=ai_review_on_open)
+        _trigger_ai_review(
+            row,
+            model=lm_model,
+            enabled=ai_review_on_open,
+            settings=app_settings,
+        )
         left, right = st.columns([1.1, 1.6])
         with left:
             if isinstance(row.get("image_url"), str) and row["image_url"]:
@@ -518,7 +532,13 @@ def _tab_offer(
         if st.button("Regenerate AI review", key=f"regen_{listing_id}"):
             with st.spinner(f"Re-asking {lm_model}…"):
                 try:
-                    review = get_or_create_review(db, row, model=lm_model, force=True)
+                    review = get_or_create_review(
+                        db,
+                        row,
+                        model=lm_model,
+                        force=True,
+                        settings=app_settings,
+                    )
                     st.session_state[f"ai_review_{listing_id}"] = review.review_text
                     st.session_state.pop(f"ai_review_error_{listing_id}", None)
                     st.rerun()
@@ -701,6 +721,7 @@ def render_explore() -> None:
                 stars_file=stars_file,
                 lm_model=app_settings.lm_model,
                 ai_review_on_open=app_settings.ai_review_on_offer_open,
+                app_settings=app_settings,
                 **map_kwargs,
             )
     with tab_board:
