@@ -8,17 +8,17 @@ import geopandas as gpd
 
 ZONE_FILL: dict[str, list[int]] = {
     "city_boundary": [55, 65, 81, 18],
-    "military": [107, 114, 128, 110],
-    "rail_areas": [71, 85, 105, 95],
-    "airport": [100, 116, 139, 100],
+    "military": [133, 119, 58, 115],
+    "rail_areas": [51, 112, 168, 105],
+    "airport": [126, 78, 168, 110],
 }
-"""RGBA fills — muted grays; airport slightly cooler than military."""
+"""RGBA fills — olive military, steel-blue rail, violet airport."""
 
 ZONE_LINE: dict[str, list[int]] = {
     "city_boundary": [31, 41, 55, 230],
-    "military": [75, 85, 99, 210],
-    "rail_areas": [51, 65, 85, 200],
-    "airport": [71, 85, 105, 210],
+    "military": [90, 78, 30, 220],
+    "rail_areas": [30, 75, 125, 220],
+    "airport": [88, 45, 125, 220],
 }
 """RGBA outlines; city boundary is the strongest stroke."""
 

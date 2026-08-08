@@ -85,15 +85,15 @@ LAYER_HELP: dict[str, str] = {
         "offers sit relative to the city edge."
     ),
     "military": (
-        "OSM landuse=military areas in gray. Restricted land — usually not "
+        "OSM landuse=military areas in olive. Restricted land — usually not "
         "buildable housing; context for nearby offers."
     ),
     "rail_areas": (
-        "OSM landuse=railway yards / corridor land (cool gray). Distinct from "
+        "OSM landuse=railway yards / corridor land (steel blue). Distinct from "
         "GTFS rail line overlay. Nearby yards can mean noise/vibration."
     ),
     "airport": (
-        "OSM aerodrome footprints (slate gray-blue). Footprint of Chopin / "
+        "OSM aerodrome footprints in violet. Footprint of Chopin / "
         "Babice / military airfields — not the amber Lden noise contours."
     ),
     "commute_target": (

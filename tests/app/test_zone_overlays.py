@@ -38,7 +38,22 @@ def _poly(name: str, x0: float, y0: float) -> gpd.GeoDataFrame:
     )
 
 
-def test_prepare_zone_records_uses_palette() -> None:
+def test_zone_palette_hues_are_distinct() -> None:
+    """Military / rail / airport must not share near-identical gray fills."""
+
+    def _rgb(key: str) -> tuple[int, int, int]:
+        fill = ZONE_FILL[key]
+        return int(fill[0]), int(fill[1]), int(fill[2])
+
+    keys = ("military", "rail_areas", "airport")
+    for left in keys:
+        for right in keys:
+            if left >= right:
+                continue
+            a, b = _rgb(left), _rgb(right)
+            dist = abs(a[0] - b[0]) + abs(a[1] - b[1]) + abs(a[2] - b[2])
+            assert dist >= 80, f"{left} vs {right} too similar: {a} ~ {b} (L1={dist})"
+
     records = prepare_zone_records(
         _poly("Base", 21.0, 52.2),
         fill_rgba=ZONE_FILL["military"],

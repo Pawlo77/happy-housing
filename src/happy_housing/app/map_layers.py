@@ -76,11 +76,11 @@ class LayerFlags:
     city_boundary: bool = True
     """Warsaw administrative boundary outline."""
     military: bool = True
-    """OSM landuse=military polygons (gray)."""
+    """OSM landuse=military polygons (olive)."""
     rail_areas: bool = True
-    """OSM landuse=railway yard / corridor polygons."""
+    """OSM landuse=railway yard / corridor polygons (steel blue)."""
     airport: bool = True
-    """OSM aeroway=aerodrome footprints (not Lden noise)."""
+    """Aerodrome / airport footprints (violet; not Lden noise)."""
     commute_target: bool = False
     """Rondo Daszyńskiego commute target."""
 
