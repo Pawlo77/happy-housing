@@ -62,6 +62,35 @@ def test_split_train_val_test_time_aware() -> None:
     assert test_b.features.index.min() > train_b.features.index.max()
 
 
+def test_impute_with_medians_handles_na_median() -> None:
+    from happy_housing.models.train import _impute_with_medians
+
+    features = pd.DataFrame({"area_m2": [50.0, None], "rooms": [2.0, 3.0]})
+    medians = pd.Series({"area_m2": pd.NA, "rooms": 2.5})
+    out = _impute_with_medians(features, medians, ("area_m2", "rooms"))
+    assert float(out.iloc[1]["area_m2"]) == 0.0
+    assert float(out.iloc[0]["rooms"]) == 2.0
+
+
+def test_split_train_val_test_mixed_timezone_listed_at() -> None:
+    """Otodom UTC strings + naive fixture dates must not crash the split."""
+    n = 40
+    listed = pd.concat([
+        pd.Series(pd.date_range("2024-01-01", periods=n // 2, freq="D", tz="UTC")),
+        pd.Series(pd.date_range("2024-06-01", periods=n // 2, freq="D")),
+    ]).reset_index(drop=True)
+    frame = pd.DataFrame({"listed_at": listed, "x": range(n), "y": range(n)})
+    train_b, val_b, test_b = split_train_val_test(
+        frame[["x"]],
+        frame["y"].astype(float),
+        frame,
+        test_size=0.2,
+        val_size=0.15,
+        random_state=0,
+    )
+    assert len(train_b.features) + len(val_b.features) + len(test_b.features) == n
+
+
 def test_train_otodom_only_excludes_rcn_labels() -> None:
     frame = pd.DataFrame({
         "source": ["otodom"] * 20 + ["rcn"] * 20,

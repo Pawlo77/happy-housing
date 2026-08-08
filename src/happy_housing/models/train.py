@@ -248,13 +248,13 @@ def split_train_val_test(
     val_size = float(np.clip(val_size, 0.05, 0.35))
     n = len(features)
     if "listed_at" in frame.columns and n >= 20:
-        order = (
-            pd
-            .to_datetime(frame.loc[features.index, "listed_at"], errors="coerce")
-            .fillna(pd.Timestamp("1970-01-01", tz="UTC"))
-            .sort_values()
-            .index
+        listed = pd.to_datetime(
+            frame.loc[features.index, "listed_at"],
+            errors="coerce",
+            utc=True,
         )
+        listed = listed.fillna(pd.Timestamp("1970-01-01", tz="UTC"))
+        order = listed.sort_values().index
         features = features.loc[order]
         target = target.loc[order]
         n_test = max(1, round(n * test_size))
@@ -503,8 +503,21 @@ def train_price_model(
         val_metrics=best_val_metrics,
         test_metrics=test_metrics,
         baseline_metrics=baseline_metrics,
-        train_medians={str(k): float(v) for k, v in train_medians.items()},
+        train_medians={str(k): _safe_float(v) for k, v in train_medians.items()},
     )
+
+
+def _safe_float(value: object, default: float = 0.0) -> float:
+    """Coerce to float; map NA / NaN / bad values to ``default``."""
+    try:
+        if value is None or pd.isna(value):
+            return default
+        number = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
+    if number != number:
+        return default
+    return number
 
 
 def _raw_feature_frame(
@@ -539,9 +552,8 @@ def _impute_with_medians(
             if col in out.columns:
                 out[col] = out[col].astype(str).fillna("unknown").astype("category")
             continue
-        fill = float(medians[col]) if col in medians.index else 0.0
-        if fill != fill:
-            fill = 0.0
+        raw_fill = medians[col] if col in medians.index else 0.0
+        fill = _safe_float(raw_fill)
         out[col] = pd.to_numeric(out[col], errors="coerce").fillna(fill)
     return out.loc[:, list(feature_columns)]
 
