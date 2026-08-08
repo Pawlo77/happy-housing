@@ -9,13 +9,37 @@ from __future__ import annotations
 from typing import Any
 from urllib.parse import quote
 
+from happy_housing.gis.amenity_catalog import amenity_keys
+
 MarkerIcon = dict[str, Any]
 """deck.gl IconLayer ``get_icon`` payload (url / width / height / anchorY)."""
 
-MARKER_SHAPE_BY_KIND: dict[str, str] = {
+# Palette for catalog POIs — no plain circle (reserved for transit / default).
+_CITY_POI_SHAPE_PALETTE: tuple[str, ...] = (
+    "rounded_square",
+    "triangle",
+    "diamond",
+    "cross",
+    "hexagon",
+    "star",
+    "pentagon",
+    "octagon",
+    "ring",
+    "bar",
+    "chevron",
+    "teardrop",
+    "oval",
+    "flag",
+    "plus",
+    "square",
+)
+"""Rotating silhouettes assigned to sports / civic catalog keys."""
+
+_SEMANTIC_SHAPES: dict[str, str] = {
     "hospital": "cross",
     "fire_station": "triangle",
     "police": "diamond",
+    "police_um": "diamond",
     "shop": "square",
     "shops": "square",
     "air": "hexagon",
@@ -23,8 +47,35 @@ MARKER_SHAPE_BY_KIND: dict[str, str] = {
     "transit": "circle",
     "commute": "pin",
     "focus": "pin",
+    # High-visibility sports defaults (Explore map on by default).
+    "gym": "rounded_square",
+    "outdoor_gym": "bar",
+    "indoor_pool": "ring",
+    "outdoor_pool": "teardrop",
+    "fitness": "plus",
+    "library": "flag",
+    "school": "pentagon",
+    "pharmacy": "plus",
+    "metro": "oval",
+    "metro_entrance": "oval",
+    "charging_station": "chevron",
+    "park": "hexagon",
     "default": "circle",
 }
+"""Hand-picked silhouettes for familiar layer / amenity kinds."""
+
+
+def _catalog_shape_map() -> dict[str, str]:
+    """Stable non-circle shape per amenity catalog key."""
+    out: dict[str, str] = {}
+    n = len(_CITY_POI_SHAPE_PALETTE)
+    for i, key in enumerate(amenity_keys()):
+        out[key] = _CITY_POI_SHAPE_PALETTE[i % n]
+    out.update(_SEMANTIC_SHAPES)
+    return out
+
+
+MARKER_SHAPE_BY_KIND: dict[str, str] = _catalog_shape_map()
 """Logical shape name per map layer / amenity kind."""
 
 _SHAPE_LEGEND: tuple[tuple[str, str, str], ...] = (
@@ -33,10 +84,13 @@ _SHAPE_LEGEND: tuple[tuple[str, str, str], ...] = (
     ("Fire", "▲", "triangle"),
     ("Police", "◆", "diamond"),
     ("Shop", "■", "square"),
+    ("Gym / sports", "▣", "rounded square + palette"),
+    ("Pool", "◎", "ring / teardrop"),
     ("Air", "⬡", "hexagon"),
     ("GUNB", "★", "star"),
     ("Transit", "●", "circle"),
     ("Commute / focus", "📍", "pin"),
+    ("City POIs", "◇", "unique silhouette per type"),
 )
 """Human legend rows for Map caption."""
 
@@ -44,7 +98,13 @@ _SHAPE_LEGEND: tuple[tuple[str, str, str], ...] = (
 def shape_for_kind(kind: str) -> str:
     """Return silhouette name for a layer / amenity key."""
     key = str(kind or "").strip().lower()
-    return MARKER_SHAPE_BY_KIND.get(key, MARKER_SHAPE_BY_KIND["default"])
+    if key in MARKER_SHAPE_BY_KIND:
+        return MARKER_SHAPE_BY_KIND[key]
+    if key:
+        # Stable fallback for unknown keys — avoid default circle.
+        idx = sum(ord(c) for c in key) % len(_CITY_POI_SHAPE_PALETTE)
+        return _CITY_POI_SHAPE_PALETTE[idx]
+    return MARKER_SHAPE_BY_KIND["default"]
 
 
 def rgba_to_css(rgba: list[int] | tuple[int, ...]) -> str:
@@ -65,6 +125,11 @@ def render_shape_svg(shape: str, fill_css: str) -> str:
             f'<rect x="10" y="10" width="44" height="44" rx="4" '
             f'fill="{fill_css}" stroke="{stroke}" stroke-width="4"/>'
         )
+    elif shape == "rounded_square":
+        body = (
+            f'<rect x="8" y="8" width="48" height="48" rx="14" '
+            f'fill="{fill_css}" stroke="{stroke}" stroke-width="4"/>'
+        )
     elif shape == "triangle":
         body = (
             f'<polygon points="32,8 56,54 8,54" fill="{fill_css}" '
@@ -82,9 +147,28 @@ def render_shape_svg(shape: str, fill_css: str) -> str:
             f'<rect x="8" y="26" width="48" height="12" rx="2" fill="{fill_css}" '
             f'stroke="{stroke}" stroke-width="3"/>'
         )
+    elif shape == "plus":
+        body = (
+            f'<rect x="28" y="12" width="8" height="40" rx="2" fill="{fill_css}" '
+            f'stroke="{stroke}" stroke-width="3"/>'
+            f'<rect x="12" y="28" width="40" height="8" rx="2" fill="{fill_css}" '
+            f'stroke="{stroke}" stroke-width="3"/>'
+        )
     elif shape == "hexagon":
         body = (
             f'<polygon points="32,6 54,19 54,45 32,58 10,45 10,19" '
+            f'fill="{fill_css}" stroke="{stroke}" stroke-width="4" '
+            f'stroke-linejoin="round"/>'
+        )
+    elif shape == "pentagon":
+        body = (
+            f'<polygon points="32,6 58,26 48,56 16,56 6,26" '
+            f'fill="{fill_css}" stroke="{stroke}" stroke-width="4" '
+            f'stroke-linejoin="round"/>'
+        )
+    elif shape == "octagon":
+        body = (
+            f'<polygon points="22,8 42,8 56,22 56,42 42,56 22,56 8,42 8,22" '
             f'fill="{fill_css}" stroke="{stroke}" stroke-width="4" '
             f'stroke-linejoin="round"/>'
         )
@@ -93,6 +177,41 @@ def render_shape_svg(shape: str, fill_css: str) -> str:
             f'<polygon points="32,6 38,24 56,24 42,36 48,54 32,44 16,54 22,36 '
             f'8,24 26,24" fill="{fill_css}" stroke="{stroke}" stroke-width="3" '
             f'stroke-linejoin="round"/>'
+        )
+    elif shape == "ring":
+        body = (
+            f'<circle cx="32" cy="32" r="22" fill="none" stroke="{fill_css}" '
+            f'stroke-width="10"/>'
+            f'<circle cx="32" cy="32" r="22" fill="none" stroke="{stroke}" '
+            f'stroke-width="3"/>'
+        )
+    elif shape == "bar":
+        body = (
+            f'<rect x="8" y="22" width="48" height="20" rx="6" '
+            f'fill="{fill_css}" stroke="{stroke}" stroke-width="4"/>'
+        )
+    elif shape == "chevron":
+        body = (
+            f'<polygon points="32,8 56,28 48,36 32,22 16,36 8,28" '
+            f'fill="{fill_css}" stroke="{stroke}" stroke-width="4" '
+            f'stroke-linejoin="round"/>'
+        )
+    elif shape == "teardrop":
+        body = (
+            f'<path d="M32 6C20 22 12 30 12 40a20 20 0 0 0 40 0'
+            f'C52 30 44 22 32 6z" fill="{fill_css}" stroke="{stroke}" '
+            f'stroke-width="3"/>'
+        )
+    elif shape == "oval":
+        body = (
+            f'<ellipse cx="32" cy="32" rx="18" ry="24" fill="{fill_css}" '
+            f'stroke="{stroke}" stroke-width="4"/>'
+        )
+    elif shape == "flag":
+        body = (
+            f'<rect x="14" y="8" width="6" height="48" rx="1" fill="{stroke}"/>'
+            f'<polygon points="20,10 52,18 20,28" fill="{fill_css}" '
+            f'stroke="{stroke}" stroke-width="3" stroke-linejoin="round"/>'
         )
     elif shape == "pin":
         body = (

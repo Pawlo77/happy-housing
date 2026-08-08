@@ -265,7 +265,7 @@ def city_poi_layers(
         layer = _icon(
             prepared,
             layer_id=f"city-poi-{key}",
-            kind="default",
+            kind=key,
             fill_color=rgba,
             size=24,
             size_min_pixels=12,
