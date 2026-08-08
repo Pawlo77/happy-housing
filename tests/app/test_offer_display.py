@@ -7,8 +7,10 @@ import pandas as pd
 from happy_housing.app.offer_display import (
     delta_band,
     delta_hex,
+    flag_yes_no,
     format_meters,
     livability_rows,
+    offer_fact_rows,
     round_meters,
 )
 
@@ -18,6 +20,13 @@ def test_round_and_format_meters() -> None:
     assert format_meters(1234.6) == "1,235 m"
     assert format_meters(None) == "—"
     assert format_meters(float("nan")) == "—"
+
+
+def test_flag_yes_no_handles_nan() -> None:
+    assert flag_yes_no(1) == "Yes"
+    assert flag_yes_no(0) == "No"
+    assert flag_yes_no(float("nan")) == "No"
+    assert flag_yes_no(None) == "No"
 
 
 def test_delta_band_colours() -> None:
@@ -47,3 +56,18 @@ def test_livability_rows_round_distances() -> None:
     assert "Yes" in frame["value"].astype(str).tolist()
     lden = frame.loc[frame["signal"] == "Aircraft Lden (dB)", "value"].iloc[0]
     assert lden == "≥ 60 dB"
+
+
+def test_offer_fact_rows_survive_nan_flags() -> None:
+    row = pd.Series({
+        "listing_id": "OTO-1",
+        "has_balcony": float("nan"),
+        "has_garage": float("nan"),
+        "has_lift": 1,
+        "is_private_owner": float("nan"),
+        "area_m2": 40.0,
+    })
+    frame = offer_fact_rows(row)
+    assert not frame.empty
+    balcony = frame.loc[frame["field"] == "Balcony", "value"].iloc[0]
+    assert balcony == "No"

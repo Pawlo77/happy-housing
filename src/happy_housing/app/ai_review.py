@@ -138,9 +138,64 @@ def clear_ai_reviews(path: Path) -> None:
         logger.info("Cleared AI reviews DB at %s", path)
 
 
-def review_context_hash(settings: AppSettings) -> str:
-    """Stable hash of prompt/preference settings that affect review text."""
-    payload = {
+def clear_ai_review_session_keys(session: dict[str, Any]) -> int:
+    """Drop cached AI review text/error keys from Streamlit session state."""
+    drop = [key for key in session if str(key).startswith("ai_review_")]
+    for key in drop:
+        session.pop(key, None)
+    return len(drop)
+
+
+_LISTING_FINGERPRINT_KEYS: tuple[str, ...] = (
+    "listing_id",
+    "price_pln",
+    "price_per_m2",
+    "model_price_per_m2",
+    "delta_price_per_m2",
+    "area_m2",
+    "rooms",
+    "listed_at",
+    "listed_month",
+    "district",
+    "description",
+    "aircraft_lden_db",
+    "aircraft_lnight_db",
+    "in_oou",
+    "commute_min",
+    "dist_metro_m",
+    "dist_transit_stop_m",
+    "nbhd_rcn_median_ppm",
+    "nbhd_rcn_idw_ppm",
+)
+"""Offer fields that should invalidate a cached AI review when they change."""
+
+
+def listing_review_fingerprint(row: pd.Series) -> dict[str, Any]:
+    """Stable listing facts used inside the AI review cache key."""
+    out: dict[str, Any] = {}
+    for key in _LISTING_FINGERPRINT_KEYS:
+        if key not in row.index:
+            continue
+        value = row.get(key)
+        if value is None:
+            continue
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            out[key] = str(value)
+            continue
+        if number != number:
+            continue
+        out[key] = number if abs(number - round(number)) > 1e-9 else round(number)
+    return out
+
+
+def review_context_hash(
+    settings: AppSettings,
+    row: pd.Series | None = None,
+) -> str:
+    """Stable hash of settings (+ optional listing facts) that affect review text."""
+    payload: dict[str, Any] = {
         "system_prompt": settings.ai_review_system_prompt,
         "include_preferences": settings.ai_review_include_preferences,
         "include_core_facts": settings.ai_review_include_core_facts,
@@ -165,6 +220,8 @@ def review_context_hash(settings: AppSettings) -> str:
         "buyer_avoid_oou": settings.buyer_avoid_oou,
         "buyer_must_haves": settings.buyer_must_haves,
     }
+    if row is not None:
+        payload["listing"] = listing_review_fingerprint(row)
     blob = json.dumps(payload, sort_keys=True, ensure_ascii=False, default=str)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:16]
 
@@ -468,7 +525,7 @@ def get_or_create_review(
     listing_id = str(row.get("listing_id") or "")
     if not listing_id:
         raise ValueError("listing_id required for AI review")
-    ctx = review_context_hash(cfg)
+    ctx = review_context_hash(cfg, row)
     if not force:
         cached = load_review(path, listing_id, model=model, context_hash=ctx)
         if cached is not None:

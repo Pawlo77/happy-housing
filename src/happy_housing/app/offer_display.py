@@ -31,6 +31,18 @@ def format_meters(value: object) -> str:
     return f"{metres:,} m"
 
 
+def flag_yes_no(value: object) -> str:
+    """Render a 0/1-ish flag; NaN / missing → ``No`` (never raise on NaN)."""
+    number = pd.to_numeric(value, errors="coerce")
+    try:
+        as_float = float(number)
+    except (TypeError, ValueError):
+        return "No"
+    if as_float != as_float:
+        return "No"
+    return "Yes" if int(as_float) == 1 else "No"
+
+
 def delta_band(delta: float) -> str:
     """Classify listing-model delta as ``green``, ``yellow``, or ``red``."""
     if delta < -_DELTA_NEAR_ZL:
@@ -69,7 +81,7 @@ def livability_rows(row: pd.Series) -> pd.DataFrame:
     for col, label, kind in specs:
         raw = row.get(col)
         if kind == "flag":
-            display = "Yes" if int(raw or 0) == 1 else "No"
+            display = flag_yes_no(raw)
         elif kind == "min":
             metres_proxy = round_meters(raw)
             display = "—" if metres_proxy is None else f"{metres_proxy} min"
@@ -105,10 +117,10 @@ def offer_fact_rows(row: pd.Series) -> pd.DataFrame:
         ("Ownership", row.get("building_ownership")),
         ("Heating", row.get("heating")),
         ("Rent (PLN/mo)", row.get("rent")),
-        ("Balcony", "Yes" if int(row.get("has_balcony") or 0) == 1 else "No"),
-        ("Garage / parking", "Yes" if int(row.get("has_garage") or 0) == 1 else "No"),
-        ("Lift", "Yes" if int(row.get("has_lift") or 0) == 1 else "No"),
-        ("Private owner", "Yes" if int(row.get("is_private_owner") or 0) else "No"),
+        ("Balcony", flag_yes_no(row.get("has_balcony"))),
+        ("Garage / parking", flag_yes_no(row.get("has_garage"))),
+        ("Lift", flag_yes_no(row.get("has_lift"))),
+        ("Private owner", flag_yes_no(row.get("is_private_owner"))),
         ("Price (PLN)", row.get("price_pln")),
         ("Latitude", row.get("lat")),
         ("Longitude", row.get("lon")),

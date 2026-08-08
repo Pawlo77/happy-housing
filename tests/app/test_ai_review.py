@@ -130,3 +130,11 @@ def test_review_context_hash_changes_with_prefs() -> None:
     a = AppSettings(buyer_pref_notes="A")
     b = AppSettings(buyer_pref_notes="B")
     assert review_context_hash(a) != review_context_hash(b)
+
+
+def test_review_context_hash_changes_with_listing_facts() -> None:
+    settings = AppSettings()
+    row_a = _rich_row()
+    row_b = _rich_row().copy()
+    row_b["price_per_m2"] = 19000
+    assert review_context_hash(settings, row_a) != review_context_hash(settings, row_b)

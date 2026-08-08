@@ -55,6 +55,8 @@ def attach_contour_level(
         result[out_col] = 0.0
         return result
     right = contours[[value_col, "geometry"]].copy()
+    if result.crs is not None and right.crs is not None and result.crs != right.crs:
+        right = right.to_crs(result.crs)
     joined = gpd.sjoin(result, right, how="left", predicate="within")
     levels = (
         joined

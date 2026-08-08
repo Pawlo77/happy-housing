@@ -603,8 +603,17 @@ def aircraft_noise_ladder(frame: pd.DataFrame) -> pd.DataFrame:
     if work.empty:
         return empty
     work["lden"] = work["lden"].fillna(0.0)
-    bins = [-0.1, 0.1, 50, 55, 60, 65, 70, 100]
-    labels = ["0 / below", "1-50", "50-55", "55-60", "60-65", "65-70", "70+"]
+    bins = [-0.1, 0.1, 45, 50, 55, 60, 65, 70, 100]
+    labels = [
+        "0 / below",
+        "<45",
+        "45-50",
+        "50-55",
+        "55-60",
+        "60-65",
+        "65-70",
+        "70+",
+    ]
     work["lden_band"] = pd.cut(
         work["lden"], bins=bins, labels=labels, include_lowest=True, right=False
     )

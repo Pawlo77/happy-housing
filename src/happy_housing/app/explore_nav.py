@@ -9,6 +9,9 @@ import pandas as pd
 EXPLORE_SECTIONS: tuple[str, ...] = ("Map", "Offer", "Board", "News")
 """Top-level Explore section labels."""
 
+OFFER_SELECT_KEY: str = "explore_offer_select"
+"""Session key for the Offer-tab listing selectbox."""
+
 
 def listing_id_from_board_selection(
     frame: pd.DataFrame,
@@ -35,3 +38,37 @@ def listing_id_from_board_selection(
     if index < 0 or index >= len(frame):
         return None
     return str(frame.iloc[index]["listing_id"])
+
+
+def label_for_listing_id(options: dict[str, str], listing_id: str) -> str | None:
+    """Return the selectbox label whose value equals ``listing_id``."""
+    for label, lid in options.items():
+        if lid == listing_id:
+            return label
+    return None
+
+
+def prepare_offer_select_state(
+    *,
+    options: dict[str, str],
+    preferred_id: str | None,
+    force: bool,
+    current_label: str | None,
+) -> str | None:
+    """Resolve which selectbox label should be selected.
+
+    When ``force`` is True (Board/News jump) or the widget has no value yet,
+    prefer ``preferred_id``. Otherwise keep the user's current choice.
+    """
+    if not options:
+        return None
+    preferred_label = (
+        label_for_listing_id(options, preferred_id) if preferred_id else None
+    )
+    if force and preferred_label is not None:
+        return preferred_label
+    if current_label in options:
+        return current_label
+    if preferred_label is not None:
+        return preferred_label
+    return next(iter(options))

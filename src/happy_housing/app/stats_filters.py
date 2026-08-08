@@ -58,7 +58,7 @@ def apply_stats_filters(frame: pd.DataFrame, state: StatsFilterState) -> pd.Data
     if state.valuation == "underpriced" and "delta_price_per_m2" in frame.columns:
         mask &= pd.to_numeric(frame["delta_price_per_m2"], errors="coerce").lt(0)
     elif state.valuation == "overpriced" and "delta_price_per_m2" in frame.columns:
-        mask &= pd.to_numeric(frame["delta_price_per_m2"], errors="coerce").ge(0)
+        mask &= pd.to_numeric(frame["delta_price_per_m2"], errors="coerce").gt(0)
     if state.price_min is not None and "price_per_m2" in frame.columns:
         mask &= pd.to_numeric(frame["price_per_m2"], errors="coerce").ge(
             float(state.price_min)

@@ -44,7 +44,9 @@ from happy_housing.app.data import (
 )
 from happy_housing.app.explore_nav import (
     EXPLORE_SECTIONS,
+    OFFER_SELECT_KEY,
     listing_id_from_board_selection,
+    prepare_offer_select_state,
 )
 from happy_housing.app.filters import FilterState, apply_filters, apply_starred_only
 from happy_housing.app.llm_metrics import llm_metrics_path
@@ -140,21 +142,33 @@ def _sidebar_filters(frame: pd.DataFrame) -> tuple[FilterState, bool]:
         .tolist()
         if m not in {"NaT", "unknown"}
     ])
-    ppm_min = int(frame["price_per_m2"].min()) if not frame.empty else 0
-    ppm_max = int(frame["price_per_m2"].max()) + 1 if not frame.empty else 1
+    ppm = pd.to_numeric(frame.get("price_per_m2"), errors="coerce")
+    finite = ppm[ppm.notna()]
+    ppm_min = int(finite.min()) if not finite.empty else 0
+    ppm_max = int(finite.max()) + 1 if not finite.empty else 1
 
-    district = st.sidebar.selectbox("District", ["(all)", *districts])
-    source = st.sidebar.selectbox("Source", ["(all)", *sources])
+    district = st.sidebar.selectbox(
+        "District",
+        ["(all)", *districts],
+        key="explore_district",
+    )
+    source = st.sidebar.selectbox(
+        "Source",
+        ["(all)", *sources],
+        key="explore_source",
+    )
     oou = st.sidebar.selectbox(
         "Aircraft Lden ≥ 55 dB",
         ["(all)", "inside", "outside"],
         help="EEA END major-airport Lden band (≥55 dB). Binary filter on exposure.",
+        key="explore_oou",
     )
     max_ppm = st.sidebar.slider(
         "Max listing zł/m²",
         min_value=ppm_min,
         max_value=max(ppm_max, ppm_min + 1),
         value=max(ppm_max, ppm_min + 1),
+        key="explore_max_ppm",
     )
     month = "(all)"
     if months:
@@ -162,6 +176,7 @@ def _sidebar_filters(frame: pd.DataFrame) -> tuple[FilterState, bool]:
             "Listed month",
             options=["(all)", *months],
             value="(all)",
+            key="explore_month",
         )
     starred_only = st.sidebar.checkbox(
         "Starred only",
@@ -207,21 +222,38 @@ def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
                 "Filters GTFS departures by hour and scales the traffic-intensity "
                 "proxy (typical diurnal curve — not live vehicle counts)."
             ),
+            key="explore_hour",
         )
     )
     st.sidebar.caption("Toggle overlays. Hover any pin for details.")
     flags = LayerFlags(
-        offers=st.sidebar.checkbox("Offers (Δ price)", value=True),
-        oou=st.sidebar.checkbox("Aircraft Lden contours", value=True),
-        transit=st.sidebar.checkbox("Public transport (GTFS)", value=False),
-        traffic=st.sidebar.checkbox("Traffic intensity proxy", value=False),
-        shops=st.sidebar.checkbox("Shops", value=False),
-        hospitals=st.sidebar.checkbox("Hospitals", value=False),
-        fire_stations=st.sidebar.checkbox("Fire stations", value=False),
-        police=st.sidebar.checkbox("Police", value=False),
-        air=st.sidebar.checkbox("Air-quality stations", value=False),
-        gunb=st.sidebar.checkbox("GUNB permits", value=False),
-        commute_target=st.sidebar.checkbox("Commute target", value=False),
+        offers=st.sidebar.checkbox(
+            "Offers (Δ price)", value=True, key="explore_ly_offers"
+        ),
+        oou=st.sidebar.checkbox(
+            "Aircraft Lden contours", value=True, key="explore_ly_oou"
+        ),
+        transit=st.sidebar.checkbox(
+            "Public transport (GTFS)", value=False, key="explore_ly_transit"
+        ),
+        traffic=st.sidebar.checkbox(
+            "Traffic intensity proxy", value=False, key="explore_ly_traffic"
+        ),
+        shops=st.sidebar.checkbox("Shops", value=False, key="explore_ly_shops"),
+        hospitals=st.sidebar.checkbox(
+            "Hospitals", value=False, key="explore_ly_hospitals"
+        ),
+        fire_stations=st.sidebar.checkbox(
+            "Fire stations", value=False, key="explore_ly_fire"
+        ),
+        police=st.sidebar.checkbox("Police", value=False, key="explore_ly_police"),
+        air=st.sidebar.checkbox(
+            "Air-quality stations", value=False, key="explore_ly_air"
+        ),
+        gunb=st.sidebar.checkbox("GUNB permits", value=False, key="explore_ly_gunb"),
+        commute_target=st.sidebar.checkbox(
+            "Commute target", value=False, key="explore_ly_commute"
+        ),
     )
     return flags, hour, basemap
 
@@ -307,15 +339,18 @@ def _ensure_description(row: pd.Series) -> str:
         return ""
 
 
-_DELTA_COLORS_HELP = "green underpriced · yellow fair · red overpriced"
-"""Hover-only color key for the delta metric (st.metric help)."""
+_DELTA_COLORS_HELP = "listing - model zł/m² (negative = model sees a bargain)"
+"""Hover-only key for the delta metric (st.metric help)."""
 
 
 def _price_metrics(row: pd.Series) -> None:
     """Listing / model / delta metrics in equal-height bordered columns."""
-    listing = float(row["price_per_m2"])
-    model = float(row["model_price_per_m2"])
-    delta = float(row["delta_price_per_m2"])
+    listing_raw = pd.to_numeric(row.get("price_per_m2"), errors="coerce")
+    model_raw = pd.to_numeric(row.get("model_price_per_m2"), errors="coerce")
+    delta_raw = pd.to_numeric(row.get("delta_price_per_m2"), errors="coerce")
+    listing = float(listing_raw) if listing_raw == listing_raw else 0.0
+    model = float(model_raw) if model_raw == model_raw else 0.0
+    delta = float(delta_raw) if delta_raw == delta_raw else 0.0
     c1, c2, c3 = st.columns(3, border=True)
     with c1:
         st.metric(
@@ -335,6 +370,8 @@ def _price_metrics(row: pd.Series) -> None:
         st.metric(
             "Delta zł/m²",
             f"{delta:+,.0f}",
+            delta=float(delta),
+            delta_color="inverse",
             help=_DELTA_COLORS_HELP,
             height="stretch",
         )
@@ -353,7 +390,7 @@ def _trigger_ai_review(
     proc = processed_dir()
     db = reviews_db_path(proc)
     listing_id = str(row.get("listing_id") or "")
-    ctx = review_context_hash(settings)
+    ctx = review_context_hash(settings, row)
     cached = load_review(db, listing_id, model=model, context_hash=ctx)
     if cached is not None:
         st.session_state[f"ai_review_{listing_id}"] = cached.review_text
@@ -439,29 +476,30 @@ def _tab_offer(
         return
     labels = filtered["listing_id"].astype(str).tolist()
     preferred = st.session_state.get("explore_offer_id")
+    force = bool(st.session_state.pop("explore_offer_force", False))
     pick, star_col = st.columns([4.2, 1], vertical_alignment="bottom")
     with pick:
         if "title" in filtered.columns:
             options = {
                 f"{lid} — {title}" if isinstance(title, str) and title else lid: lid
                 for lid, title in zip(
-                    filtered["listing_id"],
+                    filtered["listing_id"].astype(str),
                     filtered["title"],
                     strict=True,
                 )
             }
-            keys = list(options.keys())
-            index = 0
-            if preferred in labels:
-                for i, key in enumerate(keys):
-                    if options[key] == preferred:
-                        index = i
-                        break
-            choice = st.selectbox("Offer", keys, index=index)
-            selected_id = options[choice]
         else:
-            index = labels.index(preferred) if preferred in labels else 0
-            selected_id = st.selectbox("Offer", labels, index=index)
+            options = {lid: lid for lid in labels}
+        desired = prepare_offer_select_state(
+            options=options,
+            preferred_id=str(preferred) if preferred is not None else None,
+            force=force,
+            current_label=st.session_state.get(OFFER_SELECT_KEY),
+        )
+        if desired is not None:
+            st.session_state[OFFER_SELECT_KEY] = desired
+        choice = st.selectbox("Offer", list(options.keys()), key=OFFER_SELECT_KEY)
+        selected_id = options[str(choice)]
     st.session_state["explore_offer_id"] = selected_id
     starred_now = is_starred(starred, selected_id)
     with star_col:
@@ -649,6 +687,7 @@ def _tab_board(
         return
     mark_opened(impressions_file, listing_id)
     st.session_state["explore_offer_id"] = listing_id
+    st.session_state["explore_offer_force"] = True
     st.session_state["explore_section"] = "Offer"
     st.rerun()
 
@@ -680,7 +719,7 @@ def _tab_news(
         return
     top, _ = st.columns([1, 3])
     with top:
-        if st.button("Clear news", key="clear_star_news"):
+        if st.button("Clear news", key="explore_clear_star_news"):
             save_news(news_file, [])
             st.rerun()
     for item in reversed(items):
@@ -696,6 +735,7 @@ def _tab_news(
                     width="stretch",
                 ):
                     st.session_state["explore_offer_id"] = item.listing_id
+                    st.session_state["explore_offer_force"] = True
                     st.session_state["explore_section"] = "Offer"
                     st.rerun()
             if item.kind == "removed":

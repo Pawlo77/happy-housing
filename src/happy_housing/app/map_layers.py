@@ -75,8 +75,11 @@ def prepare_listings_for_map(frame: pd.DataFrame) -> pd.DataFrame:
     if frame.empty:
         return pd.DataFrame()
     out = frame.copy()
-    out["lat"] = out["lat"].astype(float)
-    out["lon"] = out["lon"].astype(float)
+    out["lat"] = pd.to_numeric(out["lat"], errors="coerce")
+    out["lon"] = pd.to_numeric(out["lon"], errors="coerce")
+    out = out.dropna(subset=["lat", "lon"])
+    if out.empty:
+        return pd.DataFrame()
     delta = pd.to_numeric(out["delta_price_per_m2"], errors="coerce").fillna(0.0)
     over = delta.to_numpy() > 0
     out["color_r"] = np.where(over, 220, 30)

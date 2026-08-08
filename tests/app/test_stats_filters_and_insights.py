@@ -106,6 +106,14 @@ def test_apply_stats_filters_valuation_and_district() -> None:
     assert (filtered["delta_price_per_m2"] < 0).all()
 
 
+def test_apply_stats_filters_overpriced_excludes_zero_delta() -> None:
+    frame = _frame()
+    frame.loc[0, "delta_price_per_m2"] = 0.0
+    filtered = apply_stats_filters(frame, StatsFilterState(valuation="overpriced"))
+    assert not filtered.empty
+    assert (filtered["delta_price_per_m2"] > 0).all()
+
+
 def test_apply_stats_filters_price_area_bounds() -> None:
     filtered = apply_stats_filters(
         _frame(),

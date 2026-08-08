@@ -661,27 +661,37 @@ def render_stats() -> None:
         tab_place,
         tab_stock,
         tab_afford,
-    ) = st.tabs([
-        "Overview",
-        "Trends",
-        "Value",
-        "Place",
-        "Stock",
-        "Afford",
-    ])
+    ) = st.tabs(
+        [
+            "Overview",
+            "Trends",
+            "Value",
+            "Place",
+            "Stock",
+            "Afford",
+        ],
+        key="stats_main_tabs",
+        on_change="rerun",
+    )
     with tab_overview:
-        _tab_overview(filtered)
+        if tab_overview.open:
+            _tab_overview(filtered)
     with tab_trends:
-        _tab_trends(filtered)
+        if tab_trends.open:
+            _tab_trends(filtered)
     with tab_value:
-        _tab_value(
-            filtered,
-            min_offers=settings.stats_min_district_offers,
-            top_n=settings.stats_top_n,
-        )
+        if tab_value.open:
+            _tab_value(
+                filtered,
+                min_offers=settings.stats_min_district_offers,
+                top_n=settings.stats_top_n,
+            )
     with tab_place:
-        _tab_place(filtered)
+        if tab_place.open:
+            _tab_place(filtered)
     with tab_stock:
-        _tab_stock(filtered)
+        if tab_stock.open:
+            _tab_stock(filtered)
     with tab_afford:
-        _tab_afford(filtered)
+        if tab_afford.open:
+            _tab_afford(filtered)

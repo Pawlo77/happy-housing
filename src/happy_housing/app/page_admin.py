@@ -11,6 +11,7 @@ import streamlit as st
 
 from happy_housing.app.ai_review import (
     DEFAULT_SYSTEM_PROMPT,
+    clear_ai_review_session_keys,
     clear_ai_reviews,
     reviews_db_path,
 )
@@ -341,7 +342,10 @@ def _tab_ai(settings: AppSettings, settings_file: Path, proc: Path) -> None:
     st.caption(f"Cached reviews DB: `{'present' if db.exists() else 'empty'}`")
     if st.button("Clear AI review cache", key="clear_ai_reviews"):
         clear_ai_reviews(db)
-        st.success("AI review cache cleared.")
+        cleared = clear_ai_review_session_keys(st.session_state)
+        st.success(
+            f"AI review cache cleared{f' · {cleared} session keys' if cleared else ''}."
+        )
 
     st.subheader("LM Studio call metrics")
     st.caption(
@@ -437,6 +441,9 @@ def _tab_recommender(settings: AppSettings, settings_file: Path, proc: Path) -> 
             st.success("Recommender settings saved.")
     with r2:
         if st.button("Retrain recommendation model", type="primary", key="retrain_rec"):
+            settings.recommender_top_n = int(top_n)
+            settings.recommender_demotion_alpha = float(alpha)
+            save_app_settings(settings_file, settings)
             try:
                 frame = load_scored()
             except FileNotFoundError as exc:
@@ -446,8 +453,8 @@ def _tab_recommender(settings: AppSettings, settings_file: Path, proc: Path) -> 
                     out = retrain_recommender(
                         frame,
                         processed_dir=proc,
-                        top_n=int(settings.recommender_top_n),
-                        demotion_alpha=float(settings.recommender_demotion_alpha),
+                        top_n=int(top_n),
+                        demotion_alpha=float(alpha),
                     )
                 st.success(
                     f"Retrained · {int(out['n_recommended'])} of "
