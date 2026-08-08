@@ -16,8 +16,9 @@ Configs → `configs/experiment.yaml` · MLflow UI → `make mlflow` · deps →
 - No new markdown or doc expansion unless asked (this file is the exception for agent process rules)
 - No runtime deps without justification in `pyproject.toml`
 - No force push; no `git commit --amend` unless user rules allow
+- **Settings for every new feature:** when adding user-facing behaviour (models, memory, filters, AI, scrapers, …), add Admin Settings controls in the matching tab (General / AI / Stars & News / Recommendations / Pipeline or a new tab). Persist tunables via `app_settings` (or a dedicated store), expose clear/reset/retrain actions where relevant, and **never** dump raw settings JSON in the UI.
 
-Repo-specific gotcha: experiment settings load from YAML via `load_experiment_config`; extend `configs/experiment.yaml` and `ExperimentConfig` together. MLflow artifacts (`mlruns/`, `mlruns.db`) are gitignored.
+Repo-specific gotcha: experiment settings load from YAML via `load_experiment_config`; extend `configs/experiment.yaml` and `ExperimentConfig` together. MLflow artifacts (`mlruns/`, `mlruns.db`) are gitignored. App behaviour tweaks live in `data/processed/app_settings.json` (Admin UI only).
 
 ## Load order
 

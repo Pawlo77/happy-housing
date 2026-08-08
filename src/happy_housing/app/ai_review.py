@@ -45,6 +45,13 @@ def reviews_db_path(processed: Path) -> Path:
     return processed / "offer_ai_reviews.duckdb"
 
 
+def clear_ai_reviews(path: Path) -> None:
+    """Delete the AI reviews DuckDB file."""
+    if path.exists():
+        path.unlink()
+        logger.info("Cleared AI reviews DB at %s", path)
+
+
 def _connect(path: Path) -> duckdb.DuckDBPyConnection:
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = duckdb.connect(str(path))

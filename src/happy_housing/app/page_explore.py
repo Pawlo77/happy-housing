@@ -15,11 +15,11 @@ import shap
 import streamlit as st
 
 from happy_housing.app.ai_review import (
-    DEFAULT_AI_MODEL,
     get_or_create_review,
     load_review,
     reviews_db_path,
 )
+from happy_housing.app.app_settings import load_app_settings, settings_path
 from happy_housing.app.attribution import render_attribution_footer
 from happy_housing.app.data import (
     load_amenities,
@@ -303,17 +303,19 @@ def _price_metrics(row: pd.Series) -> None:
         )
 
 
-def _trigger_ai_review(row: pd.Series) -> None:
+def _trigger_ai_review(row: pd.Series, *, model: str, enabled: bool) -> None:
     """Load or generate AI review when Overview opens; cache in DuckDB."""
+    if not enabled:
+        return
     db = reviews_db_path(processed_dir())
     listing_id = str(row.get("listing_id") or "")
-    cached = load_review(db, listing_id, model=DEFAULT_AI_MODEL)
+    cached = load_review(db, listing_id, model=model)
     if cached is not None:
         st.session_state[f"ai_review_{listing_id}"] = cached.review_text
         return
-    with st.spinner(f"Asking {DEFAULT_AI_MODEL} for an offer review…"):
+    with st.spinner(f"Asking {model} for an offer review…"):
         try:
-            review = get_or_create_review(db, row, model=DEFAULT_AI_MODEL)
+            review = get_or_create_review(db, row, model=model)
             st.session_state[f"ai_review_{listing_id}"] = review.review_text
         except Exception as exc:
             logger.warning("AI review failed for %s: %s", listing_id, exc)
@@ -373,6 +375,8 @@ def _tab_offer(
     *,
     starred: frozenset[str],
     stars_file: Path,
+    lm_model: str,
+    ai_review_on_open: bool,
     oou: gpd.GeoDataFrame | None,
     amenities: gpd.GeoDataFrame,
     shops: pd.DataFrame,
@@ -438,7 +442,7 @@ def _tab_offer(
     ])
 
     with overview:
-        _trigger_ai_review(row)
+        _trigger_ai_review(row, model=lm_model, enabled=ai_review_on_open)
         left, right = st.columns([1.1, 1.6])
         with left:
             if isinstance(row.get("image_url"), str) and row["image_url"]:
@@ -504,7 +508,7 @@ def _tab_offer(
         db = reviews_db_path(processed_dir())
         text = st.session_state.get(f"ai_review_{listing_id}", "")
         err = st.session_state.get(f"ai_review_error_{listing_id}", "")
-        st.caption(f"Model: `{DEFAULT_AI_MODEL}` · cached in DuckDB after first ask.")
+        st.caption(f"Model: `{lm_model}` · cached in DuckDB after first ask.")
         if text:
             st.markdown(text)
         elif err:
@@ -512,11 +516,9 @@ def _tab_offer(
         else:
             st.info("Open Overview to request a review, or regenerate below.")
         if st.button("Regenerate AI review", key=f"regen_{listing_id}"):
-            with st.spinner(f"Re-asking {DEFAULT_AI_MODEL}…"):
+            with st.spinner(f"Re-asking {lm_model}…"):
                 try:
-                    review = get_or_create_review(
-                        db, row, model=DEFAULT_AI_MODEL, force=True
-                    )
+                    review = get_or_create_review(db, row, model=lm_model, force=True)
                     st.session_state[f"ai_review_{listing_id}"] = review.review_text
                     st.session_state.pop(f"ai_review_error_{listing_id}", None)
                     st.rerun()
@@ -624,6 +626,7 @@ def render_explore() -> None:
     proc = processed_dir()
     stars_file = stars_path(proc)
     starred = load_stars(stars_file)
+    app_settings = load_app_settings(settings_path(proc))
     snaps_file = starred_snapshots_path(proc)
     news_file = starred_news_path(proc)
     # Sync against the full scored universe so sidebar filters never fake removals.
@@ -632,6 +635,7 @@ def render_explore() -> None:
         frame,
         snapshots_path=snaps_file,
         news_path=news_file,
+        history_cap=app_settings.news_history_cap,
     )
     news_items = load_news(news_file)
     map_board = apply_starred_only(filtered, starred) if starred_only else filtered
@@ -680,6 +684,8 @@ def render_explore() -> None:
             filtered,
             starred=starred,
             stars_file=stars_file,
+            lm_model=app_settings.lm_model,
+            ai_review_on_open=app_settings.ai_review_on_offer_open,
             **map_kwargs,
         )
     elif section == "Board":

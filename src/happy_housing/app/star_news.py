@@ -166,6 +166,14 @@ def save_news(path: Path, items: list[StarNewsItem]) -> None:
     )
 
 
+def clear_star_news_memory(processed: Path) -> None:
+    """Delete starred-news feed and snapshots."""
+    for path in (news_path(processed), snapshots_path(processed)):
+        if path.exists():
+            path.unlink()
+            logger.info("Removed %s", path)
+
+
 def _now_iso() -> str:
     return datetime.now(tz=UTC).isoformat()
 
@@ -266,6 +274,7 @@ def sync_starred_news(
     *,
     snapshots_path: Path,
     news_path: Path,
+    history_cap: int = 200,
 ) -> list[StarNewsItem]:
     """Compare live starred rows to snapshots; append news; refresh snapshots.
 
@@ -329,7 +338,8 @@ def sync_starred_news(
     if new_items:
         existing_news.extend(new_items)
         # Cap history to keep the file small.
-        existing_news = existing_news[-200:]
+        cap = max(10, int(history_cap))
+        existing_news = existing_news[-cap:]
         save_news(news_path, existing_news)
     save_snapshots(snapshots_path, snapshots)
     return new_items

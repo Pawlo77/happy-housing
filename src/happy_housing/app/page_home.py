@@ -14,6 +14,7 @@ from happy_housing.app.data import (
     load_config,
     load_metadata,
     load_scored,
+    processed_dir,
     scored_path,
 )
 from happy_housing.app.home_hero import format_hero_stats, hero_html
@@ -23,6 +24,7 @@ from happy_housing.app.metadata import (
     DEFAULT_SOURCE_CATALOG,
     METHODOLOGY_STEPS,
 )
+from happy_housing.app.recommender import load_recommender_metrics
 from happy_housing.app.source_inventory import (
     SourceInventoryRow,
     build_source_inventory,
@@ -143,6 +145,24 @@ def _tab_model(meta_metrics: dict[str, float], feature_columns: list[str]) -> No
             st.metric("Test rows", f"{int(meta_metrics.get('n_test', 0)):,}")
     else:
         st.info("No training metrics yet — run the pipeline from Admin.")
+
+    rec = load_recommender_metrics(processed_dir())
+    st.subheader("Preference recommender")
+    if rec:
+        r1, r2, r3, r4 = st.columns(4)
+        r1.metric("Candidates", f"{int(rec.get('n_candidates', 0)):,}")
+        r2.metric("Recommended", f"{int(rec.get('n_recommended', 0)):,}")
+        r3.metric("Mean confidence", f"{rec.get('mean_confidence', float('nan')):.3f}")
+        r4.metric(
+            "Share unseen",
+            f"{100 * rec.get('share_unseen', float('nan')):.0f}%",
+        )
+        st.caption(
+            "Bargain + proximity scorer with soft demotion for already-seen "
+            "offers. Retrain from Admin → Recommendations."
+        )
+    else:
+        st.info("No recommender metrics yet — Admin → Recommendations → Retrain.")
 
     st.subheader("How the fair price is built")
     for idx, step in enumerate(METHODOLOGY_STEPS, start=1):

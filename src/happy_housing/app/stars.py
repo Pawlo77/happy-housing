@@ -59,3 +59,12 @@ def toggle_star(path: Path, listing_id: str) -> bool:
 def star_marker(listing_id: str, starred: frozenset[str] | set[str]) -> str:
     """Board/map marker: filled star when starred, else empty."""
     return "★" if is_starred(starred, listing_id) else "☆"
+
+
+def clear_stars(path: Path) -> None:
+    """Delete the starred-offers file (empty set)."""
+    if path.exists():
+        path.unlink()
+        logger.info("Cleared starred offers at %s", path)
+    else:
+        save_stars(path, frozenset())
