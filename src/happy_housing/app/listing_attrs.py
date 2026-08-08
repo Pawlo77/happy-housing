@@ -49,7 +49,7 @@ def _tags_set(raw: object) -> set[str]:
 
 def _coalesce_flag(existing: object, derived: int) -> int:
     cur: int | None = None
-    if existing is not None and existing == existing:
+    if existing is not None and not pd.isna(existing):
         try:
             cur = int(str(existing))
         except (TypeError, ValueError):
