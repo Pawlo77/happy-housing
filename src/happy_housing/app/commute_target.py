@@ -48,6 +48,55 @@ class CommuteTarget:
     """Human-readable place name."""
 
 
+def commute_compare_points(
+    *,
+    saved: CommuteTarget,
+    draft: CommuteTarget,
+) -> pd.DataFrame:
+    """Rows for Admin map: saved target vs draft (new) pin."""
+    return pd.DataFrame([
+        {
+            "lon": float(saved.lon),
+            "lat": float(saved.lat),
+            "role": "saved",
+            "tooltip_name": f"Saved: {saved.label}",
+            "tooltip_detail": f"{saved.lon:.5f}, {saved.lat:.5f}",
+        },
+        {
+            "lon": float(draft.lon),
+            "lat": float(draft.lat),
+            "role": "draft",
+            "tooltip_name": f"New: {draft.label}",
+            "tooltip_detail": f"{draft.lon:.5f}, {draft.lat:.5f}",
+        },
+    ])
+
+
+def commute_compare_view(
+    *,
+    saved: CommuteTarget,
+    draft: CommuteTarget,
+) -> tuple[float, float, float]:
+    """Map center ``(lat, lon, zoom)`` covering saved and draft pins."""
+    lat = 0.5 * (float(saved.lat) + float(draft.lat))
+    lon = 0.5 * (float(saved.lon) + float(draft.lon))
+    span = max(
+        abs(float(saved.lat) - float(draft.lat)),
+        abs(float(saved.lon) - float(draft.lon)),
+    )
+    if span < 1e-5:
+        zoom = 13.0
+    elif span < 0.01:
+        zoom = 12.5
+    elif span < 0.03:
+        zoom = 12.0
+    elif span < 0.08:
+        zoom = 11.0
+    else:
+        zoom = 10.0
+    return lat, lon, zoom
+
+
 def resolve_commute_target(
     settings: AppSettings,
     config: ExperimentConfig,

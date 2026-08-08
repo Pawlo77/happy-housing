@@ -19,6 +19,14 @@ _USER_AGENT = "HappyHousing/1.0 (local Warsaw housing app; contact: local-dev)"
 _WARSAW_VIEWBOX = "20.85,52.40,21.30,52.10"
 """Bias suggestions toward Warsaw without hard-bounding."""
 
+MIN_LIVE_QUERY_CHARS = 2
+"""Minimum trimmed query length before Nominatim live search."""
+
+
+def live_search_ready(query: str, *, min_chars: int = MIN_LIVE_QUERY_CHARS) -> bool:
+    """True when ``query`` is long enough for a live place search."""
+    return len(str(query or "").strip()) >= int(min_chars)
+
 
 @dataclass(frozen=True, slots=True)
 class PlaceSuggestion:

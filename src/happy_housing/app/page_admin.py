@@ -23,6 +23,8 @@ from happy_housing.app.app_settings import (
 )
 from happy_housing.app.attr_extract import enrich_frame_listing_attrs
 from happy_housing.app.commute_target import (
+    CommuteTarget,
+    commute_compare_view,
     commute_target_stale,
     recompute_commute_features,
     resolve_commute_target,
@@ -34,7 +36,7 @@ from happy_housing.app.data import (
     load_scored,
     processed_dir,
 )
-from happy_housing.app.geocode import search_places
+from happy_housing.app.geocode import live_search_ready, search_places
 from happy_housing.app.listing_attrs import promote_listing_flags
 from happy_housing.app.llm_metrics import (
     clear_llm_metrics,
@@ -42,6 +44,7 @@ from happy_housing.app.llm_metrics import (
     purpose_stats_frame,
     summarize_llm_calls,
 )
+from happy_housing.app.maps import commute_compare_layers, render_deck
 from happy_housing.app.pipeline_ingest import (
     resolve_ingest_flags,
     resolve_ingest_limits,
@@ -81,6 +84,13 @@ def _run_command(command: list[str], timeout_s: int) -> tuple[int, str]:
     return completed.returncode, out
 
 
+@st.cache_data(ttl=300, show_spinner=False)  # type: ignore[misc]
+def _cached_place_search(query: str) -> tuple[dict[str, float | str], ...]:
+    """Cached Nominatim hits for live Admin place search."""
+    hits = search_places(query)
+    return tuple({"label": h.label, "lon": h.lon, "lat": h.lat} for h in hits)
+
+
 def _tab_general(settings: AppSettings, settings_file: Path, proc: Path) -> None:
     """Paths, commute target, cache clear, and log level."""
     config = load_config()
@@ -113,38 +123,51 @@ def _tab_general(settings: AppSettings, settings_file: Path, proc: Path) -> None
         st.session_state["admin_commute_lat"] = float(target.lat)
         st.session_state["admin_commute_label"] = str(target.label)
 
-    search_q = st.text_input(
-        "Search place",
-        value="",
-        placeholder="e.g. Plac Bankowy, Warszawa",
-        key="admin_commute_search_q",
-        help="OpenStreetMap Nominatim suggestions (Poland / Warsaw-biased).",
-    )
-    if st.button("Suggest places", key="admin_commute_search_btn"):
+    search_seed = str(st.session_state.get("admin_commute_search_seed") or "").strip()
+    hit_rows: tuple[dict[str, float | str], ...] = ()
+    if live_search_ready(search_seed):
         try:
-            with st.spinner("Querying Nominatim…"):
-                hits = search_places(search_q)
-            st.session_state["admin_commute_suggestions"] = [
-                {"label": h.label, "lon": h.lon, "lat": h.lat} for h in hits
-            ]
-            if not hits:
-                st.info("No Nominatim hits — try a more specific query.")
+            hit_rows = _cached_place_search(search_seed)
         except Exception as exc:
             st.error(f"Nominatim search failed: {exc}")
-    suggestions = st.session_state.get("admin_commute_suggestions") or []
-    if suggestions:
-        labels = [str(row["label"]) for row in suggestions]
-        pick = st.selectbox(
-            "Suggestions",
-            options=labels,
-            key="admin_commute_suggestion_pick",
-        )
-        chosen = suggestions[labels.index(str(pick))]
-        if st.button("Use selected suggestion", key="admin_commute_use_suggestion"):
-            st.session_state["admin_commute_lon"] = float(chosen["lon"])
-            st.session_state["admin_commute_lat"] = float(chosen["lat"])
-            st.session_state["admin_commute_label"] = str(chosen["label"])[:120]
-            st.rerun()
+            hit_rows = ()
+    hit_labels = [str(row["label"]) for row in hit_rows]
+    hit_by_label = {str(row["label"]): row for row in hit_rows}
+    place_pick = st.selectbox(
+        "Search place",
+        options=hit_labels,
+        index=None,
+        placeholder="Type a place, press Enter, then pick a match…",
+        accept_new_options=True,
+        key="admin_commute_place_combo",
+        help=(
+            "Live OpenStreetMap Nominatim search (Poland / Warsaw-biased). "
+            "Type a query and press Enter to load matches in this dropdown."
+        ),
+    )
+    if place_pick:
+        if place_pick in hit_by_label:
+            chosen = hit_by_label[str(place_pick)]
+            new_lon = float(chosen["lon"])
+            new_lat = float(chosen["lat"])
+            new_label = str(chosen["label"])[:120]
+            changed = (
+                abs(float(st.session_state["admin_commute_lon"]) - new_lon) > 1e-6
+                or abs(float(st.session_state["admin_commute_lat"]) - new_lat) > 1e-6
+                or str(st.session_state["admin_commute_label"]) != new_label
+            )
+            if changed:
+                st.session_state["admin_commute_lon"] = new_lon
+                st.session_state["admin_commute_lat"] = new_lat
+                st.session_state["admin_commute_label"] = new_label
+                st.rerun()
+        elif live_search_ready(place_pick):
+            needle = str(place_pick).strip()
+            if needle != search_seed:
+                st.session_state["admin_commute_search_seed"] = needle
+                st.rerun()
+            elif not hit_rows:
+                st.caption("No Nominatim matches for this query.")
 
     lon_in = st.number_input(
         "Longitude",
@@ -160,6 +183,19 @@ def _tab_general(settings: AppSettings, settings_file: Path, proc: Path) -> None
         "Label",
         key="admin_commute_label",
     )
+    draft = CommuteTarget(
+        lon=float(lon_in),
+        lat=float(lat_in),
+        label=str(label_in).strip() or target.label,
+    )
+    view_lat, view_lon, view_zoom = commute_compare_view(saved=target, draft=draft)
+    render_deck(
+        commute_compare_layers(saved=target, draft=draft),
+        latitude=view_lat,
+        longitude=view_lon,
+        zoom=view_zoom,
+    )
+    st.caption("Slate pin = saved target · Teal pin = new (draft) target")
     st.caption(f"Active: **{target.label}** · {target.lon:.5f}, {target.lat:.5f}")
     if commute_target_stale(settings):
         st.warning(

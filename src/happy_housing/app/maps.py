@@ -10,6 +10,7 @@ import pandas as pd
 import pydeck as pdk
 import streamlit as st
 
+from happy_housing.app.commute_target import CommuteTarget, commute_compare_points
 from happy_housing.app.map_layers import (
     LayerFlags,
     prepare_gunb_for_map,
@@ -529,6 +530,39 @@ def commute_target_layer(
         msg = "commute target icon unexpectedly empty"
         raise RuntimeError(msg)
     return layer
+
+
+def commute_compare_layers(
+    *,
+    saved: CommuteTarget,
+    draft: CommuteTarget,
+) -> list[pdk.Layer]:
+    """Admin pins: slate = saved target, teal = draft (new)."""
+    frame = commute_compare_points(saved=saved, draft=draft)
+    layers: list[pdk.Layer] = []
+    saved_layer = _icon(
+        frame.loc[frame["role"] == "saved"],
+        layer_id="commute-saved",
+        kind="commute",
+        fill_color=[15, 23, 42, 230],
+        size=34,
+        size_min_pixels=20,
+        size_max_pixels=42,
+    )
+    draft_layer = _icon(
+        frame.loc[frame["role"] == "draft"],
+        layer_id="commute-draft",
+        kind="commute",
+        fill_color=[15, 107, 92, 230],
+        size=34,
+        size_min_pixels=20,
+        size_max_pixels=42,
+    )
+    if saved_layer is not None:
+        layers.append(saved_layer)
+    if draft_layer is not None:
+        layers.append(draft_layer)
+    return layers
 
 
 def focus_marker_layer(lat: float, lon: float) -> pdk.Layer:
