@@ -1,0 +1,122 @@
+# Streamlit app configuration — visual theme only via TOML (no custom CSS).
+# Premium light “Warsaw editorial” look: forest accent, cool stone surfaces,
+# serif headings + humanist sans body.
+
+[browser]
+gatherUsageStats = false
+
+[client]
+toolbarMode = "minimal"
+showErrorDetails = "full"
+
+[runner]
+fastReruns = true
+
+[theme]
+base = "light"
+
+# Accent — deep forest teal (not purple / terracotta)
+primaryColor = "#1B5E52"
+backgroundColor = "#F7F8F6"
+secondaryBackgroundColor = "#E9EEEA"
+textColor = "#18201D"
+linkColor = "#1B5E52"
+linkUnderline = true
+borderColor = "#C7D0CA"
+codeBackgroundColor = "#E4EAE5"
+dataframeHeaderBackgroundColor = "#DDE5E0"
+dataframeBorderColor = "#C7D0CA"
+
+showWidgetBorder = true
+showSidebarBorder = true
+baseRadius = "0.55rem"
+buttonRadius = "0.45rem"
+
+baseFontSize = 15
+baseFontWeight = 400
+metricValueFontSize = "1.65rem"
+metricValueFontWeight = 600
+
+# Typography — expressive heading + clean body (not Inter/Roboto/system)
+headingFont = "Fraunces:https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&display=swap"
+font = "Source Sans 3:https://fonts.googleapis.com/css2?family=Source+Sans+3:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap"
+codeFont = "IBM Plex Mono:https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap"
+codeFontSize = "0.875rem"
+codeFontWeight = 400
+
+headingFontSizes = [
+  "2.35rem",
+  "1.85rem",
+  "1.4rem",
+  "1.15rem",
+  "1.0rem",
+  "0.95rem",
+]
+headingFontWeights = [650, 600, 600, 550, 550, 500]
+
+# Semantic / chart colours aligned with over/under-priced map language
+redColor = "#B42318"
+redBackgroundColor = "#FCEBEA"
+redTextColor = "#7A271A"
+greenColor = "#1B7A4A"
+greenBackgroundColor = "#E6F4EC"
+greenTextColor = "#14532D"
+orangeColor = "#B54708"
+orangeBackgroundColor = "#FEF0C7"
+orangeTextColor = "#7A2E0E"
+blueColor = "#175CD3"
+blueBackgroundColor = "#E8F1FB"
+blueTextColor = "#1849A9"
+grayColor = "#66736D"
+grayBackgroundColor = "#EEF1EF"
+grayTextColor = "#3D4742"
+yellowColor = "#A15C07"
+yellowBackgroundColor = "#FEF7C3"
+yellowTextColor = "#713F12"
+
+chartCategoricalColors = [
+  "#1B5E52",
+  "#2F6F7E",
+  "#B54708",
+  "#1B7A4A",
+  "#175CD3",
+  "#7A4E3A",
+  "#5B6B63",
+  "#A15C07",
+  "#4C6A7A",
+  "#8B3A3A",
+]
+chartSequentialColors = [
+  "#E9EEEA",
+  "#D5E0DB",
+  "#C5D5CF",
+  "#A8C4BB",
+  "#8FB3A8",
+  "#6F9C8E",
+  "#4F8A7A",
+  "#357567",
+  "#1B5E52",
+  "#0F3D36",
+]
+chartDivergingColors = [
+  "#7A271A",
+  "#B42318",
+  "#E06B63",
+  "#F3B4AE",
+  "#F7F8F6",
+  "#C5E6D4",
+  "#A8D4BC",
+  "#5FAE84",
+  "#1B7A4A",
+  "#14532D",
+]
+
+[theme.sidebar]
+backgroundColor = "#F0F3F0"
+secondaryBackgroundColor = "#E2E8E3"
+textColor = "#18201D"
+primaryColor = "#1B5E52"
+borderColor = "#C0CBC4"
+showWidgetBorder = true
+baseRadius = "0.5rem"
+buttonRadius = "0.4rem"
