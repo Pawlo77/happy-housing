@@ -656,7 +656,6 @@ def _tab_afford(frame: pd.DataFrame) -> None:
 def render_stats() -> None:
     """Render filterable Stats analytics for buyers and investors."""
     logger.info("Rendering Stats")
-    st.title("Market analytics")
     st.caption(
         "Inventory, trends, district value, livability premiums, stock mix, and "
         "affordability — sidebar filters apply to every chart."

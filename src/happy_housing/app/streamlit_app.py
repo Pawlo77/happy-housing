@@ -8,6 +8,7 @@ import streamlit as st
 
 from happy_housing.app.app_settings import load_app_settings, settings_path
 from happy_housing.app.data import load_config, processed_dir
+from happy_housing.app.layout_density import apply_dense_top_layout
 from happy_housing.app.page_admin import render_admin
 from happy_housing.app.page_explore import render_explore
 from happy_housing.app.page_home import render_home
@@ -41,6 +42,7 @@ def main() -> None:
         layout="wide",
         initial_sidebar_state="collapsed",
     )
+    apply_dense_top_layout()
     logger.debug("Streamlit navigation starting")
     pages = [
         st.Page(render_home, title="Home", default=True),

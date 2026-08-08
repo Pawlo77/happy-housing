@@ -1,17 +1,12 @@
----
-description: No custom CSS in Streamlit UI — theme TOML + stock widgets only
-alwaysApply: true
----
-
 # No custom CSS
 
 Streamlit UI must use stock widgets + theme TOML only. No injected CSS/HTML chrome.
 
 ## Forbidden in `src/happy_housing/app/`
 
-- `<style>` blocks
+- `<style>` blocks for colours, fonts, cards, or general look-and-feel
 - Inline `style="..."` attributes
-- `unsafe_allow_html=True` for styling
+- `unsafe_allow_html=True` for styling (except the layout-density helper below)
 - `st.html(...)` / raw HTML markup used only for look-and-feel
 - Custom CSS files, class-based skinning (`hh-*` layout classes, etc.)
 
@@ -20,15 +15,20 @@ Streamlit UI must use stock widgets + theme TOML only. No injected CSS/HTML chro
 - Theme tokens in `.streamlit/config.toml` (`[theme]`, fonts, chart colours)
 - Streamlit widgets: `st.title`, `st.metric`, `st.tabs`, `st.markdown` (GFM only — bold, strikethrough, links)
 - Map/deck.gl layer colours and Altair/plot encodings (data viz, not page CSS)
+- **One layout-density exception:** `apply_dense_top_layout()` may set main
+  `block-container` / `stMainBlockContainer` `padding-top` only. Streamlit has no
+  TOML knob for the large gap under top `st.navigation`. Do not extend this to
+  colours, fonts, sidebars, or widget chrome.
 
 ## Prefer
 
 | Need | Use |
 |---|---|
-| Brand / page title | `st.title` / `st.header` |
+| Brand / page title | `st.title` / `st.header` (skip on pages already labeled by top nav) |
 | KPIs | `st.metric` (+ `delta` / `delta_color`) |
 | Emphasis / strike | Markdown (`**bold**`, `~~strike~~`) |
 | Layout | `st.columns`, `st.container`, `st.tabs` |
 | Look & feel | `.streamlit/config.toml` only |
 
-If a design seems to need custom CSS, change the design to fit Streamlit — do not inject CSS.
+If a design seems to need custom CSS beyond the padding-top exception above,
+change the design to fit Streamlit — do not inject more CSS.

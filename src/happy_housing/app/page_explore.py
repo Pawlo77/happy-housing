@@ -1493,7 +1493,6 @@ def _tab_prefs(
 def render_explore() -> None:
     """Render Explore with sidebar Filter/Map-layer tabs + main content tabs."""
     logger.info("Rendering Explore")
-    st.title("Explore")
     try:
         frame = load_scored()
     except FileNotFoundError as exc:

@@ -822,7 +822,6 @@ def _tab_model(settings: AppSettings, settings_file: Path) -> None:
 def render_admin() -> None:
     """Render Admin with tabbed settings (no raw JSON dump)."""
     logger.info("Rendering Admin")
-    st.title("Admin")
     st.caption("Tweaks and maintenance — grouped by concern. No raw settings dump.")
 
     proc = processed_dir()

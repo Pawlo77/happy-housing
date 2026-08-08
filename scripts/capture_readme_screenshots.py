@@ -61,7 +61,9 @@ def main() -> None:
             print(f"skip offer Context: {exc}")
 
         _nav(page, "Stats")
-        page.get_by_text("Market analytics", exact=False).first.wait_for(timeout=60_000)
+        page.get_by_text("sidebar filters apply", exact=False).first.wait_for(
+            timeout=60_000
+        )
         page.wait_for_timeout(4000)
         try:
             _tab(page, "Overview")
