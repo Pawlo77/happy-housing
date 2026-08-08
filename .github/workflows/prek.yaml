@@ -9,27 +9,7 @@ on:
       - main
 
 jobs:
-  template-guard:
-    runs-on: ubuntu-latest
-    outputs:
-      ready: ${{ steps.check.outputs.ready }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v5
-
-      - name: Detect template placeholders
-        id: check
-        run: |
-          if grep -q 'happy-housing' pyproject.toml; then
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Template placeholders detected — prek skipped until customized."
-          else
-            echo "ready=true" >> "$GITHUB_OUTPUT"
-          fi
-
   prek:
-    needs: template-guard
-    if: needs.template-guard.outputs.ready == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
