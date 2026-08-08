@@ -53,8 +53,18 @@ class LayerFlags:
     """OSM police stations."""
     shops: bool = False
     """OSM retail / supermarket points."""
-    transit: bool = False
-    """GTFS stops sized by departures at the selected hour."""
+    transit_intensity: bool = False
+    """GTFS stop-hour departure heatmap (popularity)."""
+    transit_network: bool = False
+    """GTFS route polylines + stops (metro/tram/bus/rail)."""
+    transit_show_metro: bool = True
+    """Include metro lines when network is on."""
+    transit_show_tram: bool = True
+    """Include tram lines when network is on."""
+    transit_show_bus: bool = True
+    """Include bus lines when network is on."""
+    transit_show_rail: bool = True
+    """Include rail / SKM-style lines when network is on."""
     traffic: bool = False
     """Road-activity heatmap proxy for the selected hour."""
     air: bool = False
@@ -269,6 +279,60 @@ def prepare_transit_for_hour(
     merged["layer_label"] = "Transit"
     merged["weight"] = merged["n_departures"].astype(float)
     return slim_map_frame(merged.reset_index(drop=True))
+
+
+def prepare_transit_paths(
+    frame: pd.DataFrame,
+    *,
+    modes: set[str] | frozenset[str] | None = None,
+) -> pd.DataFrame:
+    """Filter route polylines to enabled modes for PathLayer."""
+    if frame.empty:
+        return pd.DataFrame()
+    work = frame.copy()
+    if modes is not None:
+        work = work.loc[work["mode"].astype(str).isin(modes)]
+    if work.empty:
+        return work.reset_index(drop=True)
+    keep = [
+        c
+        for c in (
+            "path",
+            "mode",
+            "route_short_name",
+            "color_r",
+            "color_g",
+            "color_b",
+            "color_a",
+            "tooltip_name",
+            "tooltip_detail",
+        )
+        if c in work.columns
+    ]
+    return work.loc[:, keep].reset_index(drop=True)
+
+
+def prepare_transit_stops_network(
+    stops: pd.DataFrame,
+    *,
+    max_stops: int = 3500,
+) -> pd.DataFrame:
+    """Slim stop markers for the transit-network overlay."""
+    if stops.empty:
+        return pd.DataFrame()
+    work = stops.copy()
+    work["lat"] = pd.to_numeric(work.get("stop_lat", work.get("lat")), errors="coerce")
+    work["lon"] = pd.to_numeric(work.get("stop_lon", work.get("lon")), errors="coerce")
+    work = work.dropna(subset=["lat", "lon"])
+    work = limit_map_points(work, max_stops)
+    name = (
+        work["stop_name"].astype(str)
+        if "stop_name" in work.columns
+        else pd.Series("Stop", index=work.index)
+    )
+    work["tooltip_name"] = name.str.slice(0, 80)
+    work["tooltip_detail"] = "GTFS stop"
+    return slim_map_frame(work)
 
 
 def traffic_weights_for_hour(sample: pd.DataFrame, *, hour: int) -> pd.DataFrame:

@@ -18,11 +18,23 @@ LAYER_HELP: dict[str, str] = {
         "Higher aircraft noise hurts sleep/outdoor comfort and often lowers "
         "willingness-to-pay; the model also uses Lden / in_oou as features."
     ),
-    "transit": (
-        "ZTM GTFS stops sized by scheduled departures at the sidebar hour. "
-        "Strong transit access raises day-to-day livability and usually supports "
-        "price; dist_transit_stop_m / metro enter the model."
+    "transit_intensity": (
+        "GTFS stop-hour departure heatmap + busy stops at the sidebar clock. "
+        "Shows where service is dense (popularity), not the physical line map."
     ),
+    "transit_network": (
+        "GTFS route polylines (metro / tram / bus / rail colours) plus stop pins. "
+        "Physical network from shapes.txt — toggle modes below. "
+        "Strong transit access raises livability; dist_transit_stop_m enters the model."
+    ),
+    "transit_show_metro": (
+        "Draw metro routes (red). Warsaw M1/M2 from GTFS route_type=1."
+    ),
+    "transit_show_tram": ("Draw tram routes (dark red). GTFS route_type=0."),
+    "transit_show_bus": (
+        "Draw bus routes (blue). Densest layer — simplify/sample for map size."
+    ),
+    "transit_show_rail": ("Draw rail / SKM-style routes (green). GTFS route_type=2."),
     "traffic": (
         "Diurnal road-activity heatmap proxy (not live sensors). "
         "Peak hours ≈ more congestion/noise — worse living comfort near busy "

@@ -224,6 +224,30 @@ def load_gtfs_stops() -> pd.DataFrame:
     )
 
 
+def load_gtfs_route_shapes() -> pd.DataFrame:
+    """Load simplified GTFS route polylines for the transit-network map."""
+    path = processed_dir() / "gtfs_route_shapes.parquet"
+    empty_cols = [
+        "route_id",
+        "route_short_name",
+        "route_type",
+        "mode",
+        "path",
+        "color_r",
+        "color_g",
+        "color_b",
+        "color_a",
+    ]
+    if not path.exists():
+        zip_path = load_config().data.raw_path() / "gtfs_warsaw.zip"
+        if zip_path.exists():
+            from happy_housing.ingest.gtfs_network import build_gtfs_route_shapes
+
+            return build_gtfs_route_shapes(zip_path, path)
+        return pd.DataFrame(columns=empty_cols)
+    return _load_parquet_or_empty(path, empty_cols)
+
+
 def load_gtfs_hourly() -> pd.DataFrame:
     """Load or build GTFS stop-hour departure counts."""
     path = processed_dir() / "gtfs_stop_hourly.parquet"

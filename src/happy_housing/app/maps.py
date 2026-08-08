@@ -17,6 +17,8 @@ from happy_housing.app.map_layers import (
     prepare_point_layer,
     prepare_shops_for_map,
     prepare_transit_for_hour,
+    prepare_transit_paths,
+    prepare_transit_stops_network,
     slim_map_frame,
     traffic_weights_for_hour,
 )
@@ -311,13 +313,13 @@ def shops_layer(shops: pd.DataFrame) -> pdk.Layer | None:
     )
 
 
-def transit_layers(
+def transit_intensity_layers(
     stops: pd.DataFrame,
     hourly: pd.DataFrame,
     *,
     hour: int,
 ) -> list[pdk.Layer]:
-    """Heatmap + top active stops for the selected hour."""
+    """Hourly departure heatmap + top active stops (popularity)."""
     prepared = prepare_transit_for_hour(stops, hourly, hour=hour)
     if prepared.empty:
         return []
@@ -339,7 +341,7 @@ def transit_layers(
     top["icon_size"] = (14.0 + top["n_departures"].astype(float) * 0.15).clip(16, 34)
     icons = _icon(
         top,
-        layer_id="transit-stops",
+        layer_id="transit-intensity-stops",
         kind="transit",
         fill_color=[14, 116, 144, 210],
         size="icon_size",
@@ -348,6 +350,45 @@ def transit_layers(
     )
     if icons is not None:
         layers.append(icons)
+    return layers
+
+
+def transit_network_layers(
+    route_shapes: pd.DataFrame,
+    stops: pd.DataFrame,
+    *,
+    modes: set[str],
+) -> list[pdk.Layer]:
+    """Mode-coloured route polylines plus GTFS stop markers."""
+    layers: list[pdk.Layer] = []
+    paths = prepare_transit_paths(route_shapes, modes=modes)
+    if not paths.empty:
+        layers.append(
+            pdk.Layer(
+                "PathLayer",
+                data=paths,
+                get_path="path",
+                get_color="[color_r, color_g, color_b, color_a]",
+                width_min_pixels=2,
+                width_max_pixels=6,
+                get_width=3,
+                pickable=True,
+                id="transit-routes",
+            )
+        )
+    stop_pts = prepare_transit_stops_network(stops)
+    if not stop_pts.empty:
+        stop_layer = _icon(
+            stop_pts,
+            layer_id="transit-network-stops",
+            kind="transit",
+            fill_color=[248, 250, 252, 230],
+            size=14,
+            size_min_pixels=8,
+            size_max_pixels=16,
+        )
+        if stop_layer is not None:
+            layers.append(stop_layer)
     return layers
 
 
@@ -540,6 +581,7 @@ def build_explore_layers(
     shops: pd.DataFrame,
     stops: pd.DataFrame,
     hourly: pd.DataFrame,
+    route_shapes: pd.DataFrame,
     traffic_sample: pd.DataFrame,
     air_stations: pd.DataFrame,
     gunb: pd.DataFrame,
@@ -561,8 +603,19 @@ def build_explore_layers(
         heat = traffic_heatmap_layer(traffic_sample, hour=hour)
         if heat is not None:
             layers.append(heat)
-    if flags.transit:
-        layers.extend(transit_layers(stops, hourly, hour=hour))
+    if flags.transit_intensity:
+        layers.extend(transit_intensity_layers(stops, hourly, hour=hour))
+    if flags.transit_network:
+        modes: set[str] = set()
+        if flags.transit_show_metro:
+            modes.add("metro")
+        if flags.transit_show_tram:
+            modes.add("tram")
+        if flags.transit_show_bus:
+            modes.add("bus")
+        if flags.transit_show_rail:
+            modes.add("rail")
+        layers.extend(transit_network_layers(route_shapes, stops, modes=modes))
     if flags.shops:
         shop_layer = shops_layer(shops)
         if shop_layer is not None:

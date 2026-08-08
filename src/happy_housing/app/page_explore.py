@@ -45,6 +45,7 @@ from happy_housing.app.data import (
     load_config,
     load_gios_stations,
     load_gtfs_hourly,
+    load_gtfs_route_shapes,
     load_gtfs_stops,
     load_gunb_points,
     load_parks,
@@ -297,11 +298,41 @@ def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
             help=layer_help("oou"),
             key="explore_ly_oou",
         ),
-        transit=st.sidebar.checkbox(
-            "Public transport (GTFS)",
+        transit_intensity=st.sidebar.checkbox(
+            "Transit intensity (hourly)",
             value=False,
-            help=layer_help("transit"),
-            key="explore_ly_transit",
+            help=layer_help("transit_intensity"),
+            key="explore_ly_transit_intensity",
+        ),
+        transit_network=st.sidebar.checkbox(
+            "Transit lines & stops",
+            value=False,
+            help=layer_help("transit_network"),
+            key="explore_ly_transit_network",
+        ),
+        transit_show_metro=st.sidebar.checkbox(
+            "  Metro lines",
+            value=True,
+            help=layer_help("transit_show_metro"),
+            key="explore_ly_transit_metro",
+        ),
+        transit_show_tram=st.sidebar.checkbox(
+            "  Tram lines",
+            value=True,
+            help=layer_help("transit_show_tram"),
+            key="explore_ly_transit_tram",
+        ),
+        transit_show_bus=st.sidebar.checkbox(
+            "  Bus lines",
+            value=True,
+            help=layer_help("transit_show_bus"),
+            key="explore_ly_transit_bus",
+        ),
+        transit_show_rail=st.sidebar.checkbox(
+            "  Train / rail lines",
+            value=True,
+            help=layer_help("transit_show_rail"),
+            key="explore_ly_transit_rail",
         ),
         traffic=st.sidebar.checkbox(
             "Traffic intensity proxy",
@@ -369,6 +400,7 @@ def _tab_map(
     shops: pd.DataFrame,
     stops: pd.DataFrame,
     hourly: pd.DataFrame,
+    route_shapes: pd.DataFrame,
     traffic_sample: pd.DataFrame,
     air_stations: pd.DataFrame,
     gunb: pd.DataFrame,
@@ -388,7 +420,9 @@ def _tab_map(
         "Parks from UM Warszawa PLACE_SKWERY (testmapa). "
         "Lden bands from EEA END major-airport contours. Hover pins for details. "
         f"GUNB shows a Warsaw sample (max {MAX_GUNB_MAP_POINTS:,} points) so the "
-        "map stays under Streamlit message limits. " + map_shape_legend_caption()
+        "map stays under Streamlit message limits. "
+        "Transit lines: metro red · tram dark red · bus blue · rail green. "
+        + map_shape_legend_caption()
     )
     if filtered.empty and flags.offers:
         st.warning("No offers match filters — disable Offers or widen filters.")
@@ -400,6 +434,7 @@ def _tab_map(
         shops=shops,
         stops=stops,
         hourly=hourly,
+        route_shapes=route_shapes,
         traffic_sample=traffic_sample,
         air_stations=air_stations,
         gunb=gunb,
@@ -688,6 +723,7 @@ def _tab_offer(
     shops: pd.DataFrame,
     stops: pd.DataFrame,
     hourly: pd.DataFrame,
+    route_shapes: pd.DataFrame,
     traffic_sample: pd.DataFrame,
     air_stations: pd.DataFrame,
     gunb: pd.DataFrame,
@@ -795,6 +831,7 @@ def _tab_offer(
             shops=shops,
             stops=stops,
             hourly=hourly,
+            route_shapes=route_shapes,
             traffic_sample=traffic_sample,
             air_stations=air_stations,
             gunb=gunb,
@@ -1451,6 +1488,7 @@ def render_explore() -> None:
     shops = load_shops()
     stops = load_gtfs_stops()
     hourly = load_gtfs_hourly()
+    route_shapes = load_gtfs_route_shapes()
     traffic_sample = load_traffic_sample()
     air_stations = load_gios_stations()
     gunb = load_gunb_points()
@@ -1465,6 +1503,7 @@ def render_explore() -> None:
         "shops": shops,
         "stops": stops,
         "hourly": hourly,
+        "route_shapes": route_shapes,
         "traffic_sample": traffic_sample,
         "air_stations": air_stations,
         "gunb": gunb,

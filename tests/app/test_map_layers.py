@@ -99,5 +99,6 @@ def test_layer_flags_default_offers_on() -> None:
     """Offers stay visible by default; dense overlays start off."""
     flags = LayerFlags()
     assert flags.offers is True
-    assert flags.transit is False
+    assert flags.transit_intensity is False
+    assert flags.transit_network is False
     assert flags.traffic is False

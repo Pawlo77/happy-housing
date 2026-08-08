@@ -13,6 +13,8 @@ from xml.etree import ElementTree as ET  # nosec B405 — local RCN GML only
 import pandas as pd
 import requests
 
+from happy_housing.ingest.gtfs_network import build_gtfs_route_shapes
+
 logger = logging.getLogger(__name__)
 
 LISTING_REQUIRED_COLUMNS: tuple[str, ...] = (
@@ -114,6 +116,11 @@ def export_gtfs_stops_from_zip(gtfs_zip: Path, output_parquet: Path) -> pd.DataF
     logger.info("Wrote %s GTFS stops to %s", len(stops), output_parquet)
     hourly_path = output_parquet.with_name("gtfs_stop_hourly.parquet")
     build_gtfs_stop_hourly(gtfs_zip, hourly_path)
+    shapes_path = output_parquet.with_name("gtfs_route_shapes.parquet")
+    try:
+        build_gtfs_route_shapes(gtfs_zip, shapes_path)
+    except (OSError, ValueError, FileNotFoundError, KeyError) as exc:
+        logger.warning("GTFS route shapes export skipped: %s", exc)
     return stops
 
 
