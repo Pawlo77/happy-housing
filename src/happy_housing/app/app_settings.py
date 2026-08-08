@@ -114,6 +114,38 @@ class AppSettings:
     """Lon last baked into scored dist/commute features."""
     commute_features_lat: float | None = None
     """Lat last baked into scored dist/commute features."""
+    pipeline_overrides_enabled: bool = False
+    """When True, Admin Pipeline ingest fields override experiment.yaml."""
+    otodom_max_pages: int | None = None
+    """Otodom search-page cap; None = unlimited (when overrides enabled)."""
+    otodom_max_listings: int | None = None
+    """Otodom listing cap; None = unlimited (when overrides enabled)."""
+    otodom_incremental: bool = True
+    """Merge Otodom scrape into existing parquet."""
+    rcn_max_rows: int | None = None
+    """RCN extract row cap; None = full GML (when overrides enabled)."""
+    scrape_otodom_in_pipeline: bool = True
+    """Scrape Otodom when running the full pipeline."""
+    use_osm: bool = True
+    """Fetch OSM amenities + shops during pipeline."""
+    download_gtfs: bool = True
+    """Re-download GTFS during pipeline."""
+    download_gios: bool = True
+    """Re-download GIOŚ stations during pipeline."""
+    download_rcn: bool = True
+    """Re-download RCN during pipeline."""
+    download_gunb: bool = True
+    """Re-download GUNB during pipeline."""
+    gtfs_zip_url: str = ""
+    """Override GTFS zip URL; empty → YAML."""
+    gios_stations_url: str = ""
+    """Override GIOŚ stations URL; empty → YAML."""
+    rcn_zip_url: str = ""
+    """Override RCN zip URL; empty → YAML."""
+    gunb_zip_url: str = ""
+    """Override GUNB zip URL; empty → YAML."""
+    train_otodom_labels_only: bool = True
+    """Train LightGBM on Otodom/fixture asks; RCN used as comps only."""
 
 
 def settings_path(processed: Path) -> Path:
@@ -334,6 +366,41 @@ def load_app_settings(path: Path) -> AppSettings:
         ).strip(),
         commute_features_lon=_opt_lon_lat(payload.get("commute_features_lon")),
         commute_features_lat=_opt_lon_lat(payload.get("commute_features_lat")),
+        pipeline_overrides_enabled=bool(
+            payload.get(
+                "pipeline_overrides_enabled",
+                defaults.pipeline_overrides_enabled,
+            )
+        ),
+        otodom_max_pages=_opt_positive_int(payload.get("otodom_max_pages")),
+        otodom_max_listings=_opt_positive_int(payload.get("otodom_max_listings")),
+        otodom_incremental=bool(
+            payload.get("otodom_incremental", defaults.otodom_incremental)
+        ),
+        rcn_max_rows=_opt_positive_int(payload.get("rcn_max_rows")),
+        scrape_otodom_in_pipeline=bool(
+            payload.get(
+                "scrape_otodom_in_pipeline",
+                defaults.scrape_otodom_in_pipeline,
+            )
+        ),
+        use_osm=bool(payload.get("use_osm", defaults.use_osm)),
+        download_gtfs=bool(payload.get("download_gtfs", defaults.download_gtfs)),
+        download_gios=bool(payload.get("download_gios", defaults.download_gios)),
+        download_rcn=bool(payload.get("download_rcn", defaults.download_rcn)),
+        download_gunb=bool(payload.get("download_gunb", defaults.download_gunb)),
+        gtfs_zip_url=str(payload.get("gtfs_zip_url", defaults.gtfs_zip_url) or ""),
+        gios_stations_url=str(
+            payload.get("gios_stations_url", defaults.gios_stations_url) or ""
+        ),
+        rcn_zip_url=str(payload.get("rcn_zip_url", defaults.rcn_zip_url) or ""),
+        gunb_zip_url=str(payload.get("gunb_zip_url", defaults.gunb_zip_url) or ""),
+        train_otodom_labels_only=bool(
+            payload.get(
+                "train_otodom_labels_only",
+                defaults.train_otodom_labels_only,
+            )
+        ),
     )
 
 

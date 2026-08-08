@@ -85,3 +85,29 @@ def test_commute_target_settings_round_trip(tmp_path: Path) -> None:
     assert loaded.commute_target_lat == 52.25
     assert loaded.commute_target_label == "Plac Bankowy"
     assert loaded.commute_features_lon == 20.983
+
+
+def test_pipeline_ingest_settings_round_trip(tmp_path: Path) -> None:
+    path = settings_path(tmp_path)
+    save_app_settings(
+        path,
+        AppSettings(
+            pipeline_overrides_enabled=True,
+            otodom_max_pages=25,
+            otodom_max_listings=None,
+            otodom_incremental=False,
+            rcn_max_rows=1000,
+            download_gtfs=False,
+            gtfs_zip_url="https://example.test/gtfs.zip",
+            train_otodom_labels_only=False,
+        ),
+    )
+    loaded = load_app_settings(path)
+    assert loaded.pipeline_overrides_enabled is True
+    assert loaded.otodom_max_pages == 25
+    assert loaded.otodom_max_listings is None
+    assert loaded.otodom_incremental is False
+    assert loaded.rcn_max_rows == 1000
+    assert loaded.download_gtfs is False
+    assert loaded.gtfs_zip_url == "https://example.test/gtfs.zip"
+    assert loaded.train_otodom_labels_only is False
