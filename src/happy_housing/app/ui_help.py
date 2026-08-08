@@ -80,6 +80,22 @@ LAYER_HELP: dict[str, str] = {
         "Closer green space raises day-to-day livability and often supports "
         "price; dist_park_m is a model feature and Prefs can cap max distance."
     ),
+    "city_boundary": (
+        "Warsaw city administrative outline (OSM). Context only — shows where "
+        "offers sit relative to the city edge."
+    ),
+    "military": (
+        "OSM landuse=military areas in gray. Restricted land — usually not "
+        "buildable housing; context for nearby offers."
+    ),
+    "rail_areas": (
+        "OSM landuse=railway yards / corridor land (cool gray). Distinct from "
+        "GTFS rail line overlay. Nearby yards can mean noise/vibration."
+    ),
+    "airport": (
+        "OSM aerodrome footprints (slate gray-blue). Footprint of Chopin / "
+        "Babice / military airfields — not the amber Lden noise contours."
+    ),
     "commute_target": (
         "Commute destination pin (Admin → General; default Rondo Daszyńskiego). "
         "Reference for commute minutes / dist_daszynskiego_m — shorter trips "

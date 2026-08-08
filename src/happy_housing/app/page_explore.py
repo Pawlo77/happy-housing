@@ -41,14 +41,18 @@ from happy_housing.app.charts import (
 from happy_housing.app.commute_target import resolve_commute_target
 from happy_housing.app.data import (
     load_aircraft_lden,
+    load_airport_areas,
     load_amenities,
+    load_city_boundary,
     load_config,
     load_gios_stations,
     load_gtfs_hourly,
     load_gtfs_route_shapes,
     load_gtfs_stops,
     load_gunb_points,
+    load_military_areas,
     load_parks,
+    load_rail_areas,
     load_scored,
     load_shap_bundle,
     load_shops,
@@ -296,6 +300,30 @@ def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
             help=layer_help("oou"),
             key="explore_ly_oou",
         ),
+        city_boundary=st.checkbox(
+            "City boundary",
+            value=True,
+            help=layer_help("city_boundary"),
+            key="explore_ly_city_boundary",
+        ),
+        military=st.checkbox(
+            "Military areas",
+            value=True,
+            help=layer_help("military"),
+            key="explore_ly_military",
+        ),
+        rail_areas=st.checkbox(
+            "Rail land / yards",
+            value=True,
+            help=layer_help("rail_areas"),
+            key="explore_ly_rail_areas",
+        ),
+        airport=st.checkbox(
+            "Airport footprints",
+            value=True,
+            help=layer_help("airport"),
+            key="explore_ly_airport",
+        ),
         transit_intensity=st.checkbox(
             "Transit intensity (hourly)",
             value=False,
@@ -415,6 +443,10 @@ def _tab_map(
     air_stations: pd.DataFrame,
     gunb: pd.DataFrame,
     parks: gpd.GeoDataFrame,
+    city_boundary: gpd.GeoDataFrame,
+    military: gpd.GeoDataFrame,
+    rail_areas: gpd.GeoDataFrame,
+    airport: gpd.GeoDataFrame,
     flags: LayerFlags,
     hour: int,
     basemap: str,
@@ -438,6 +470,10 @@ def _tab_map(
         air_stations=air_stations,
         gunb=gunb,
         parks=parks,
+        city_boundary=city_boundary,
+        military=military,
+        rail_areas=rail_areas,
+        airport=airport,
         commute_lon=commute_lon,
         commute_lat=commute_lat,
         hour=hour,
@@ -503,6 +539,11 @@ def _tab_spatial(
     basemap: str,
     commute_lon: float,
     commute_lat: float,
+    city_boundary: gpd.GeoDataFrame,
+    military: gpd.GeoDataFrame,
+    rail_areas: gpd.GeoDataFrame,
+    airport: gpd.GeoDataFrame,
+    flags: LayerFlags,
 ) -> None:
     """Spatial analytics: metric heatmaps + district charts (not map-only)."""
     st.caption(
@@ -552,6 +593,11 @@ def _tab_spatial(
             traffic_sample=traffic_sample,
             hour=hour,
             show_hex=bool(show_hex) and metric_key != "traffic",
+            city_boundary=city_boundary,
+            military=military,
+            rail_areas=rail_areas,
+            airport=airport,
+            flags=flags,
         )
         if not layers:
             st.info(
@@ -762,6 +808,10 @@ def _tab_offer(
     air_stations: pd.DataFrame,
     gunb: pd.DataFrame,
     parks: gpd.GeoDataFrame,
+    city_boundary: gpd.GeoDataFrame,
+    military: gpd.GeoDataFrame,
+    rail_areas: gpd.GeoDataFrame,
+    airport: gpd.GeoDataFrame,
     flags: LayerFlags,
     hour: int,
     basemap: str,
@@ -870,6 +920,10 @@ def _tab_offer(
             air_stations=air_stations,
             gunb=gunb,
             parks=parks,
+            city_boundary=city_boundary,
+            military=military,
+            rail_areas=rail_areas,
+            airport=airport,
             commute_lon=commute_lon,
             commute_lat=commute_lat,
             hour=hour,
@@ -1525,6 +1579,10 @@ def render_explore() -> None:
     air_stations = load_gios_stations()
     gunb = load_gunb_points()
     parks = load_parks()
+    city_boundary = load_city_boundary()
+    military = load_military_areas()
+    rail_areas = load_rail_areas()
+    airport = load_airport_areas()
 
     if "explore_section" not in st.session_state:
         st.session_state["explore_section"] = "Map"
@@ -1540,6 +1598,10 @@ def render_explore() -> None:
         "air_stations": air_stations,
         "gunb": gunb,
         "parks": parks,
+        "city_boundary": city_boundary,
+        "military": military,
+        "rail_areas": rail_areas,
+        "airport": airport,
         "flags": flags,
         "hour": hour,
         "basemap": basemap,
@@ -1578,6 +1640,11 @@ def render_explore() -> None:
                 basemap=basemap,
                 commute_lon=float(commute.lon),
                 commute_lat=float(commute.lat),
+                city_boundary=city_boundary,
+                military=military,
+                rail_areas=rail_areas,
+                airport=airport,
+                flags=flags,
             )
     with tab_offer:
         if tab_offer.open:

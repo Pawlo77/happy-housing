@@ -24,6 +24,11 @@ from happy_housing.app.map_layers import (
 )
 from happy_housing.app.map_marker_shapes import marker_icon
 from happy_housing.app.spatial_insights import prepare_spatial_points
+from happy_housing.app.zone_overlays import (
+    ZONE_FILL,
+    ZONE_LINE,
+    prepare_zone_records,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -208,33 +213,34 @@ def amenity_layers(
 
 def parks_layer(parks: gpd.GeoDataFrame | None) -> pdk.Layer | None:
     """UM Warszawa PLACE_SKWERY park / square polygons."""
-    if parks is None or parks.empty:
-        return None
-    work = parks.copy()
-    if work.crs is not None and str(work.crs) != "EPSG:4326":
-        work = work.to_crs("EPSG:4326")
-    records: list[dict[str, Any]] = []
-    for _, row in work.iterrows():
-        geom = row.geometry
-        if geom is None or geom.is_empty:
-            continue
-        name = (
-            str(row["name"]) if "name" in work.columns and row.get("name") else "Park"
-        )
-        polys = (
-            [geom] if geom.geom_type == "Polygon" else list(getattr(geom, "geoms", []))
-        )
-        for poly in polys:
-            if poly.geom_type != "Polygon":
-                continue
-            coords = [[float(x), float(y)] for x, y in poly.exterior.coords]
-            records.append({
-                "coordinates": [coords],
-                "fill_color": [34, 139, 34, 70],
-                "line_color": [20, 100, 20, 200],
-                "tooltip_name": name,
-                "tooltip_detail": "UM Warszawa PLACE_SKWERY (testmapa parks/squares)",
-            })
+    return zone_polygon_layer(
+        parks,
+        layer_id="warsaw-parks",
+        fill_rgba=[34, 139, 34, 70],
+        line_rgba=[20, 100, 20, 200],
+        detail="UM Warszawa PLACE_SKWERY (testmapa parks/squares)",
+        default_name="Park",
+    )
+
+
+def zone_polygon_layer(
+    frame: gpd.GeoDataFrame | None,
+    *,
+    layer_id: str,
+    fill_rgba: list[int],
+    line_rgba: list[int],
+    detail: str,
+    default_name: str = "Zone",
+    line_width_min_pixels: int = 1,
+) -> pdk.Layer | None:
+    """Generic polygon overlay (city boundary, military, rail, airport, …)."""
+    records = prepare_zone_records(
+        frame,
+        fill_rgba=fill_rgba,
+        line_rgba=line_rgba,
+        detail=detail,
+        default_name=default_name,
+    )
     if not records:
         return None
     return pdk.Layer(
@@ -243,9 +249,58 @@ def parks_layer(parks: gpd.GeoDataFrame | None) -> pdk.Layer | None:
         get_polygon="coordinates",
         get_fill_color="fill_color",
         get_line_color="line_color",
-        line_width_min_pixels=1,
+        line_width_min_pixels=line_width_min_pixels,
         pickable=True,
-        id="warsaw-parks",
+        id=layer_id,
+    )
+
+
+def city_boundary_layer(boundary: gpd.GeoDataFrame | None) -> pdk.Layer | None:
+    """Warsaw city administrative outline (stroke-forward)."""
+    return zone_polygon_layer(
+        boundary,
+        layer_id="city-boundary",
+        fill_rgba=ZONE_FILL["city_boundary"],
+        line_rgba=ZONE_LINE["city_boundary"],
+        detail="Warsaw administrative boundary (OSM)",
+        default_name="Warszawa",
+        line_width_min_pixels=2,
+    )
+
+
+def military_areas_layer(frame: gpd.GeoDataFrame | None) -> pdk.Layer | None:
+    """Military landuse polygons in gray."""
+    return zone_polygon_layer(
+        frame,
+        layer_id="military-areas",
+        fill_rgba=ZONE_FILL["military"],
+        line_rgba=ZONE_LINE["military"],
+        detail="OSM landuse=military",
+        default_name="Military",
+    )
+
+
+def rail_areas_layer(frame: gpd.GeoDataFrame | None) -> pdk.Layer | None:
+    """Railway land / yard polygons (distinct cool gray)."""
+    return zone_polygon_layer(
+        frame,
+        layer_id="rail-areas",
+        fill_rgba=ZONE_FILL["rail_areas"],
+        line_rgba=ZONE_LINE["rail_areas"],
+        detail="OSM landuse=railway",
+        default_name="Railway land",
+    )
+
+
+def airport_areas_layer(frame: gpd.GeoDataFrame | None) -> pdk.Layer | None:
+    """Aerodrome footprints (distinct from aircraft Lden contours)."""
+    return zone_polygon_layer(
+        frame,
+        layer_id="airport-areas",
+        fill_rgba=ZONE_FILL["airport"],
+        line_rgba=ZONE_LINE["airport"],
+        detail="OSM aeroway=aerodrome (footprint, not noise)",
+        default_name="Airport",
     )
 
 
@@ -556,9 +611,24 @@ def build_spatial_layers(
     traffic_sample: pd.DataFrame,
     hour: int,
     show_hex: bool,
+    city_boundary: gpd.GeoDataFrame | None = None,
+    military: gpd.GeoDataFrame | None = None,
+    rail_areas: gpd.GeoDataFrame | None = None,
+    airport: gpd.GeoDataFrame | None = None,
+    flags: LayerFlags | None = None,
 ) -> list[pdk.Layer]:
     """Assemble Spatial-tab layers for the selected metric."""
     layers: list[pdk.Layer] = []
+    zone_flags = flags or LayerFlags()
+    layers.extend(
+        _zone_overlay_layers(
+            flags=zone_flags,
+            city_boundary=city_boundary,
+            military=military,
+            rail_areas=rail_areas,
+            airport=airport,
+        )
+    )
     if metric_key == "traffic":
         heat = traffic_heatmap_layer(traffic_sample, hour=hour)
         if heat is not None:
@@ -572,6 +642,35 @@ def build_spatial_layers(
         hex_layer = spatial_hex_layer(points)
         if hex_layer is not None:
             layers.append(hex_layer)
+    return layers
+
+
+def _zone_overlay_layers(
+    *,
+    flags: LayerFlags,
+    city_boundary: gpd.GeoDataFrame | None,
+    military: gpd.GeoDataFrame | None,
+    rail_areas: gpd.GeoDataFrame | None,
+    airport: gpd.GeoDataFrame | None,
+) -> list[pdk.Layer]:
+    """City boundary + restricted-land polygons drawn under other overlays."""
+    layers: list[pdk.Layer] = []
+    if flags.city_boundary:
+        boundary = city_boundary_layer(city_boundary)
+        if boundary is not None:
+            layers.append(boundary)
+    if flags.military:
+        mil = military_areas_layer(military)
+        if mil is not None:
+            layers.append(mil)
+    if flags.rail_areas:
+        rail = rail_areas_layer(rail_areas)
+        if rail is not None:
+            layers.append(rail)
+    if flags.airport:
+        air = airport_areas_layer(airport)
+        if air is not None:
+            layers.append(air)
     return layers
 
 
@@ -593,9 +692,22 @@ def build_explore_layers(
     commute_lat: float,
     hour: int,
     commute_label: str = "Commute target",
+    city_boundary: gpd.GeoDataFrame | None = None,
+    military: gpd.GeoDataFrame | None = None,
+    rail_areas: gpd.GeoDataFrame | None = None,
+    airport: gpd.GeoDataFrame | None = None,
 ) -> list[pdk.Layer]:
     """Assemble enabled Explore map layers in draw order."""
     layers: list[pdk.Layer] = []
+    layers.extend(
+        _zone_overlay_layers(
+            flags=flags,
+            city_boundary=city_boundary,
+            military=military,
+            rail_areas=rail_areas,
+            airport=airport,
+        )
+    )
     if flags.oou:
         layers.extend(aircraft_noise_layers(oou))
     if flags.parks:

@@ -73,6 +73,14 @@ class LayerFlags:
     """GUNB construction / permit points."""
     parks: bool = False
     """UM Warszawa parks / squares (PLACE_SKWERY)."""
+    city_boundary: bool = True
+    """Warsaw administrative boundary outline."""
+    military: bool = True
+    """OSM landuse=military polygons (gray)."""
+    rail_areas: bool = True
+    """OSM landuse=railway yard / corridor polygons."""
+    airport: bool = True
+    """OSM aeroway=aerodrome footprints (not Lden noise)."""
     commute_target: bool = False
     """Rondo Daszyńskiego commute target."""
 

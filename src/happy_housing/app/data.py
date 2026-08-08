@@ -155,6 +155,34 @@ def load_parks() -> gpd.GeoDataFrame:
     return gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
 
 
+def _load_zone_fixture(filename: str) -> gpd.GeoDataFrame:
+    """Load a zone-overlay GeoJSON fixture, or an empty frame."""
+    path = load_config().data.fixtures_path() / filename
+    if not path.exists():
+        return gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
+    return read_geojson_gdf(str(path), path.stat().st_mtime)
+
+
+def load_city_boundary() -> gpd.GeoDataFrame:
+    """Warsaw administrative boundary polygon."""
+    return _load_zone_fixture("warsaw_boundary.geojson")
+
+
+def load_military_areas() -> gpd.GeoDataFrame:
+    """OSM landuse=military polygons for the map."""
+    return _load_zone_fixture("military_areas.geojson")
+
+
+def load_rail_areas() -> gpd.GeoDataFrame:
+    """OSM landuse=railway polygons for the map."""
+    return _load_zone_fixture("rail_areas.geojson")
+
+
+def load_airport_areas() -> gpd.GeoDataFrame:
+    """OSM aeroway=aerodrome footprints for the map."""
+    return _load_zone_fixture("airport_areas.geojson")
+
+
 def load_aircraft_lden() -> gpd.GeoDataFrame | None:
     """Load Chopin aircraft Lden contour bands when present."""
     path = load_config().data.fixtures_path() / "chopin_aircraft_lden.geojson"
