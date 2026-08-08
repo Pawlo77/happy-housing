@@ -287,18 +287,18 @@ def _ensure_description(row: pd.Series) -> str:
     return text.strip() if isinstance(text, str) else ""
 
 
+_DELTA_COLORS_HELP = "green underpriced · yellow fair · red overpriced"
+"""Hover-only color key for the delta metric (st.metric help)."""
+
+
 def _price_metrics(row: pd.Series) -> None:
     """Listing / model / delta metrics via Streamlit widgets only."""
     listing = float(row["price_per_m2"])
     model = float(row["model_price_per_m2"])
     delta = float(row["delta_price_per_m2"])
     band = delta_band(delta)
-    if band == "green":
-        delta_label, delta_color = "underpriced", "normal"
-    elif band == "red":
-        delta_label, delta_color = "overpriced", "inverse"
-    else:
-        delta_label, delta_color = "fair", "off"
+    # Named theme colours keep a compact signal; full key lives in help (hover).
+    marker_color = {"green": "green", "yellow": "yellow", "red": "red"}[band]
     c1, c2, c3 = st.columns(3)
     with c1.container(border=True):
         st.metric("Listing zł/m²", f"{listing:,.0f}")
@@ -308,9 +308,10 @@ def _price_metrics(row: pd.Series) -> None:
         st.metric(
             "Delta (listing - model)",
             f"{delta:+,.0f}",
-            delta=delta_label,
-            delta_color=delta_color,
-            help="Negative = underpriced · near zero = fair · positive = overpriced",
+            delta="●",
+            delta_color=marker_color,
+            delta_arrow="off",
+            help=_DELTA_COLORS_HELP,
         )
 
 
