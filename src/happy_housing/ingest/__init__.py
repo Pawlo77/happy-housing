@@ -155,24 +155,32 @@ def build_gtfs_stop_hourly(gtfs_zip: Path, output_parquet: Path) -> pd.DataFrame
 
 
 def _parse_gios_station_row(row: dict[str, Any]) -> dict[str, Any] | None:
-    """Map one GIOŚ station object to a flat record."""
+    """Map one GIOŚ station object to a flat record (all useful API fields)."""
     station_id = row.get("Identyfikator stacji", row.get("id"))
     lat = row.get("WGS84 φ N", row.get("gegrLat", row.get("lat")))
     lon = row.get("WGS84 λ E", row.get("gegrLon", row.get("lon")))
     name = row.get("Nazwa stacji", row.get("stationName", row.get("name")))
-    city_obj = row.get("Miejscowość") or row.get("city") or {}
+    city_obj = row.get("Miejscowość") or row.get("city")
     if isinstance(city_obj, dict):
         city = str(city_obj.get("Nazwa miasta") or city_obj.get("name") or "")
+    elif city_obj:
+        city = str(city_obj)
     else:
-        city = str(row.get("Nazwa miasta") or city_obj or "")
+        city = str(row.get("Nazwa miasta") or "")
     if station_id is None or lat is None or lon is None:
         return None
     return {
         "station_id": int(station_id),
+        "station_code": str(row.get("Kod stacji") or row.get("stationCode") or ""),
         "lat": float(lat),
         "lon": float(lon),
         "name": str(name or station_id),
         "city": city,
+        "street": str(row.get("Ulica") or row.get("addressStreet") or ""),
+        "gmina": str(row.get("Gmina") or ""),
+        "powiat": str(row.get("Powiat") or ""),
+        "voivodeship": str(row.get("Województwo") or row.get("province") or ""),
+        "city_id": row.get("Identyfikator miasta", row.get("cityId")),
     }
 
 

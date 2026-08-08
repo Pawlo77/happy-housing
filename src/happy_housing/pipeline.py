@@ -78,6 +78,18 @@ def _rcn_as_listings(rcn: pd.DataFrame) -> pd.DataFrame:
         "price_per_m2": frame["price_per_m2"].to_numpy(),
         "source": "rcn",
     })
+    for col in (
+        "kind",
+        "rodzaj_rynku",
+        "rodzaj_transakcji",
+        "rodzaj_prawa",
+        "adres_dzialki",
+        "sposob_uzytkowania",
+        "dodatkowe_informacje",
+        "transaction_id",
+    ):
+        if col in frame.columns:
+            out[col] = frame[col].to_numpy()
     return out.reset_index(drop=True)
 
 

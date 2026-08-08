@@ -85,3 +85,4 @@ def test_frame_from_wfs_gml_extracts_centroid() -> None:
     assert frame.iloc[0]["miasto"] == "Warszawa"
     assert "Krucza" in str(frame.iloc[0]["adres"])
     assert abs(float(frame.iloc[0]["lon"]) - 21.05) < 1e-6
+    assert frame.iloc[0]["numer_ewidencyjny_system"] == "ABC-1"

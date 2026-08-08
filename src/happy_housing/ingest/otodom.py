@@ -27,6 +27,212 @@ _USER_AGENT = (
 _SEARCH_URL = "https://www.otodom.pl/pl/wyniki/sprzedaz/mieszkanie/mazowieckie/warszawa"
 """Warsaw flat-sale search base URL."""
 
+_ROOMS_MAP: dict[str, int] = {
+    "ONE": 1,
+    "TWO": 2,
+    "THREE": 3,
+    "FOUR": 4,
+    "FIVE": 5,
+    "SIX": 6,
+    "SEVEN": 7,
+    "EIGHT": 8,
+    "NINE": 9,
+    "TEN_OR_MORE": 10,
+}
+"""Otodom roomsNumber enum → int."""
+
+_FLOOR_ENUM: dict[str, int] = {
+    "GROUND": 0,
+    "FLOOR_0": 0,
+    "FIRST": 1,
+    "SECOND": 2,
+    "THIRD": 3,
+    "FOURTH": 4,
+    "FIFTH": 5,
+    "SIXTH": 6,
+    "SEVENTH": 7,
+    "EIGHTH": 8,
+    "NINTH": 9,
+    "TENTH": 10,
+    "CELLAR": -1,
+    "GARRET": 99,
+    "ABOVE_TENTH": 11,
+}
+"""Search-card floorNumber enums → int."""
+
+
+def parse_floor_no(value: object) -> int | None:
+    """Normalize Otodom floor labels (``floor_5``, ``FIFTH``, ``3``) to int."""
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    upper = text.upper().replace(" ", "_")
+    if upper in _FLOOR_ENUM:
+        return _FLOOR_ENUM[upper]
+    match = re.search(r"(?:floor[_-]?)?(\d+)", text, flags=re.I)
+    if match:
+        return int(match.group(1))
+    return None
+
+
+def _parse_rooms(rooms_raw: object) -> int | None:
+    rooms = _ROOMS_MAP.get(str(rooms_raw))
+    if rooms is not None:
+        return rooms
+    if rooms_raw is None:
+        return None
+    try:
+        return int(str(rooms_raw))
+    except (TypeError, ValueError):
+        return None
+
+
+def _tags_from_search(item: dict[str, Any]) -> set[str]:
+    tags: set[str] = set()
+    raw = item.get("tags") or []
+    if isinstance(raw, list):
+        for tag in raw:
+            if isinstance(tag, dict) and tag.get("value"):
+                tags.add(str(tag["value"]).upper())
+            elif isinstance(tag, str):
+                tags.add(tag.upper())
+    return tags
+
+
+def _extras_from_additional(additional: object) -> set[str]:
+    found: set[str] = set()
+    if not isinstance(additional, list):
+        return found
+    for block in additional:
+        if not isinstance(block, dict):
+            continue
+        label = str(block.get("label") or "").lower()
+        values = block.get("values") or []
+        if not isinstance(values, list):
+            continue
+        joined = " ".join(str(v).lower() for v in values)
+        if label in {"extras_types", "security_types", "lift", "advertiser_type"}:
+            for token in (
+                "balcony",
+                "garage",
+                "lift",
+                "parking",
+                "terrace",
+                "garden",
+                "basement",
+                "air_conditioning",
+            ):
+                if token in joined:
+                    found.add(token)
+        if "agency" in joined:
+            found.add("agency")
+        if "private" in joined:
+            found.add("private")
+    return found
+
+
+def _char_map(characteristics: object) -> dict[str, str]:
+    out: dict[str, str] = {}
+    if not isinstance(characteristics, list):
+        return out
+    for row in characteristics:
+        if not isinstance(row, dict):
+            continue
+        key = str(row.get("key") or row.get("label") or "").strip().lower()
+        if not key:
+            continue
+        value = row.get("value")
+        if value is None:
+            continue
+        out[key] = str(value).strip()
+    return out
+
+
+def flatten_otodom_ad(ad: dict[str, Any]) -> dict[str, Any]:
+    """Flatten an Otodom detail ``ad`` payload into listing columns."""
+    coords = (ad.get("location") or {}).get("coordinates") or {}
+    lat = coords.get("latitude")
+    lon = coords.get("longitude")
+    chars = _char_map(ad.get("characteristics") or ad.get("attributes"))
+    extras = _extras_from_additional(ad.get("additionalInformation"))
+    year_built = None
+    for key in ("build_year", "buildyear", "rok_budowy", "year"):
+        if key in chars:
+            try:
+                year_built = int(float(chars[key]))
+            except (TypeError, ValueError):
+                year_built = None
+            if year_built is not None:
+                break
+    if year_built is None:
+        blob = json.dumps(ad, ensure_ascii=False)
+        match = re.search(
+            r'"(?:buildYear|build_year|rok_budowy)"\s*:\s*"?(\d{4})"?',
+            blob,
+            flags=re.I,
+        )
+        if match:
+            year_built = int(match.group(1))
+
+    market = (chars.get("market") or str(ad.get("market") or "")).strip().lower()
+    floor_no = parse_floor_no(chars.get("floor_no"))
+    floors_raw = chars.get("building_floors_num")
+    try:
+        building_floors_num = int(float(floors_raw)) if floors_raw else None
+    except (TypeError, ValueError):
+        building_floors_num = None
+    rent_raw = chars.get("rent")
+    try:
+        rent = float(str(rent_raw)) if rent_raw not in {None, ""} else None
+    except (TypeError, ValueError):
+        rent = None
+    rooms_raw = chars.get("rooms_num")
+    rooms = _parse_rooms(rooms_raw) if rooms_raw else None
+
+    advertiser = (
+        str(ad.get("advertiserType") or ad.get("advertType") or "").strip().lower()
+    )
+    is_private = 1 if "private" in advertiser or "private" in extras else 0
+    if "agency" in advertiser or "agency" in extras:
+        is_private = 0
+
+    return {
+        "lat": float(lat) if lat is not None else None,
+        "lon": float(lon) if lon is not None else None,
+        "year_built": year_built,
+        "listed_at": ad.get("dateCreated") or ad.get("createdAt"),
+        "description": _ad_description(ad),
+        "market": market or None,
+        "market_primary": 1 if market == "primary" else (0 if market else None),
+        "building_type": chars.get("building_type"),
+        "floor_no": floor_no,
+        "building_floors_num": building_floors_num,
+        "construction_status": chars.get("construction_status"),
+        "building_material": chars.get("building_material"),
+        "windows_type": chars.get("windows_type"),
+        "building_ownership": chars.get("building_ownership"),
+        "heating": chars.get("heating"),
+        "rent": rent,
+        "rooms": rooms,
+        "has_balcony": 1 if "balcony" in extras else 0,
+        "has_garage": 1 if "garage" in extras or "parking" in extras else 0,
+        "has_lift": 1 if "lift" in extras else 0,
+        "has_terrace": 1 if "terrace" in extras else 0,
+        "has_garden": 1 if "garden" in extras else 0,
+        "is_private_owner": is_private,
+        "advertiser_type": advertiser or None,
+        "characteristics_json": json.dumps(
+            ad.get("characteristics") or [],
+            ensure_ascii=False,
+        ),
+        "additional_information_json": json.dumps(
+            ad.get("additionalInformation") or [],
+            ensure_ascii=False,
+        ),
+    }
+
 
 def _session() -> requests.Session:
     session = requests.Session()
@@ -89,25 +295,10 @@ def _normalize_search_item(item: dict[str, Any]) -> dict[str, Any]:
     """Map a search-card item to a flat listing row (coords filled later)."""
     price = (item.get("totalPrice") or {}).get("value")
     ppm = (item.get("pricePerSquareMeter") or {}).get("value")
-    rooms_raw = item.get("roomsNumber")
-    rooms_map = {
-        "ONE": 1,
-        "TWO": 2,
-        "THREE": 3,
-        "FOUR": 4,
-        "FIVE": 5,
-        "SIX": 6,
-        "SEVEN": 7,
-        "EIGHT": 8,
-        "NINE": 9,
-        "TEN_OR_MORE": 10,
-    }
-    rooms = rooms_map.get(str(rooms_raw))
-    if rooms is None and rooms_raw is not None:
-        try:
-            rooms = int(rooms_raw)
-        except (TypeError, ValueError):
-            rooms = None
+    rooms = _parse_rooms(item.get("roomsNumber"))
+    tags = _tags_from_search(item)
+    floor_no = parse_floor_no(item.get("floorNumber"))
+    is_private = item.get("isPrivateOwner")
     return {
         "listing_id": f"OTO-{item.get('id')}",
         "otodom_id": item.get("id"),
@@ -120,12 +311,25 @@ def _normalize_search_item(item: dict[str, Any]) -> dict[str, Any]:
         if item.get("areaInSquareMeters") is not None
         else None,
         "rooms": rooms,
+        "floor_no": floor_no,
+        "floor_label": item.get("floorNumber"),
+        "estate": item.get("estate"),
         "image_url": (item.get("images") or [{}])[0].get("medium"),
         "url": f"https://www.otodom.pl/pl/oferta/{item.get('slug')}",
+        "short_description": item.get("shortDescription"),
+        "listed_at": item.get("dateCreated") or item.get("createdAtFirst"),
+        "is_private_owner": (
+            1 if is_private is True else (0 if is_private is False else None)
+        ),
+        "has_balcony": 1 if "BALCONY" in tags else 0,
+        "has_garage": 1 if {"GARAGE", "PARKING_SPOT", "PARKING"} & tags else 0,
+        "has_lift": 1 if "LIFT" in tags or "ELEVATOR" in tags else 0,
+        "has_terrace": 1 if "TERRACE" in tags else 0,
+        "has_garden": 1 if "GARDEN" in tags else 0,
+        "tags_json": json.dumps(sorted(tags), ensure_ascii=False),
         "lat": None,
         "lon": None,
         "year_built": None,
-        "listed_at": None,
     }
 
 
@@ -134,43 +338,15 @@ def fetch_listing_detail(
     slug: str,
     timeout_s: float = 45.0,
 ) -> dict[str, Any]:
-    """Fetch detail page fields: coordinates, build year, created date."""
+    """Fetch detail page and flatten all Otodom ad fields we care about."""
     url = f"https://www.otodom.pl/pl/oferta/{slug}"
     response = session.get(url, timeout=timeout_s)
     response.raise_for_status()
     data = _extract_next_data(response.text)
     ad = data["props"]["pageProps"].get("ad") or {}
-    coords = (ad.get("location") or {}).get("coordinates") or {}
-    lat = coords.get("latitude")
-    lon = coords.get("longitude")
-    year_built = None
-    listed_at = ad.get("dateCreated") or ad.get("createdAt")
-    characteristics = ad.get("characteristics") or []
-    if isinstance(characteristics, list):
-        for row in characteristics:
-            key = str(row.get("key") or row.get("label") or "").lower()
-            if key in {"buildyear", "build_year", "rok_budowy", "year"}:
-                try:
-                    year_built = int(float(str(row.get("value"))))
-                except (TypeError, ValueError):
-                    year_built = None
-    # Fallback: scan JSON text for build year-like fields.
-    if year_built is None:
-        blob = json.dumps(ad, ensure_ascii=False)
-        match = re.search(
-            r'"(?:buildYear|build_year|rok_budowy)"\s*:\s*"?(\d{4})"?',
-            blob,
-            flags=re.I,
-        )
-        if match:
-            year_built = int(match.group(1))
-    return {
-        "lat": float(lat) if lat is not None else None,
-        "lon": float(lon) if lon is not None else None,
-        "year_built": year_built,
-        "listed_at": listed_at,
-        "description": _ad_description(ad),
-    }
+    if not isinstance(ad, dict):
+        return flatten_otodom_ad({})
+    return flatten_otodom_ad(ad)
 
 
 def _ad_description(ad: dict[str, Any]) -> str | None:
@@ -274,7 +450,18 @@ def scrape_otodom_warsaw(
             return None
         if detail["lat"] is None or detail["lon"] is None:
             return None
-        out = {**row, **detail}
+        out = dict(row)
+        for key, value in detail.items():
+            if value is not None:
+                out[key] = value
+        for flag in (
+            "has_balcony",
+            "has_garage",
+            "has_lift",
+            "has_terrace",
+            "has_garden",
+        ):
+            out[flag] = max(int(row.get(flag) or 0), int(detail.get(flag) or 0))
         if (
             out.get("price_per_m2") is None
             and out.get("price_pln")

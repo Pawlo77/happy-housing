@@ -167,9 +167,15 @@ def parse_rcn_gml_stream(
             prop_href = _href(elem, "nieruchomosc")
             if tid and price and price > 0 and prop_href:
                 transactions[tid] = {
+                    "transaction_id": tid,
                     "price_pln": price,
                     "nieruchomosc_id": prop_href,
                     "listed_at": _child_text(elem, "wersjaId") or _attr(elem, "id"),
+                    "oznaczenie_transakcji": _child_text(elem, "oznaczenieTransakcji"),
+                    "rodzaj_transakcji": _child_text(elem, "rodzajTransakcji"),
+                    "rodzaj_rynku": _child_text(elem, "rodzajRynku"),
+                    "strona_sprzedajaca": _child_text(elem, "stronaSprzedajaca"),
+                    "strona_kupujaca": _child_text(elem, "stronaKupujaca"),
                 }
             elem.clear()
         elif tag == "RCN_Nieruchomosc":
@@ -190,6 +196,10 @@ def parse_rcn_gml_stream(
                     "price_pln": price,
                     "kind": kind,
                     "dzialka_id": parcel_href,
+                    "rodzaj_prawa": _child_text(elem, "rodzajPrawaDoNieruchomosci"),
+                    "udzial_w_prawie": _child_text(
+                        elem, "udzialWPrawieDoNieruchomosci"
+                    ),
                 }
             elem.clear()
         elif tag == "RCN_Dzialka":
@@ -213,6 +223,13 @@ def parse_rcn_gml_stream(
                     "lon": lon,
                     "lat": lat,
                     "district": district,
+                    "dodatkowe_informacje": info,
+                    "adres_dzialki": _child_text(elem, "adresDzialki"),
+                    "id_dzialki": _child_text(elem, "idDzialki"),
+                    "sposob_uzytkowania": _child_text(elem, "sposobUzytkowania"),
+                    "cena_dzialki_pln": _to_float(
+                        _child_text(elem, "cenaDzialkiEwidencyjnejBrutto")
+                    ),
                 }
             elem.clear()
         elif tag == "featureMember":
@@ -279,6 +296,23 @@ def parse_rcn_gml_stream(
             "kind": prop.get("kind") if prop else None,
             "district": district or "rcn",
             "source": "rcn",
+            "transaction_id": tx.get("transaction_id"),
+            "oznaczenie_transakcji": tx.get("oznaczenie_transakcji"),
+            "rodzaj_transakcji": tx.get("rodzaj_transakcji"),
+            "rodzaj_rynku": tx.get("rodzaj_rynku"),
+            "strona_sprzedajaca": tx.get("strona_sprzedajaca"),
+            "strona_kupujaca": tx.get("strona_kupujaca"),
+            "rodzaj_prawa": prop.get("rodzaj_prawa") if prop else None,
+            "udzial_w_prawie": prop.get("udzial_w_prawie") if prop else None,
+            "adres_dzialki": parcel.get("adres_dzialki") if parcel else None,
+            "id_dzialki": parcel.get("id_dzialki") if parcel else None,
+            "sposob_uzytkowania": (
+                parcel.get("sposob_uzytkowania") if parcel else None
+            ),
+            "dodatkowe_informacje": (
+                parcel.get("dodatkowe_informacje") if parcel else None
+            ),
+            "cena_dzialki_pln": parcel.get("cena_dzialki_pln") if parcel else None,
         })
         if reached_cap(len(records), row_cap):
             break

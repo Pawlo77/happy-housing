@@ -46,11 +46,13 @@ _POS_LIST_RE = re.compile(
 """Extract the first GML posList body from a member."""
 
 _TAG_RE = re.compile(
-    r"<ms:(miasto|ulica|nr_domu|numer_ewidencyjny_system|"
-    r"numer_ewidencyjny_urzad)[^>]*>([^<]*)</ms:\1>",
+    r"<ms:([A-Za-z0-9_]+)[^>]*>([^<]*)</ms:\1>",
     re.IGNORECASE,
 )
-"""Pull a few GUNB attribute tags from a member blob."""
+"""Pull every ``ms:*`` attribute tag from a WFS member blob."""
+
+_SKIP_TAGS = frozenset({"msgeometry", "boundedby"})
+"""Geometry / envelope tags skipped when flattening WFS attributes."""
 
 
 def _centroid_lon_lat(pos_list: str) -> tuple[float, float] | None:
@@ -79,13 +81,16 @@ def _frame_from_wfs_gml(xml_text: str) -> pd.DataFrame:
             continue
         lon, lat = centroid
         props = {
-            m.group(1).lower(): m.group(2).strip() for m in _TAG_RE.finditer(member)
+            m.group(1).lower(): m.group(2).strip()
+            for m in _TAG_RE.finditer(member)
+            if m.group(1).lower() not in _SKIP_TAGS
         }
         street = props.get("ulica", "")
+        street_more = props.get("ulica_dalej", "")
         number = props.get("nr_domu", "")
         city = props.get("miasto", "")
-        adres = ", ".join(p for p in (street, number, city) if p)
-        rows.append({
+        adres = ", ".join(p for p in (street, street_more, number, city) if p)
+        row: dict[str, object] = {
             "lon": lon,
             "lat": lat,
             "adres": adres,
@@ -95,7 +100,12 @@ def _frame_from_wfs_gml(xml_text: str) -> pd.DataFrame:
                 or ""
             ),
             "miasto": city,
-        })
+        }
+        for key, value in props.items():
+            if key in {"ulica", "ulica_dalej", "nr_domu", "miasto"}:
+                continue
+            row[key] = value
+        rows.append(row)
     return pd.DataFrame(rows)
 
 

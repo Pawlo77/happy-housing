@@ -131,7 +131,20 @@ def fetch_osm_amenities(
             if "station" in frame.columns:
                 subway = frame["station"].astype(str).eq("subway")
                 frame.loc[subway, "amenity"] = "subway"
-            keep = [c for c in ("amenity", "name", "geometry") if c in frame.columns]
+            keep = [
+                c
+                for c in (
+                    "amenity",
+                    "station",
+                    "railway",
+                    "name",
+                    "brand",
+                    "operator",
+                    "opening_hours",
+                    "geometry",
+                )
+                if c in frame.columns
+            ]
             frame = frame[keep]
             frame = frame[frame["amenity"].notna()]
     except Exception as exc:
@@ -183,7 +196,18 @@ def fetch_osm_shops(
             projected = frame.to_crs("EPSG:2180")
             frame["geometry"] = projected.geometry.centroid.to_crs("EPSG:4326")
             frame = gpd.GeoDataFrame(frame, geometry="geometry", crs="EPSG:4326")
-            keep = [c for c in ("shop", "name", "geometry") if c in frame.columns]
+            keep = [
+                c
+                for c in (
+                    "shop",
+                    "name",
+                    "brand",
+                    "operator",
+                    "opening_hours",
+                    "geometry",
+                )
+                if c in frame.columns
+            ]
             frame = frame[keep]
     except Exception as exc:
         logger.warning("OSMnx shop fetch failed: %s", exc)
