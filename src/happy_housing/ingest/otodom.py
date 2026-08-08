@@ -211,6 +211,53 @@ def flags_from_extras_and_tags(
     }
 
 
+def extract_image_urls(ad: dict[str, Any]) -> list[str]:
+    """Prefer medium (else large/small) photo URLs from an Otodom ad."""
+    images = ad.get("images")
+    if not isinstance(images, list):
+        return []
+    urls: list[str] = []
+    seen: set[str] = set()
+    for item in images:
+        if not isinstance(item, dict):
+            continue
+        url = ""
+        for key in ("medium", "large", "small", "thumbnail"):
+            raw = item.get(key)
+            if isinstance(raw, str) and raw.strip():
+                url = raw.strip()
+                break
+        if not url or url in seen:
+            continue
+        seen.add(url)
+        urls.append(url)
+    return urls
+
+
+def extract_floor_plan_urls(ad: dict[str, Any]) -> list[str]:
+    """Floor-plan / layout image URLs from Otodom ``floorPlans``."""
+    plans = ad.get("floorPlans")
+    if not isinstance(plans, list):
+        return []
+    urls: list[str] = []
+    seen: set[str] = set()
+    for item in plans:
+        url = ""
+        if isinstance(item, str):
+            url = item.strip()
+        elif isinstance(item, dict):
+            for key in ("medium", "large", "small", "url", "thumbnail"):
+                raw = item.get(key)
+                if isinstance(raw, str) and raw.strip():
+                    url = raw.strip()
+                    break
+        if not url or url in seen:
+            continue
+        seen.add(url)
+        urls.append(url)
+    return urls
+
+
 def flatten_otodom_ad(ad: dict[str, Any]) -> dict[str, Any]:
     """Flatten an Otodom detail ``ad`` payload into listing columns."""
     coords = (ad.get("location") or {}).get("coordinates") or {}
@@ -266,6 +313,8 @@ def flatten_otodom_ad(ad: dict[str, Any]) -> dict[str, Any]:
         floor_no=floor_no,
     )
     estate = str(ad.get("estate") or chars.get("estate") or "").strip().upper() or None
+    image_urls = extract_image_urls(ad)
+    floor_plan_urls = extract_floor_plan_urls(ad)
 
     return {
         "lat": float(lat) if lat is not None else None,
@@ -273,6 +322,9 @@ def flatten_otodom_ad(ad: dict[str, Any]) -> dict[str, Any]:
         "year_built": year_built,
         "listed_at": ad.get("dateCreated") or ad.get("createdAt"),
         "description": _ad_description(ad),
+        "image_url": image_urls[0] if image_urls else None,
+        "image_urls_json": json.dumps(image_urls, ensure_ascii=False),
+        "floor_plan_urls_json": json.dumps(floor_plan_urls, ensure_ascii=False),
         "market": market or None,
         "market_primary": 1 if market == "primary" else (0 if market else None),
         "building_type": chars.get("building_type"),
@@ -498,6 +550,7 @@ def _normalize_search_item(item: dict[str, Any]) -> dict[str, Any]:
         floor_label=str(item.get("floorNumber") or "") or None,
         floor_no=floor_no,
     )
+    search_images = extract_image_urls({"images": item.get("images") or []})
     return {
         "listing_id": f"OTO-{item.get('id')}",
         "otodom_id": item.get("id"),
@@ -513,7 +566,9 @@ def _normalize_search_item(item: dict[str, Any]) -> dict[str, Any]:
         "floor_no": floor_no,
         "floor_label": item.get("floorNumber"),
         "estate": item.get("estate"),
-        "image_url": (item.get("images") or [{}])[0].get("medium"),
+        "image_url": search_images[0] if search_images else None,
+        "image_urls_json": json.dumps(search_images, ensure_ascii=False),
+        "floor_plan_urls_json": "[]",
         "url": f"https://www.otodom.pl/pl/oferta/{item.get('slug')}",
         "short_description": item.get("shortDescription"),
         "listed_at": item.get("dateCreated") or item.get("createdAtFirst"),

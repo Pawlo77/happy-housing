@@ -2,12 +2,176 @@
 
 from __future__ import annotations
 
+import json
+import re
+from html.parser import HTMLParser
 from typing import Any
 
 import pandas as pd
 
 _DELTA_NEAR_ZL = 500.0
 """Abs delta (zł/m²) treated as fair / yellow band."""
+
+_ALLOWED_HTML_TAGS: frozenset[str] = frozenset({
+    "p",
+    "br",
+    "hr",
+    "ul",
+    "ol",
+    "li",
+    "strong",
+    "b",
+    "em",
+    "i",
+    "u",
+    "a",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "blockquote",
+    "div",
+    "span",
+})
+"""Tags kept when rendering Otodom listing descriptions."""
+
+_VOID_HTML_TAGS: frozenset[str] = frozenset({"br", "hr"})
+"""Self-closing tags in the allowlist."""
+
+_SKIP_HTML_TAGS: frozenset[str] = frozenset({
+    "script",
+    "style",
+    "iframe",
+    "object",
+    "embed",
+    "svg",
+    "math",
+})
+"""Tags whose content is dropped entirely."""
+
+
+class _ListingHtmlSanitizer(HTMLParser):
+    """Allowlist sanitizer for Otodom HTML descriptions (no CSS)."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self._parts: list[str] = []
+        self._skip_depth = 0
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        name = tag.lower()
+        if name in _SKIP_HTML_TAGS:
+            self._skip_depth += 1
+            return
+        if self._skip_depth or name not in _ALLOWED_HTML_TAGS:
+            return
+        if name == "a":
+            href = ""
+            for key, value in attrs:
+                if key.lower() == "href" and value:
+                    href = value.strip()
+                    break
+            if href.startswith(("http://", "https://", "/")):
+                safe = href.replace('"', "&quot;")
+                self._parts.append(f'<a href="{safe}" rel="noopener noreferrer">')
+            else:
+                self._parts.append("<a>")
+            return
+        if name in _VOID_HTML_TAGS:
+            self._parts.append(f"<{name}>")
+            return
+        self._parts.append(f"<{name}>")
+
+    def handle_endtag(self, tag: str) -> None:
+        name = tag.lower()
+        if name in _SKIP_HTML_TAGS:
+            if self._skip_depth:
+                self._skip_depth -= 1
+            return
+        if self._skip_depth or name not in _ALLOWED_HTML_TAGS:
+            return
+        if name in _VOID_HTML_TAGS:
+            return
+        self._parts.append(f"</{name}>")
+
+    def handle_data(self, data: str) -> None:
+        if self._skip_depth:
+            return
+        self._parts.append(
+            data.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        )
+
+    def handle_entityref(self, name: str) -> None:
+        if self._skip_depth:
+            return
+        self._parts.append(f"&{name};")
+
+    def handle_charref(self, name: str) -> None:
+        if self._skip_depth:
+            return
+        self._parts.append(f"&#{name};")
+
+    def result(self) -> str:
+        """Return sanitized HTML."""
+        return "".join(self._parts)
+
+
+def sanitize_listing_html(raw: str) -> str:
+    """Allowlist-sanitize listing HTML for safe Streamlit rendering.
+
+    Keeps basic text markup (paragraphs, lists, bold/italic, links). Drops
+    scripts, styles, images, and event-handler attributes.
+    """
+    text = str(raw or "").strip()
+    if not text:
+        return ""
+    if "<" not in text:
+        return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    parser = _ListingHtmlSanitizer()
+    try:
+        parser.feed(text)
+        parser.close()
+    except Exception:
+        return re.sub(r"<[^>]+>", "", text)
+    return parser.result().strip()
+
+
+def _urls_from_json_cell(value: object) -> list[str]:
+    """Parse a JSON list of URL strings from a dataframe cell."""
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    text = str(value).strip()
+    if not text or text.lower() in {"nan", "none"}:
+        return []
+    try:
+        payload = json.loads(text)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return []
+    if not isinstance(payload, list):
+        return []
+    return [str(item).strip() for item in payload if str(item).strip()]
+
+
+def image_urls_from_row(row: pd.Series | dict[str, Any]) -> list[str]:
+    """Listing photo URLs (multi-image JSON, else single ``image_url``)."""
+    getter = row.get if hasattr(row, "get") else lambda key, default=None: default
+    urls = _urls_from_json_cell(getter("image_urls_json"))
+    if urls:
+        return urls
+    single = getter("image_url")
+    if isinstance(single, str) and single.strip():
+        return [single.strip()]
+    return []
+
+
+def floor_plan_urls_from_row(row: pd.Series | dict[str, Any]) -> list[str]:
+    """Floor-plan / layout image URLs from ``floor_plan_urls_json``."""
+    getter = row.get if hasattr(row, "get") else lambda key, default=None: default
+    return _urls_from_json_cell(getter("floor_plan_urls_json"))
 
 
 def round_meters(value: object) -> int | None:

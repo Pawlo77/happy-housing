@@ -86,8 +86,11 @@ from happy_housing.app.maps import (
     render_deck,
 )
 from happy_housing.app.offer_display import (
+    floor_plan_urls_from_row,
+    image_urls_from_row,
     livability_rows,
     offer_fact_rows,
+    sanitize_listing_html,
 )
 from happy_housing.app.pref_llm import merge_preferences, translate_preferences_nl
 from happy_housing.app.preferences import (
@@ -682,26 +685,73 @@ def _tab_spatial(
 
 
 @st.cache_data(show_spinner=False)  # type: ignore[misc]
-def _fetch_otodom_description(slug: str) -> str:
-    """Cached Otodom detail description fetch keyed by listing slug."""
+def _fetch_otodom_offer_media(slug: str) -> dict[str, object]:
+    """Cached Otodom detail media (description + photos + floor plans)."""
     detail = fetch_listing_detail(otodom_session(), slug.strip())
-    text = detail.get("description")
-    return text.strip() if isinstance(text, str) else ""
+    description = detail.get("description")
+    text = description.strip() if isinstance(description, str) else ""
+    return {
+        "description": text,
+        "image_url": detail.get("image_url"),
+        "image_urls_json": detail.get("image_urls_json") or "[]",
+        "floor_plan_urls_json": detail.get("floor_plan_urls_json") or "[]",
+    }
 
 
-def _ensure_description(row: pd.Series) -> str:
-    """Return stored description or a cached Otodom fetch when a slug exists."""
-    existing = row.get("description")
-    if isinstance(existing, str) and existing.strip():
-        return existing.strip()
-    slug = row.get("slug")
+def _ensure_offer_media(row: pd.Series) -> pd.Series:
+    """Fill description / multi-photo / floor-plan fields from Otodom when missing."""
+    out = row.copy()
+    existing = out.get("description")
+    has_desc = isinstance(existing, str) and existing.strip()
+    photos = image_urls_from_row(out)
+    plans = floor_plan_urls_from_row(out)
+    needs_media = len(photos) <= 1 or not plans
+    if has_desc and not needs_media:
+        return out
+    slug = out.get("slug")
     if not isinstance(slug, str) or not slug.strip():
-        return ""
+        return out
     try:
-        return _fetch_otodom_description(slug.strip())  # type: ignore[no-any-return]
+        media = _fetch_otodom_offer_media(slug.strip())
     except (requests.RequestException, ValueError, TypeError, KeyError) as exc:
-        logger.warning("Description fetch failed for %s: %s", slug, exc)
-        return ""
+        logger.warning("Offer media fetch failed for %s: %s", slug, exc)
+        return out
+    desc = media.get("description")
+    if (not has_desc) and isinstance(desc, str) and desc.strip():
+        out["description"] = desc.strip()
+    fetched_photos = image_urls_from_row(media)
+    if len(fetched_photos) > len(photos):
+        out["image_urls_json"] = media.get("image_urls_json") or "[]"
+        if isinstance(media.get("image_url"), str) and media["image_url"]:
+            out["image_url"] = media["image_url"]
+    fetched_plans = floor_plan_urls_from_row(media)
+    if fetched_plans and not plans:
+        out["floor_plan_urls_json"] = media.get("floor_plan_urls_json") or "[]"
+    return out
+
+
+def _render_offer_gallery(row: pd.Series) -> None:
+    """Photo carousel + optional floor-plan images under the gallery."""
+    photos = image_urls_from_row(row)
+    if photos:
+        if len(photos) == 1:
+            st.image(photos[0], use_container_width=True)
+        else:
+            labels = [f"Photo {i + 1} / {len(photos)}" for i in range(len(photos))]
+            pick = st.selectbox(
+                "Photos",
+                labels,
+                key=f"offer_photo_{row.get('listing_id')}",
+                label_visibility="collapsed",
+            )
+            idx = labels.index(str(pick))
+            st.image(photos[idx], use_container_width=True)
+            st.caption(f"{idx + 1} of {len(photos)} photos")
+    plans = floor_plan_urls_from_row(row)
+    if plans:
+        st.markdown("##### Floor plan")
+        for i, url in enumerate(plans):
+            st.image(url, use_container_width=True, caption=f"Layout {i + 1}")
 
 
 _DELTA_COLORS_HELP = "listing - model zł/m² (negative = model sees a bargain)"
@@ -889,9 +939,8 @@ def _tab_offer(
             st.rerun()
 
     row = filtered.loc[filtered["listing_id"] == selected_id].iloc[0].copy()
-    description = _ensure_description(row)
-    if description:
-        row["description"] = description
+    row = _ensure_offer_media(row)
+    description = str(row.get("description") or "").strip()
 
     overview, context, local_map, explain, ai_tab = st.tabs(
         [
@@ -908,8 +957,7 @@ def _tab_offer(
     with overview:
         left, right = st.columns([1.1, 1.6])
         with left:
-            if isinstance(row.get("image_url"), str) and row["image_url"]:
-                st.image(row["image_url"], use_container_width=True)
+            _render_offer_gallery(row)
             if isinstance(row.get("url"), str) and row["url"]:
                 st.link_button("Open source listing", str(row["url"]), width="stretch")
         with right:
@@ -919,7 +967,7 @@ def _tab_offer(
             st.dataframe(offer_fact_rows(row), hide_index=True, width="stretch")
         st.markdown("#### Source description")
         if description:
-            st.write(description)
+            st.markdown(sanitize_listing_html(description), unsafe_allow_html=True)
         else:
             st.info("No listing description available for this offer.")
 
