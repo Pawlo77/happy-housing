@@ -64,6 +64,13 @@ def basemap_style(mode: str) -> str | dict[str, Any]:
     return _STREETS_STYLE
 
 
+def deck_map_provider(map_style: str | dict[str, Any] | None) -> str | None:
+    """pydeck requires ``mapbox`` whenever ``map_style`` is a custom dict."""
+    if isinstance(map_style, dict):
+        return "mapbox"
+    return None
+
+
 def _scatter(
     data: pd.DataFrame,
     *,
@@ -513,15 +520,18 @@ def render_deck(
 ) -> None:
     """Render a pydeck chart or fall back with a warning."""
     view = pdk.ViewState(latitude=latitude, longitude=longitude, zoom=zoom)
+    style = map_style or _STREETS_STYLE
+    provider = deck_map_provider(style)
     try:
-        st.pydeck_chart(
-            pdk.Deck(
-                map_style=map_style or _STREETS_STYLE,
-                layers=layers,
-                initial_view_state=view,
-                tooltip=tooltip or _HOVER_TOOLTIP,
-            )
-        )
+        deck_kwargs: dict[str, Any] = {
+            "map_style": style,
+            "layers": layers,
+            "initial_view_state": view,
+            "tooltip": tooltip or _HOVER_TOOLTIP,
+        }
+        if provider is not None:
+            deck_kwargs["map_provider"] = provider
+        st.pydeck_chart(pdk.Deck(**deck_kwargs))
     except Exception as exc:
         logger.exception("pydeck render failed: %s", exc)
         st.warning(f"pydeck unavailable ({exc})")
