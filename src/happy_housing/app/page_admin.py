@@ -25,6 +25,7 @@ from happy_housing.app.app_settings import (
 from happy_housing.app.attr_extract import enrich_frame_listing_attrs
 from happy_housing.app.chat_store import chat_db_path, clear_all_conversations
 from happy_housing.app.commute_target import (
+    COORD_EPS,
     CommuteTarget,
     commute_compare_view,
     commute_target_stale,
@@ -220,8 +221,8 @@ def _tab_general(settings: AppSettings, settings_file: Path, proc: Path) -> None
         ),
     )
     same_pin = (
-        abs(float(target.lon) - float(draft.lon)) < 1e-5
-        and abs(float(target.lat) - float(draft.lat)) < 1e-5
+        abs(float(target.lon) - float(draft.lon)) < COORD_EPS
+        and abs(float(target.lat) - float(draft.lat)) < COORD_EPS
     )
     if same_pin:
         st.caption("Pins overlap — draft equals saved target (slate under teal).")

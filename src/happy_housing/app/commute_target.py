@@ -32,8 +32,8 @@ logger = logging.getLogger(__name__)
 DEFAULT_COMMUTE_LABEL = "Rondo Daszyńskiego"
 """Default commute destination label (YAML coords)."""
 
-_COORD_EPS = 1e-5
-"""Lon/lat equality tolerance for stale detection."""
+COORD_EPS: float = 1e-5
+"""Lon/lat equality tolerance for commute stale / pin-overlap detection."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,8 +134,8 @@ def commute_target_stale(settings: AppSettings) -> bool:
     if feat_lon is None or feat_lat is None:
         return False
     return (
-        abs(float(feat_lon) - target_lon) > _COORD_EPS
-        or abs(float(feat_lat) - target_lat) > _COORD_EPS
+        abs(float(feat_lon) - target_lon) > COORD_EPS
+        or abs(float(feat_lat) - target_lat) > COORD_EPS
     )
 
 
