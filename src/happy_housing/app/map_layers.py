@@ -84,7 +84,8 @@ def prepare_listings_for_map(frame: pd.DataFrame) -> pd.DataFrame:
     out["color_b"] = 70
     out["color_a"] = 200
     area = pd.to_numeric(out.get("area_m2"), errors="coerce").fillna(50.0)
-    out["radius"] = (area * 2.8).clip(90, 320)
+    # Radius is metres in ScatterplotLayer; keep pins small on city zoom.
+    out["radius"] = (area * 0.7).clip(22, 55)
     out["tooltip_name"] = out["listing_id"].astype(str)
     ppm = pd.to_numeric(out.get("price_per_m2"), errors="coerce")
     out["tooltip_detail"] = (
@@ -163,7 +164,7 @@ def prepare_transit_for_hour(
     merged["lat"] = pd.to_numeric(merged["stop_lat"], errors="coerce")
     merged["lon"] = pd.to_numeric(merged["stop_lon"], errors="coerce")
     merged = merged.dropna(subset=["lat", "lon"])
-    merged["radius"] = (40.0 + merged["n_departures"].astype(float) * 1.8).clip(70, 420)
+    merged["radius"] = (18.0 + merged["n_departures"].astype(float) * 0.7).clip(25, 70)
     merged["tooltip_name"] = merged["stop_name"].astype(str)
     merged["tooltip_detail"] = (
         f"Transit · {int(hour):02d}:00 · "

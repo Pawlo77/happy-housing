@@ -22,5 +22,5 @@ def test_listing_colors_vectorized_over_under() -> None:
     out = prepare_listings_for_map(frame)
     assert int(out.loc[0, "color_r"]) == 220
     assert int(out.loc[1, "color_g"]) == 170
-    assert out["radius"].between(90, 320).all()
+    assert out["radius"].between(22, 55).all()
     assert listings_scatter_layer(frame) is not None

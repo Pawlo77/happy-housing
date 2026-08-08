@@ -100,8 +100,8 @@ def listings_scatter_layer(frame: pd.DataFrame) -> pdk.Layer | None:
         layer_id="listings",
         fill_color="[color_r, color_g, color_b, color_a]",
         radius="radius",
-        radius_min_pixels=6,
-        radius_max_pixels=22,
+        radius_min_pixels=3,
+        radius_max_pixels=10,
     )
 
 
@@ -140,9 +140,9 @@ def amenity_layers(
             subset,
             layer_id=f"amenity-{kind}",
             fill_color=rgba,
-            radius=110,
-            radius_min_pixels=7,
-            radius_max_pixels=16,
+            radius=55,
+            radius_min_pixels=4,
+            radius_max_pixels=9,
         )
         if layer is not None:
             layers.append(layer)
@@ -193,9 +193,9 @@ def shops_layer(shops: pd.DataFrame) -> pdk.Layer | None:
         prepared,
         layer_id="shops",
         fill_color=[124, 58, 237, 200],
-        radius=95,
-        radius_min_pixels=6,
-        radius_max_pixels=14,
+        radius=50,
+        radius_min_pixels=3,
+        radius_max_pixels=8,
     )
 
 
@@ -215,7 +215,7 @@ def transit_layers(
             data=prepared,
             get_position="[lon, lat]",
             get_weight="weight",
-            radiusPixels=42,
+            radiusPixels=28,
             intensity=1.2,
             threshold=0.05,
             opacity=0.55,
@@ -229,8 +229,8 @@ def transit_layers(
         layer_id="transit-stops",
         fill_color=[14, 116, 144, 210],
         radius="radius",
-        radius_min_pixels=5,
-        radius_max_pixels=20,
+        radius_min_pixels=3,
+        radius_max_pixels=11,
     )
     if scatter is not None:
         layers.append(scatter)
@@ -247,7 +247,7 @@ def traffic_heatmap_layer(sample: pd.DataFrame, *, hour: int) -> pdk.Layer | Non
         data=prepared,
         get_position="[lon, lat]",
         get_weight="weight",
-        radiusPixels=48,
+        radiusPixels=32,
         intensity=1.4,
         threshold=0.04,
         opacity=0.5,
@@ -270,9 +270,9 @@ def air_stations_layer(stations: pd.DataFrame) -> pdk.Layer | None:
         prepared,
         layer_id="air",
         fill_color=[22, 163, 74, 220],
-        radius=140,
-        radius_min_pixels=8,
-        radius_max_pixels=18,
+        radius=60,
+        radius_min_pixels=4,
+        radius_max_pixels=10,
     )
 
 
@@ -299,9 +299,9 @@ def gunb_layer(points: pd.DataFrame) -> pdk.Layer | None:
         prepared,
         layer_id="gunb",
         fill_color=[161, 98, 7, 210],
-        radius=120,
-        radius_min_pixels=7,
-        radius_max_pixels=16,
+        radius=55,
+        radius_min_pixels=3,
+        radius_max_pixels=9,
     )
 
 
@@ -319,9 +319,9 @@ def commute_target_layer(lon: float, lat: float) -> pdk.Layer:
         data,
         layer_id="commute-target",
         fill_color=[15, 23, 42, 230],
-        radius=160,
-        radius_min_pixels=9,
-        radius_max_pixels=20,
+        radius=70,
+        radius_min_pixels=5,
+        radius_max_pixels=12,
     )
     if layer is None:
         msg = "commute target scatter unexpectedly empty"
@@ -343,9 +343,9 @@ def focus_marker_layer(lat: float, lon: float) -> pdk.Layer:
         data,
         layer_id="focus",
         fill_color=[15, 15, 15, 240],
-        radius=150,
-        radius_min_pixels=8,
-        radius_max_pixels=18,
+        radius=65,
+        radius_min_pixels=5,
+        radius_max_pixels=12,
     )
     if layer is None:
         msg = "focus marker scatter unexpectedly empty"
