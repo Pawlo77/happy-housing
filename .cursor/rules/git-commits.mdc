@@ -1,17 +1,19 @@
 ---
-description: Granular commits and PRs; always ask permission first
+description: Granular commits and PRs; auto commit+push after each task (see AGENTS.md)
 alwaysApply: true
 ---
 
 # Git commits and pull requests
 
-**Never commit, push, or open a PR without explicit user permission.** Propose first; execute only after approval.
+**Default (happy-housing):** After every completed task, validate (`make check` + quality/perf/correctness review), then **commit and push**. Message format and granularity below still apply. Do not ask for permission to commit/push task work — `AGENTS.md` requires it.
+
+**Pull requests:** Still propose title and body; create only when the user asks.
 
 ## Commits
 
 Prefer **granular** commits — one logical change per commit. Split when changes span unrelated concerns (e.g. MLflow tracking vs report vs CI).
 
-If a single commit would bundle too much, **stop and propose** a commit plan instead of committing.
+If a single commit would bundle too much, **split into multiple commits** (still push after the task completes).
 
 ### Message format
 
@@ -25,16 +27,17 @@ Short **type** prefix + brief summary. Optional body with bullet details when he
 
 ### Before committing
 
-1. Run `git status`, `git diff`, `git log -5` (parallel)
-2. Draft message(s) matching the split plan
-3. **Ask user to approve** message(s) and scope
+1. Run `make check` (and any task-specific correctness checks)
+2. Run `git status`, `git diff`, `git log -5` (parallel)
+3. Draft message(s) matching the split plan
 4. Stage only files for that commit; commit; verify with `git status`
+5. `git push` (set upstream with `-u` when needed)
 
 Do not `--no-verify`, amend, or force-push unless user rules explicitly allow.
 
 ## Pull requests
 
-Same permission gate — **propose title and body; create only when asked.**
+Propose title and body; create only when asked.
 
 **Body:**
 
