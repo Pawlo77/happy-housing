@@ -145,3 +145,18 @@ Streamlit shell; offer delta metrics; SHAP waterfall; pydeck layers; time-slider
 ## Build order
 
 Phase 0 (now) → 1 fixtures+RCN+GTFS → 2 osmnx+OOU → 3 storage → 4 ML → 5 GUI → backfill live Otodom/OSRM/OTP/GUNB/time heatmap.
+
+---
+
+## Implementation status (2026-08-08)
+
+| Phase | Status | Notes |
+|-------|--------|-------|
+| 0 Identity + plan | **Done** | `happy_housing`, GitHub About, `docs/plan.md` |
+| 1 Ingest | **Done** | Fixtures, Otodom, RCN GML, GTFS, GIOŚ, GUNB; unlimited caps |
+| 2 GIS | **Done** | Full OSM amenity/shop tags, OOU, distances, OSRM + OTP clients (Docker), GTFS hour proxy |
+| 3 Storage | **Done** | Hilbert-sorted GeoParquet + bbox; DuckDB spatial queries |
+| 4 ML + XAI | **Done** | LightGBM + SHAP + MLflow; optional CatBoost compare |
+| 5 GUI | **Done** | Streamlit/pydeck, hour slider, hover help, Admin, Prefs, Stats |
+
+**Ops knobs:** `routing.use_otp_transit` in `configs/experiment.yaml` (default `false` — enable when OTP Docker is up). OSRM auto-falls back to 30 km/h distance proxy when down.
