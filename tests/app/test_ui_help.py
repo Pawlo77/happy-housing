@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from happy_housing.app.map_layers import LayerFlags
+from happy_housing.app.map_layers import MAX_GUNB_MAP_POINTS, LayerFlags
 from happy_housing.app.spatial_insights import SPATIAL_METRICS
 from happy_housing.app.ui_help import (
     FILTER_HELP,
@@ -21,6 +21,18 @@ def test_layer_help_covers_every_layer_flag() -> None:
         assert name in LAYER_HELP
         assert len(text) >= 40
         assert text == LAYER_HELP[name]
+
+
+def test_offers_help_mentions_green_red_and_pin_click() -> None:
+    text = LAYER_HELP["offers"].lower()
+    assert "green" in text and "red" in text
+    assert "underpriced" in text
+    assert "open in offer" in text
+
+
+def test_gunb_help_mentions_map_sample_cap() -> None:
+    assert "sample" in LAYER_HELP["gunb"].lower()
+    assert f"{MAX_GUNB_MAP_POINTS:,}" in LAYER_HELP["gunb"]
 
 
 def test_spatial_metric_help_covers_catalog() -> None:

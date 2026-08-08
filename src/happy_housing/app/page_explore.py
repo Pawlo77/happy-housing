@@ -69,11 +69,7 @@ from happy_housing.app.filters import (
     offer_age_months,
 )
 from happy_housing.app.llm_metrics import llm_metrics_path
-from happy_housing.app.map_layers import (
-    MAX_GUNB_MAP_POINTS,
-    LayerFlags,
-)
-from happy_housing.app.map_marker_shapes import map_shape_legend_caption
+from happy_housing.app.map_layers import LayerFlags
 from happy_housing.app.maps import (
     basemap_style,
     build_explore_layers,
@@ -284,10 +280,6 @@ def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
             key="explore_hour",
         )
     )
-    st.caption(
-        "Toggle overlays (hover ? for what / price / livability). "
-        "Hover map pins for details."
-    )
     flags = LayerFlags(
         offers=st.checkbox(
             "Offers (Δ price)",
@@ -428,18 +420,6 @@ def _tab_map(
     commute_label: str = "Commute target",
 ) -> None:
     """Market map with toggleable livability overlays."""
-    st.caption(
-        "Offers: green = model says underpriced, red = overpriced. "
-        "Transit uses real GTFS departures at the selected hour. "
-        "Traffic is a diurnal mobility proxy (not live sensors). "
-        "Parks from UM Warszawa PLACE_SKWERY (testmapa). "
-        "Lden bands from EEA END major-airport contours. "
-        "Hover offer pins for details; click a pin, then Open in Offer. "
-        f"GUNB shows a Warsaw sample (max {MAX_GUNB_MAP_POINTS:,} points) so the "
-        "map stays under Streamlit message limits. "
-        "Transit lines: metro red · tram dark red · bus blue · rail green. "
-        + map_shape_legend_caption()
-    )
     if filtered.empty and flags.offers:
         st.warning("No offers match filters — disable Offers or widen filters.")
     layers = build_explore_layers(

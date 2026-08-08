@@ -6,26 +6,31 @@ or living conditions. Wired via Streamlit ``help=`` (sidebar ``?`` tooltip).
 
 from __future__ import annotations
 
+from happy_housing.app.map_layers import MAX_GUNB_MAP_POINTS
+
 # Map overlay toggles — keys match LayerFlags field names.
 LAYER_HELP: dict[str, str] = {
     "offers": (
         "Scored listing pins coloured by Δ zł/m² (listing - model). "
-        "Green ≈ model sees a bargain (price attractiveness); red ≈ asking "
-        "looks rich vs the model. Does not change living conditions — valuation only."
+        "Green = model says underpriced; red = overpriced. "
+        "Hover pins for details; click a pin, then Open in Offer. "
+        "Valuation only — does not change living-condition overlays."
     ),
     "oou": (
-        "EEA END Chopin aircraft Lden noise contours (≥55 dB bands). "
+        "EEA END Chopin aircraft Lden / Lnight contour bands (≥55 dB). "
         "Higher aircraft noise hurts sleep/outdoor comfort and often lowers "
         "willingness-to-pay; the model also uses Lden / in_oou as features."
     ),
     "transit_intensity": (
-        "GTFS stop-hour departure heatmap + busy stops at the sidebar clock. "
-        "Shows where service is dense (popularity), not the physical line map."
+        "Real GTFS stop-hour departure heatmap + busy stops at the sidebar "
+        "clock. Shows where service is dense (popularity), not the physical "
+        "line map."
     ),
     "transit_network": (
-        "GTFS route polylines (metro / tram / bus / rail colours) plus stop pins. "
-        "Physical network from shapes.txt — toggle modes below. "
-        "Strong transit access raises livability; dist_transit_stop_m enters the model."
+        "GTFS route polylines plus stop pins from shapes.txt. "
+        "Line colours: metro red · tram dark red · bus blue · rail green. "
+        "Toggle modes below. Strong transit access raises livability; "
+        "dist_transit_stop_m enters the model."
     ),
     "transit_show_metro": (
         "Draw metro routes (red). Warsaw M1/M2 from GTFS route_type=1."
@@ -36,9 +41,9 @@ LAYER_HELP: dict[str, str] = {
     ),
     "transit_show_rail": ("Draw rail / SKM-style routes (green). GTFS route_type=2."),
     "traffic": (
-        "Diurnal road-activity heatmap proxy (not live sensors). "
-        "Peak hours ≈ more congestion/noise — worse living comfort near busy "
-        "corridors; not a direct model feature, context for walkability trade-offs."
+        "Diurnal road-activity heatmap proxy at the sidebar hour "
+        "(not live sensors). Peak hours ≈ more congestion/noise — worse "
+        "living comfort near busy corridors; context only, not a model feature."
     ),
     "shops": (
         "OpenStreetMap retail / shop POIs (full shop=* set). "
@@ -64,9 +69,11 @@ LAYER_HELP: dict[str, str] = {
         "air_no2_ug_m3 — distance alone is not enough."
     ),
     "gunb": (
-        "GUNB / GUGiK building-permit points (Warsaw sample on the map — full "
-        "Mazowieckie dump is too large for the browser). Nearby permits hint at "
-        "construction disruption now or future supply; dist_gunb_m is a model feature."
+        "GUNB / GUGiK building-permit points. Map shows a Warsaw sample "
+        f"(max {MAX_GUNB_MAP_POINTS:,} points) so Streamlit stays under "
+        "message limits — full Mazowieckie dump is too large for the browser. "
+        "Nearby permits hint at construction disruption or future supply; "
+        "dist_gunb_m is a model feature."
     ),
     "parks": (
         "UM Warszawa PLACE_SKWERY parks & squares (same layer as testmapa). "
@@ -85,7 +92,8 @@ LAYER_HELP: dict[str, str] = {
 BASEMAP_HELP: str = (
     "Streets = Carto light basemap for labels/context. "
     "Satellite = Esri imagery for roof/yard/green cover — living-condition "
-    "context only; does not change model scores."
+    "context only; does not change model scores. "
+    "POI layers use distinct silhouettes — hover map pins for details."
 )
 """Basemap segmented-control help."""
 
