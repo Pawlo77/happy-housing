@@ -169,7 +169,7 @@ def load_bike_paths() -> gpd.GeoDataFrame:
 
 
 def load_city_pois() -> gpd.GeoDataFrame:
-    """Load UM sports + civic city POIs from cache or fixture."""
+    """Load UM sports + civic + OSM fitness city POIs from cache or fixture."""
     config = load_config()
     cache = config.data.cache_path() / "warsaw_city_pois.geojson"
     fixture = config.data.fixtures_path() / "city_pois.geojson"

@@ -3,14 +3,16 @@
 Parks & squares live in ``PLACE_SKWERY``; education POIs / catchments come from
 WFS layers matching school / oświata keywords (see ``SCHOOL_TYPE_NAME_CANDIDATES``).
 Sports objects (gyms, pools, …) come from Oracle MapViewer dataserver used by
-``/obiekty-sportowe/``. Other civic POIs (libraries, pharmacies, …) are WFS
-typeNames. Strategic noise maps are WMS-only — aircraft Lden still comes from
-EEA END fixtures elsewhere.
+``/obiekty-sportowe/``. Commercial indoor gyms (Zdrofit, …) are merged from
+OSM ``leisure=fitness_centre`` / ``amenity=gym``. Other civic POIs (libraries,
+pharmacies, …) are WFS typeNames. Strategic noise maps are WMS-only — aircraft
+Lden still comes from EEA END fixtures elsewhere.
 """
 
 from __future__ import annotations
 
 import io
+import json
 import logging
 import re
 from pathlib import Path
@@ -20,9 +22,21 @@ import pandas as pd
 import requests
 from shapely.geometry import shape
 
+from happy_housing.gis import (
+    CITY_POIS_SCHEMA_VERSION,
+    fetch_osm_fitness_pois,
+)
 from happy_housing.gis.amenity_catalog import sport_key_for_osrid
 
 logger = logging.getLogger(__name__)
+
+_DEFAULT_CITY_POIS_BBOX: tuple[float, float, float, float] = (
+    20.85,
+    52.10,
+    21.28,
+    52.37,
+)
+"""WGS84 ``(west, south, east, north)`` matching ``WarsawBBoxConfig`` defaults."""
 
 WARSAW_WFS_URL: str = "https://wfs.um.warszawa.pl/serwis"
 """City WFS endpoint behind the public map portal."""
@@ -583,21 +597,54 @@ def fetch_warsaw_civic_pois(
     )
 
 
+def _city_pois_meta_path(cache_path: Path) -> Path:
+    """Sidecar JSON next to the combined city-POI GeoJSON."""
+    return cache_path.with_name(cache_path.stem + ".meta.json")
+
+
+def _city_pois_cache_is_current(cache_path: Path) -> bool:
+    """True when GeoJSON exists and schema matches ``CITY_POIS_SCHEMA_VERSION``."""
+    if not cache_path.exists():
+        return False
+    meta_path = _city_pois_meta_path(cache_path)
+    if not meta_path.exists():
+        return False
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return int(meta.get("schema_version", -1)) == CITY_POIS_SCHEMA_VERSION
+
+
+def _write_city_pois_meta(cache_path: Path, *, row_count: int) -> None:
+    """Persist schema version for the combined city-POI cache."""
+    payload = {
+        "schema_version": CITY_POIS_SCHEMA_VERSION,
+        "row_count": int(row_count),
+    }
+    _city_pois_meta_path(cache_path).write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
 def fetch_warsaw_city_pois(
     cache_dir: Path,
     *,
     fixture_path: Path | None = None,
     force_refresh: bool = False,
+    bbox: tuple[float, float, float, float] | None = None,
     wfs_url: str = WARSAW_WFS_URL,
     dataserver_base: str = WARSAW_MAPVIEWER_DATASERVER,
     timeout_s: float = _DEFAULT_TIMEOUT_S,
 ) -> gpd.GeoDataFrame:
-    """Sports + civic city POIs; cache as ``warsaw_city_pois.geojson``.
+    """Sports + civic + OSM commercial gyms; cache as ``warsaw_city_pois.geojson``.
 
     Args:
         cache_dir: Cache directory.
         fixture_path: Offline combined GeoJSON fallback.
         force_refresh: Ignore combined cache.
+        bbox: WGS84 ``(west, south, east, north)`` for OSM fitness fetch.
         wfs_url: Civic WFS endpoint.
         dataserver_base: Sports MapViewer dataserver.
         timeout_s: HTTP timeout.
@@ -607,7 +654,7 @@ def fetch_warsaw_city_pois(
     """
     cache_dir.mkdir(parents=True, exist_ok=True)
     cache_path = cache_dir / WARSAW_LAYER_REGISTRY["city_pois"]["cache_name"]
-    if not force_refresh and cache_path.exists():
+    if not force_refresh and _city_pois_cache_is_current(cache_path):
         return gpd.read_file(cache_path)
 
     sports = fetch_warsaw_sports_objects(
@@ -621,7 +668,12 @@ def fetch_warsaw_city_pois(
         wfs_url=wfs_url,
         timeout_s=timeout_s,
     )
-    parts = [p for p in (sports, civic) if not p.empty]
+    osm_fitness = fetch_osm_fitness_pois(
+        bbox if bbox is not None else _DEFAULT_CITY_POIS_BBOX,
+        cache_dir,
+        force_refresh=force_refresh,
+    )
+    parts = [p for p in (sports, civic, osm_fitness) if not p.empty]
     if parts:
         frame = gpd.GeoDataFrame(
             pd.concat(parts, ignore_index=True),
@@ -645,5 +697,6 @@ def fetch_warsaw_city_pois(
 
     if not frame.empty:
         frame.to_file(cache_path, driver="GeoJSON")
+        _write_city_pois_meta(cache_path, row_count=len(frame))
         logger.info("Cached %s city POIs → %s", len(frame), cache_path)
     return frame

@@ -105,8 +105,9 @@ LAYER_HELP: dict[str, str] = {
     ),
     "city_poi_types": (
         "UM sports objects (mapa.um.warszawa.pl/obiekty-sportowe) plus civic "
-        "WFS POIs (libraries, pharmacies, bike-share, …). Multiselect filters "
-        "which types draw; default gyms + swimming pools. Admin -> Recommendations "
+        "WFS POIs (libraries, pharmacies, bike-share, …) and OSM commercial "
+        "fitness clubs under Gym. Multiselect filters which types draw; "
+        "default gyms, fitness studios, swimming pools. Admin -> Recommendations "
         "sets +/- weights that nudge the bargain recommender by proximity."
     ),
     "city_boundary": (

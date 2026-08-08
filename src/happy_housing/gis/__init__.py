@@ -37,6 +37,15 @@ DEFAULT_OSM_SHOP_TAGS: dict[str, bool | str | list[str]] = {
 }
 """Overpass tags: every ``shop=*`` POI in the bbox."""
 
+DEFAULT_OSM_FITNESS_TAGS: dict[str, bool | str | list[str]] = {
+    "leisure": "fitness_centre",
+    "amenity": "gym",
+}
+"""Commercial indoor gyms / clubs (``leisure=fitness_centre``, ``amenity=gym``)."""
+
+CITY_POIS_SCHEMA_VERSION: int = 2
+"""Bump when combined city-POI merge (sports + civic + OSM fitness) changes."""
+
 _OSM_OVERPASS_TIMEOUT_S: int = 300
 """Overpass / OSMnx timeout for city-wide amenity and shop queries."""
 
@@ -360,6 +369,111 @@ def fetch_osm_shops(
         _write_osm_cache_meta(cache_path, tag_filter, row_count=len(frame))
         logger.info("Cached %s shops to %s", len(frame), cache_path)
     return frame
+
+
+def osm_fitness_to_city_pois(frame: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Normalize OSM fitness features to city-POI columns."""
+    empty = gpd.GeoDataFrame(
+        columns=["object_type", "name", "source", "geometry"],
+        geometry=[],
+        crs="EPSG:4326",
+    )
+    if frame.empty:
+        return empty
+    out = frame.copy()
+    if out.crs is None:
+        out = out.set_crs("EPSG:4326")
+    elif str(out.crs) != "EPSG:4326":
+        out = out.to_crs("EPSG:4326")
+    names: list[str] = []
+    for _, row in out.iterrows():
+        label = ""
+        for key in ("name", "brand", "operator"):
+            raw = row.get(key)
+            if raw is None or (isinstance(raw, float) and pd.isna(raw)):
+                continue
+            text = str(raw).strip()
+            if text and text.lower() not in {"nan", "none"}:
+                label = text
+                break
+        names.append(label or "Fitness centre")
+    result = gpd.GeoDataFrame(
+        {
+            "object_type": ["gym"] * len(out),
+            "name": names,
+            "source": ["osm"] * len(out),
+            "geometry": out.geometry.values,
+        },
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+    return result[~result.geometry.isna() & ~result.geometry.is_empty].reset_index(
+        drop=True
+    )
+
+
+def fetch_osm_fitness_pois(
+    bbox: tuple[float, float, float, float],
+    cache_dir: Path,
+    tags: dict[str, bool | str | list[str]] | None = None,
+    *,
+    force_refresh: bool = False,
+) -> gpd.GeoDataFrame:
+    """Download commercial fitness centres; return city-POI-shaped points.
+
+    Kept separate from ``fetch_osm_amenities`` because that path filters to
+    rows with a non-null ``amenity`` column and drops leisure-only POIs.
+    """
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_path = cache_dir / "osm_fitness.geojson"
+    tag_filter: dict[str, bool | str | list[str]] = dict(
+        tags if tags is not None else DEFAULT_OSM_FITNESS_TAGS
+    )
+    if not force_refresh and _osm_cache_is_current(cache_path, tag_filter):
+        cached = gpd.read_file(cache_path)
+        if {"object_type", "name", "source"}.issubset(cached.columns):
+            return cached
+        return osm_fitness_to_city_pois(cached)
+
+    west, south, east, north = bbox
+    frame = gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
+    try:
+        import osmnx as ox
+
+        ox.settings.use_cache = True
+        ox.settings.cache_folder = str(cache_dir / "osmnx")
+        ox.settings.timeout = _OSM_OVERPASS_TIMEOUT_S
+        features = ox.features_from_bbox(
+            bbox=(west, south, east, north),
+            tags=tag_filter,
+        )
+        if not features.empty:
+            frame = features.reset_index(drop=False)
+            projected = frame.to_crs("EPSG:2180")
+            frame["geometry"] = projected.geometry.centroid.to_crs("EPSG:4326")
+            frame = gpd.GeoDataFrame(frame, geometry="geometry", crs="EPSG:4326")
+            keep = [
+                c
+                for c in (
+                    "leisure",
+                    "amenity",
+                    "name",
+                    "brand",
+                    "operator",
+                    "geometry",
+                )
+                if c in frame.columns
+            ]
+            frame = frame[keep]
+    except Exception as exc:
+        logger.warning("OSMnx fitness fetch failed: %s", exc)
+
+    pois = osm_fitness_to_city_pois(frame)
+    if not pois.empty:
+        pois.to_file(cache_path, driver="GeoJSON")
+        _write_osm_cache_meta(cache_path, tag_filter, row_count=len(pois))
+        logger.info("Cached %s OSM fitness POIs → %s", len(pois), cache_path)
+    return pois
 
 
 def _points_for_nearest(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:

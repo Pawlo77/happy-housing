@@ -360,6 +360,7 @@ def run_pipeline(
             cache,
             fixture_path=fixtures / "city_pois.geojson",
             force_refresh=force_gis_refresh,
+            bbox=config.bbox.as_tuple(),
         )
         parks = fut_parks.result()
         schools = fut_schools.result()

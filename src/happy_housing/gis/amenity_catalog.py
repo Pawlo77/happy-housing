@@ -95,12 +95,12 @@ SPORT_OSRID_TO_KEY: dict[str, str] = {
 
 AMENITY_TYPES: tuple[AmenityType, ...] = (
     # Sports (portal)
-    AmenityType("gym", "Gym (siłownia)", "Sports", "sports", True, 0.0),
+    AmenityType("gym", "Gym / fitness club", "Sports", "sports", True, 0.0),
     AmenityType("outdoor_gym", "Outdoor gym", "Sports", "sports", True, 0.0),
     AmenityType("street_workout", "Street workout", "Sports", "sports", False, 0.0),
     AmenityType("indoor_pool", "Indoor swimming pool", "Sports", "sports", True, 0.0),
     AmenityType("outdoor_pool", "Outdoor swimming pool", "Sports", "sports", True, 0.0),
-    AmenityType("fitness", "Fitness studio", "Sports", "sports", False, 0.0),
+    AmenityType("fitness", "Fitness studio", "Sports", "sports", True, 0.0),
     AmenityType("sauna", "Sauna", "Sports", "sports", False, 0.0),
     AmenityType("sports_hall", "Sports hall", "Sports", "sports", False, 0.0),
     AmenityType("gymnasium", "Gymnasium", "Sports", "sports", False, 0.0),
@@ -186,7 +186,7 @@ _AMENITY_BY_KEY: dict[str, AmenityType] = {t.key: t for t in AMENITY_TYPES}
 DEFAULT_MAP_OBJECT_TYPES: tuple[str, ...] = tuple(
     t.key for t in AMENITY_TYPES if t.default_map_visible
 )
-"""Explore map defaults: gyms + swimming pools."""
+"""Explore map defaults: gyms, fitness studios, swimming pools."""
 
 RECOMMENDER_DIST_CAP_M: float = 2000.0
 """Distance at which proximity score reaches 0 for amenity weights."""

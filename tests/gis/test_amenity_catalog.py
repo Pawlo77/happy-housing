@@ -31,6 +31,7 @@ def test_sport_osrid_maps_gym_and_pool() -> None:
 
 def test_default_map_types_are_gyms_and_pools() -> None:
     assert "gym" in DEFAULT_MAP_OBJECT_TYPES
+    assert "fitness" in DEFAULT_MAP_OBJECT_TYPES
     assert "indoor_pool" in DEFAULT_MAP_OBJECT_TYPES
     assert "outdoor_pool" in DEFAULT_MAP_OBJECT_TYPES
 
@@ -63,6 +64,10 @@ def test_fetch_city_pois_uses_fixture(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(
         "happy_housing.ingest.warsaw_map.fetch_warsaw_civic_pois",
         _empty_civic,
+    )
+    monkeypatch.setattr(
+        "happy_housing.ingest.warsaw_map.fetch_osm_fitness_pois",
+        lambda *_args, **_kwargs: _empty_sports(),
     )
     pois = fetch_warsaw_city_pois(tmp_path, fixture_path=fixture, force_refresh=True)
     assert not pois.empty

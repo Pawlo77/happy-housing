@@ -495,13 +495,13 @@ def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
     label_by_key = {t.key: f"{t.group}: {t.label}" for t in AMENITY_TYPES}
     default_keys = list(DEFAULT_MAP_OBJECT_TYPES)
     selected_labels = st.multiselect(
-        "City map objects (UM sports + civic)",
+        "City map objects (UM + OSM gyms)",
         options=[label_by_key[k] for k in amenity_keys() if k in label_by_key],
         default=[label_by_key[k] for k in default_keys if k in label_by_key],
         help=(
-            "Sports objects from mapa.um.warszawa.pl/obiekty-sportowe plus civic "
-            "WFS layers. Default: gyms + swimming pools. EV charging is OSM "
-            "(use OSM layers / Admin weights)."
+            "UM sports (mapa.um.warszawa.pl/obiekty-sportowe) + civic WFS, plus "
+            "OSM commercial fitness clubs (leisure=fitness_centre) under Gym. "
+            "Default: gyms, fitness studios, swimming pools."
         ),
         key="explore_ly_city_pois",
     )

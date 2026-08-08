@@ -270,7 +270,7 @@ def city_poi_layers(
     *,
     object_types: tuple[str, ...] | frozenset[str] | set[str],
 ) -> list[pdk.Layer]:
-    """UM sports + civic map objects filtered by catalog keys."""
+    """UM sports, civic, and OSM commercial fitness markers by catalog key."""
     if city_pois is None or city_pois.empty or not object_types:
         return []
     layers: list[pdk.Layer] = []
