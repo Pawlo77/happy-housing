@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import pandas as pd
+import streamlit as st
 
 EXPLORE_SECTIONS: tuple[str, ...] = (
     "Map",
@@ -16,8 +17,19 @@ EXPLORE_SECTIONS: tuple[str, ...] = (
 )
 """Top-level Explore section labels."""
 
+EXPLORE_PAGE_PATH: str = "explore"
+"""``st.navigation`` url_path for the Explore page (``st.switch_page`` target)."""
+
 OFFER_SELECT_KEY: str = "explore_offer_select"
 """Session key for the Offer-tab listing selectbox."""
+
+
+def open_explore_offer(listing_id: str) -> None:
+    """Jump to Explore → Offer for ``listing_id`` (session keys + switch_page)."""
+    st.session_state["explore_offer_id"] = str(listing_id)
+    st.session_state["explore_offer_force"] = True
+    st.session_state["explore_section"] = "Offer"
+    st.switch_page(EXPLORE_PAGE_PATH)
 
 
 def listing_id_from_map_selection(event: object | None) -> str | None:

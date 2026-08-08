@@ -8,6 +8,7 @@ import streamlit as st
 
 from happy_housing.app.app_settings import load_app_settings, settings_path
 from happy_housing.app.data import load_config, processed_dir
+from happy_housing.app.explore_nav import EXPLORE_PAGE_PATH
 from happy_housing.app.layout_density import apply_dense_top_layout
 from happy_housing.app.page_admin import render_admin
 from happy_housing.app.page_explore import render_explore
@@ -46,7 +47,7 @@ def main() -> None:
     logger.debug("Streamlit navigation starting")
     pages = [
         st.Page(render_home, title="Home", default=True),
-        st.Page(render_explore, title="Explore"),
+        st.Page(render_explore, title="Explore", url_path=EXPLORE_PAGE_PATH),
         st.Page(render_stats, title="Stats"),
         st.Page(render_admin, title="Admin"),
     ]

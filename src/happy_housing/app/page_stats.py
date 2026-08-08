@@ -25,6 +25,10 @@ from happy_housing.app.charts import (
     stacked_histogram,
 )
 from happy_housing.app.data import load_scored, processed_dir
+from happy_housing.app.explore_nav import (
+    listing_id_from_board_selection,
+    open_explore_offer,
+)
 from happy_housing.app.stats_filters import StatsFilterState, apply_stats_filters
 from happy_housing.app.stats_insights import (
     affordability_bands,
@@ -410,10 +414,19 @@ def _tab_value(frame: pd.DataFrame, *, min_offers: int, top_n: int) -> None:
             x_title="Median zł/m²",
         )
 
+    value_cols = {
+        "price_per_m2": st.column_config.NumberColumn("Listing zł/m²", format="%.0f"),
+        "model_price_per_m2": st.column_config.NumberColumn(
+            "Model zł/m²", format="%.0f"
+        ),
+        "delta_price_per_m2": st.column_config.NumberColumn("Delta", format="%+.0f"),
+        "commute_min": st.column_config.NumberColumn("Commute min", format="%.0f"),
+    }
+
     _section(
         "Hunt list",
         "Strongest model-underpriced offers in the lens — "
-        "open them on Explore → Offer.",
+        "click a row to open Explore → Offer.",
     )
     hunt = top_value_offers(frame, n=top_n, side="underpriced")
     if hunt.empty:
@@ -425,30 +438,24 @@ def _tab_value(frame: pd.DataFrame, *, min_offers: int, top_n: int) -> None:
             placeholder="district, id, title…",
         )
         hunt_show = filter_dataframe_text(hunt, hunt_q)
-        st.caption(f"{len(hunt_show)} of {len(hunt)} rows")
-        st.dataframe(
+        st.caption(f"{len(hunt_show)} of {len(hunt)} rows · click row → Offer")
+        hunt_event = st.dataframe(
             hunt_show,
             hide_index=True,
             width="stretch",
-            column_config={
-                "price_per_m2": st.column_config.NumberColumn(
-                    "Listing zł/m²", format="%.0f"
-                ),
-                "model_price_per_m2": st.column_config.NumberColumn(
-                    "Model zł/m²", format="%.0f"
-                ),
-                "delta_price_per_m2": st.column_config.NumberColumn(
-                    "Delta", format="%+.0f"
-                ),
-                "commute_min": st.column_config.NumberColumn(
-                    "Commute min", format="%.0f"
-                ),
-            },
+            on_select="rerun",
+            selection_mode="single-row",
+            key="stats_hunt_table",
+            column_config=value_cols,
         )
+        hunt_id = listing_id_from_board_selection(hunt_show, hunt_event)
+        if hunt_id is not None:
+            open_explore_offer(hunt_id)
 
     _section(
         "Watch list",
-        "Most overpriced vs the model — useful for negotiation or avoidance.",
+        "Most overpriced vs the model — useful for negotiation or avoidance. "
+        "Click a row to open Explore → Offer.",
     )
     watch = top_value_offers(frame, n=top_n, side="overpriced")
     if watch.empty:
@@ -460,20 +467,19 @@ def _tab_value(frame: pd.DataFrame, *, min_offers: int, top_n: int) -> None:
             placeholder="district, id, title…",
         )
         watch_show = filter_dataframe_text(watch, watch_q)
-        st.caption(f"{len(watch_show)} of {len(watch)} rows")
-        st.dataframe(
+        st.caption(f"{len(watch_show)} of {len(watch)} rows · click row → Offer")
+        watch_event = st.dataframe(
             watch_show,
             hide_index=True,
             width="stretch",
-            column_config={
-                "delta_price_per_m2": st.column_config.NumberColumn(
-                    "Delta", format="%+.0f"
-                ),
-                "price_per_m2": st.column_config.NumberColumn(
-                    "Listing zł/m²", format="%.0f"
-                ),
-            },
+            on_select="rerun",
+            selection_mode="single-row",
+            key="stats_watch_table",
+            column_config=value_cols,
         )
+        watch_id = listing_id_from_board_selection(watch_show, watch_event)
+        if watch_id is not None:
+            open_explore_offer(watch_id)
 
 
 def _tab_place(frame: pd.DataFrame) -> None:

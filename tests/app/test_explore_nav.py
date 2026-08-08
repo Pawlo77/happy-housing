@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock, patch
+
 import pandas as pd
 
 from happy_housing.app.explore_nav import (
+    EXPLORE_PAGE_PATH,
     listing_id_from_board_selection,
     listing_id_from_map_selection,
+    open_explore_offer,
     prepare_offer_select_state,
 )
 
@@ -72,3 +76,15 @@ def test_explore_sections_include_prefs() -> None:
     assert "Spatial" in EXPLORE_SECTIONS
     assert EXPLORE_SECTIONS[-1] == "Prefs"
     assert "News" in EXPLORE_SECTIONS
+
+
+def test_open_explore_offer_sets_session_and_switches_page() -> None:
+    session: dict[str, object] = {}
+    mock_st = MagicMock()
+    mock_st.session_state = session
+    with patch("happy_housing.app.explore_nav.st", mock_st):
+        open_explore_offer("RCN-605")
+    assert session["explore_offer_id"] == "RCN-605"
+    assert session["explore_offer_force"] is True
+    assert session["explore_section"] == "Offer"
+    mock_st.switch_page.assert_called_once_with(EXPLORE_PAGE_PATH)
