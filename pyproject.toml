@@ -135,6 +135,8 @@ module = [
   "numpy.*",
   "pandas",
   "pandas.*",
+  "matplotlib",
+  "matplotlib.*",
   "pyproj",
   "pyproj.*",
   "requests",
@@ -143,7 +145,7 @@ module = [
 ignore_missing_imports = true
 
 [tool.bandit]
-exclude_dirs = [".venv", "tests", "notebooks", "report"]
+exclude_dirs = [".venv", "tests", "notebooks", "report", "scripts"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
