@@ -15,6 +15,7 @@ import shap
 from sklearn.model_selection import ParameterSampler, train_test_split
 
 from happy_housing.config import ExperimentConfig, ModelConfig
+from happy_housing.gis.amenity_catalog import model_distance_feature_columns
 from happy_housing.models.metrics import (
     OptMetric,
     coerce_opt_metric,
@@ -33,7 +34,7 @@ from happy_housing.orchestration.tracking import (
 
 logger = logging.getLogger(__name__)
 
-CORE_FEATURE_COLUMNS: tuple[str, ...] = (
+_STRUCTURAL_FEATURE_COLUMNS: tuple[str, ...] = (
     "area_m2",
     "rooms",
     "year_built",
@@ -57,25 +58,23 @@ CORE_FEATURE_COLUMNS: tuple[str, ...] = (
     "in_oou",
     "road_lden_db",
     "rail_lden_db",
-    "dist_hospital_m",
-    "dist_fire_station_m",
-    "dist_police_m",
     "dist_air_station_m",
     "air_aq_index",
     "air_pm10_ug_m3",
     "air_pm25_ug_m3",
     "air_no2_ug_m3",
     "dist_transit_stop_m",
-    "dist_metro_m",
-    "dist_park_m",
-    "dist_school_m",
-    "dist_shop_m",
     "dist_daszynskiego_m",
     "commute_min",
     "transit_commute_min",
     "dist_gunb_m",
 )
-"""Structural + GIS features (always included)."""
+"""Structural + noise + air + transit/commute/GUNB features."""
+
+CORE_FEATURE_COLUMNS: tuple[str, ...] = (
+    _STRUCTURAL_FEATURE_COLUMNS + model_distance_feature_columns()
+)
+"""Structural + GIS amenity distances (always included)."""
 
 CATEGORICAL_FEATURE_COLUMNS: tuple[str, ...] = (
     "building_type",

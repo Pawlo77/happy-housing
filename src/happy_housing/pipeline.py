@@ -138,12 +138,14 @@ def run_pipeline(
     otodom_max_pages: int | None = None,
     otodom_max_listings: int | None = None,
     rcn_max_rows: int | None = None,
+    force_gis_refresh: bool = False,
 ) -> dict[str, Path]:
     """Run the full local pipeline and return key output paths.
 
     ``download_remote`` True/False forces all remote sources on/off; ``None``
     uses Admin Pipeline overrides when saved, else downloads everything.
     Explicit ``otodom_max_*`` / ``rcn_max_rows`` kwargs override resolved caps.
+    ``force_gis_refresh`` ignores OSM / Warsaw map caches and re-downloads.
     """
     from happy_housing.logging_config import configure_logging
 
@@ -293,11 +295,13 @@ def run_pipeline(
             config.bbox.as_tuple(),
             cache,
             fixture_path=fixtures / "amenities.json",
+            force_refresh=force_gis_refresh,
         )
         shops = fetch_osm_shops(
             config.bbox.as_tuple(),
             cache,
             fixture_path=fixtures / "shops.json",
+            force_refresh=force_gis_refresh,
         )
     else:
         amenities = load_amenity_points(fixtures / "amenities.json")
@@ -310,14 +314,17 @@ def run_pipeline(
     parks = fetch_warsaw_parks(
         cache,
         fixture_path=fixtures / "parks.geojson",
+        force_refresh=force_gis_refresh,
     )
     schools = fetch_warsaw_schools(
         cache,
         fixture_path=fixtures / "schools.geojson",
+        force_refresh=force_gis_refresh,
     )
     city_pois = fetch_warsaw_city_pois(
         cache,
         fixture_path=fixtures / "city_pois.geojson",
+        force_refresh=force_gis_refresh,
     )
 
     commute = resolve_commute_target(app_settings, config)

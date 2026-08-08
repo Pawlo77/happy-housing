@@ -204,6 +204,30 @@ LEGACY_DIST_KEYS: frozenset[str] = frozenset({
 """Amenity keys that map to pre-existing ``dist_*_m`` enrich columns."""
 
 
+def model_distance_feature_columns() -> tuple[str, ...]:
+    """``dist_*_m`` columns the LightGBM model should train on.
+
+    Includes legacy OSM/park/school distances plus every catalog amenity
+    (sports, civic WFS, EV charging).
+    """
+    cols = [dist_column(key) for key in amenity_keys()]
+    # Preserve a stable order: legacy first, then remaining catalog order.
+    legacy = [
+        dist_column(k)
+        for k in (
+            "hospital",
+            "fire_station",
+            "police",
+            "metro",
+            "park",
+            "school",
+            "shop",
+        )
+    ]
+    rest = [c for c in cols if c not in legacy]
+    return tuple(legacy + rest)
+
+
 def amenity_type(key: str) -> AmenityType | None:
     """Return catalog entry for ``key``, or None."""
     return _AMENITY_BY_KEY.get(key)
