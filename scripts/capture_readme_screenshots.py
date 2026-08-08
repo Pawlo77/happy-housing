@@ -107,15 +107,17 @@ def main() -> None:
         page.wait_for_timeout(3000)
         _shot(page, "09-admin.png")
         try:
-            _tab(page, "Stats")
+            page.get_by_text("Stats", exact=True).last.click()
+            page.wait_for_timeout(2500)
             _shot(page, "10-admin-settings.png")
         except Exception as exc:
-            print(f"skip Admin Stats: {exc}")
+            print(f"skip Admin Stats section: {exc}")
             try:
-                _tab(page, "AI / LM Studio")
+                page.get_by_text("Offer AI", exact=True).click()
+                page.wait_for_timeout(2500)
                 _shot(page, "10-admin-settings.png")
             except Exception as exc2:
-                print(f"skip Admin AI: {exc2}")
+                print(f"skip Admin Offer AI: {exc2}")
 
         browser.close()
     print("done:", sorted(p.name for p in OUT.glob("*.png")))
