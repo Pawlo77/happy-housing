@@ -139,13 +139,31 @@ def offer_fact_rows(row: pd.Series) -> pd.DataFrame:
         ("Building floors", row.get("building_floors_num")),
         ("Area (m²)", round_meters(row.get("area_m2"))),
         ("Year built", row.get("year_built")),
+        ("Year renovated", row.get("year_renovated")),
+        ("Object type", row.get("object_type")),
         ("Building type", row.get("building_type")),
-        ("Ownership", row.get("building_ownership")),
+        (
+            "Ownership",
+            (
+                row.get("ownership")
+                if pd.notna(row.get("ownership"))
+                and str(row.get("ownership") or "").strip()
+                else row.get("building_ownership")
+            ),
+        ),
+        ("Needs renovation", flag_yes_no(row.get("needs_renovation"))),
         ("Heating", row.get("heating")),
         ("Rent (PLN/mo)", row.get("rent")),
         ("Balcony", flag_yes_no(row.get("has_balcony"))),
-        ("Garage / parking", flag_yes_no(row.get("has_garage"))),
+        ("Terrace", flag_yes_no(row.get("has_terrace"))),
+        ("Garden", flag_yes_no(row.get("has_garden"))),
+        ("Garage", flag_yes_no(row.get("has_garage"))),
+        ("Outdoor parking", flag_yes_no(row.get("has_outdoor_parking"))),
+        ("Basement", flag_yes_no(row.get("has_basement"))),
+        ("Attic", flag_yes_no(row.get("is_attic"))),
         ("Lift", flag_yes_no(row.get("has_lift"))),
+        ("Plumbing replaced", flag_yes_no(row.get("plumbing_replaced"))),
+        ("Wiring replaced", flag_yes_no(row.get("wiring_replaced"))),
         ("Private owner", flag_yes_no(row.get("is_private_owner"))),
         ("Price (PLN)", row.get("price_pln")),
         ("Latitude", row.get("lat")),

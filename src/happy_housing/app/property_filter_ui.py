@@ -70,6 +70,7 @@ def render_property_attr_filters(key_prefix: str) -> dict[str, Any]:
     has_balcony = st.selectbox("Balcony", _YES_NO, key=f"{key_prefix}_balcony")
     has_garden = st.selectbox("Garden", _YES_NO, key=f"{key_prefix}_garden")
     has_terrace = st.selectbox("Terrace", _YES_NO, key=f"{key_prefix}_terrace")
+    has_lift = st.selectbox("Lift", _YES_NO, key=f"{key_prefix}_lift")
     is_attic = st.selectbox("Attic", _YES_NO, key=f"{key_prefix}_attic")
     needs_renovation = st.selectbox(
         "Needs renovation", _YES_NO, key=f"{key_prefix}_renovation"
@@ -102,6 +103,7 @@ def render_property_attr_filters(key_prefix: str) -> dict[str, Any]:
         "has_balcony": str(has_balcony),
         "has_garden": str(has_garden),
         "has_terrace": str(has_terrace),
+        "has_lift": str(has_lift),
         "is_attic": str(is_attic),
         "needs_renovation": str(needs_renovation),
         "plumbing_replaced": str(plumbing_replaced),

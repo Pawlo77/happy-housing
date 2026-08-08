@@ -61,6 +61,52 @@ _OWNERSHIP_MAP: dict[str, str] = {
     "other": "other",
 }
 
+_DESC_ONLY_FIELDS: tuple[str, ...] = (
+    "plumbing_replaced",
+    "wiring_replaced",
+    "year_renovated",
+)
+"""Fields that usually exist only after LM extract."""
+
+_STRUCTURE_GAP_FLAGS: tuple[str, ...] = (
+    "has_basement",
+    "has_outdoor_parking",
+    "is_attic",
+)
+"""Amenity flags that trigger LM only when missing (not when 0)."""
+
+
+def _is_missing(value: object) -> bool:
+    """True for None / NA / NaN / blank strings."""
+    if value is None:
+        return True
+    try:
+        if pd.isna(value):
+            return True
+    except (TypeError, ValueError):
+        pass
+    return isinstance(value, str) and value.strip().lower() in {
+        "",
+        "nan",
+        "none",
+        "null",
+    }
+
+
+def _as_int(value: object) -> int | None:
+    if _is_missing(value):
+        return None
+    try:
+        return int(float(str(value)))
+    except (TypeError, ValueError):
+        return None
+
+
+def _as_ownership(value: object) -> str | None:
+    if _is_missing(value):
+        return None
+    return _OWNERSHIP_MAP.get(str(value).strip().lower())
+
 
 @dataclass(slots=True)
 class ListingAttrExtract:
@@ -163,7 +209,11 @@ def merge_structured_and_extract(
     structured: dict[str, Any],
     extract: ListingAttrExtract | None,
 ) -> dict[str, Any]:
-    """Prefer Otodom structured fields; fill gaps from LM extract."""
+    """Prefer Otodom structured fields; fill gaps from LM extract.
+
+    Never clears an already-known structured / previously extracted value when
+    ``extract`` is None or a field is ``N``.
+    """
     estate = str(structured.get("estate") or "").upper()
     building_type = str(structured.get("building_type") or "").lower()
     object_type: str | None
@@ -171,51 +221,59 @@ def merge_structured_and_extract(
         object_type = "flat" if estate == "FLAT" else "house"
     elif "house" in building_type or "dom" in building_type:
         object_type = "house"
-    elif building_type:
+    elif building_type and building_type not in {"nan", "none"}:
         object_type = "flat"
     else:
-        object_type = extract.object_type if extract else None
+        existing_ot = structured.get("object_type")
+        if not _is_missing(existing_ot):
+            object_type = str(existing_ot).lower()
+        else:
+            object_type = extract.object_type if extract else None
 
-    ownership_raw = str(structured.get("building_ownership") or "").lower()
-    ownership = _OWNERSHIP_MAP.get(ownership_raw)
+    ownership = _as_ownership(structured.get("ownership"))
+    if ownership is None:
+        ownership = _as_ownership(structured.get("building_ownership"))
     if ownership is None and extract is not None:
         ownership = extract.ownership
 
     status = str(structured.get("construction_status") or "").lower()
-    needs = None
-    if "renovation" in status or status == "to_renovation":
-        needs = 1
-    elif status in {"ready_to_use", "to_completion"}:
-        needs = 0
-    elif extract is not None:
-        needs = extract.needs_renovation
+    needs = _as_int(structured.get("needs_renovation"))
+    if needs is None:
+        if "renovation" in status or status == "to_renovation":
+            needs = 1
+        elif status in {"ready_to_use", "to_completion"}:
+            needs = 0
+        elif extract is not None:
+            needs = extract.needs_renovation
 
     def _flag(col: str, extract_attr: str) -> int | None:
-        if col in structured and structured[col] is not None:
-            try:
-                return int(structured[col])
-            except (TypeError, ValueError):
-                pass
+        current = _as_int(structured.get(col))
+        if current is not None:
+            return current
         if extract is None:
             return None
         value = getattr(extract, extract_attr)
         return int(value) if value is not None else None
 
-    year_built = structured.get("year_built")
-    try:
-        year_built_i = int(float(year_built)) if year_built is not None else None
-    except (TypeError, ValueError):
-        year_built_i = None
+    year_built_i = _as_int(structured.get("year_built"))
     if year_built_i is None and extract is not None:
         year_built_i = extract.year_built
 
-    floor = structured.get("floor_no")
-    try:
-        floor_i = int(float(floor)) if floor is not None else None
-    except (TypeError, ValueError):
-        floor_i = None
+    floor_i = _as_int(structured.get("floor_no"))
     if floor_i is None and extract is not None:
         floor_i = extract.floor_no
+
+    year_renovated = _as_int(structured.get("year_renovated"))
+    if year_renovated is None and extract is not None:
+        year_renovated = extract.year_renovated
+
+    plumbing = _as_int(structured.get("plumbing_replaced"))
+    if plumbing is None and extract is not None:
+        plumbing = extract.plumbing_replaced
+
+    wiring = _as_int(structured.get("wiring_replaced"))
+    if wiring is None and extract is not None:
+        wiring = extract.wiring_replaced
 
     return {
         "object_type": object_type,
@@ -229,10 +287,47 @@ def merge_structured_and_extract(
         "ownership": ownership,
         "needs_renovation": needs,
         "year_built": year_built_i,
-        "year_renovated": extract.year_renovated if extract else None,
-        "plumbing_replaced": extract.plumbing_replaced if extract else None,
-        "wiring_replaced": extract.wiring_replaced if extract else None,
+        "year_renovated": year_renovated,
+        "plumbing_replaced": plumbing,
+        "wiring_replaced": wiring,
     }
+
+
+def row_needs_attr_llm(
+    row: dict[str, Any] | pd.Series,
+    columns: set[str],
+    *,
+    desc_fingerprint: str | None = None,
+) -> bool:
+    """Whether a row still has gaps that description extract can fill.
+
+    Once ``attr_extract_fp`` matches the current description fingerprint, skip
+    further LM calls even if plumbing/wiring stayed ``N`` (unknown).
+    """
+    desc = str(row.get("description") or row.get("short_description") or "").strip()
+    if not desc:
+        return False
+    if desc_fingerprint and "attr_extract_fp" in columns:
+        prior = row.get("attr_extract_fp")
+        if not _is_missing(prior) and str(prior) == desc_fingerprint:
+            return False
+
+    ownership = _as_ownership(row.get("ownership"))
+    if ownership is None:
+        ownership = _as_ownership(row.get("building_ownership"))
+    if ownership is None:
+        return True
+    for col in _STRUCTURE_GAP_FLAGS:
+        if col not in columns or _is_missing(row.get(col)):
+            return True
+    if "object_type" not in columns or _is_missing(row.get("object_type")):
+        estate = str(row.get("estate") or "").upper()
+        if estate not in {"FLAT", "HOUSE"}:
+            return True
+    for col in _DESC_ONLY_FIELDS:
+        if col not in columns or _is_missing(row.get(col)):
+            return True
+    return False
 
 
 def description_fingerprint(text: str) -> str:
@@ -300,33 +395,26 @@ def enrich_frame_listing_attrs(
     out = frame.copy()
     cache = cache if cache is not None else {}
     llm_calls = 0
+    columns = set(out.columns)
+    if "attr_extract_fp" not in out.columns:
+        out["attr_extract_fp"] = pd.NA
+        columns.add("attr_extract_fp")
     rows: list[dict[str, Any]] = []
+    fps: list[object] = []
     for _, row in out.iterrows():
         structured = row.to_dict()
         extract: ListingAttrExtract | None = None
-        desc = str(row.get("description") or row.get("short_description") or "").strip()
-        needs_llm = (
+        desc = str(
+            structured.get("description") or structured.get("short_description") or ""
+        ).strip()
+        fp = description_fingerprint(desc[:max_chars]) if desc else ""
+        needs_llm = bool(
             use_llm
-            and bool(desc)
-            and (
-                pd.isna(row.get("plumbing_replaced"))
-                if "plumbing_replaced" in out.columns
-                else True
-            )
+            and desc
+            and row_needs_attr_llm(structured, columns, desc_fingerprint=fp)
         )
-        # Also run when key structured amenity cols missing
-        if use_llm and desc:
-            for col in (
-                "has_basement",
-                "has_outdoor_parking",
-                "is_attic",
-                "building_ownership",
-            ):
-                if col not in out.columns or pd.isna(row.get(col)):
-                    needs_llm = True
-                    break
+        used_llm = False
         if needs_llm and (max_llm_calls is None or llm_calls < max_llm_calls):
-            fp = description_fingerprint(desc[:max_chars])
             if fp in cache:
                 extract = cache[fp]
             else:
@@ -339,10 +427,17 @@ def enrich_frame_listing_attrs(
                 )
                 cache[fp] = extract
                 llm_calls += 1
+            used_llm = True
         rows.append(merge_structured_and_extract(structured, extract))
+        if used_llm:
+            fps.append(fp)
+        else:
+            prior = structured.get("attr_extract_fp")
+            fps.append(prior if not _is_missing(prior) else pd.NA)
     attrs = pd.DataFrame(rows, index=out.index)
     for col in attrs.columns:
         out[col] = attrs[col]
+    out["attr_extract_fp"] = fps
     logger.info(
         "Listing attrs enriched · llm_calls=%s · rows=%s",
         llm_calls,

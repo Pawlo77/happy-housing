@@ -27,7 +27,12 @@ def _nav(page: Page, label: str) -> None:
 
 
 def _tab(page: Page, label: str) -> None:
-    page.get_by_role("tab", name=label).first.click()
+    tab = page.get_by_role("tab", name=label).first
+    tab.scroll_into_view_if_needed()
+    try:
+        tab.click(timeout=15_000)
+    except Exception:
+        tab.click(force=True, timeout=15_000)
     page.wait_for_timeout(2500)
 
 

@@ -34,6 +34,7 @@ class FilterState:
     has_balcony: str = "(all)"
     has_garden: str = "(all)"
     has_terrace: str = "(all)"
+    has_lift: str = "(all)"
     is_attic: str = "(all)"
     needs_renovation: str = "(all)"
     plumbing_replaced: str = "(all)"
@@ -119,6 +120,7 @@ def apply_filters(
         has_balcony=state.has_balcony,
         has_garden=state.has_garden,
         has_terrace=state.has_terrace,
+        has_lift=state.has_lift,
         is_attic=state.is_attic,
         needs_renovation=state.needs_renovation,
         plumbing_replaced=state.plumbing_replaced,

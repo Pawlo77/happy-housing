@@ -74,3 +74,84 @@ def test_merge_prefers_structured_over_extract() -> None:
     assert merged["plumbing_replaced"] == 1
     assert merged["wiring_replaced"] == 0
     assert merged["year_renovated"] == 2015
+
+
+def test_merge_without_extract_preserves_prior_desc_fields() -> None:
+    structured = {
+        "estate": "FLAT",
+        "has_basement": 1,
+        "ownership": "full",
+        "plumbing_replaced": 1,
+        "wiring_replaced": 0,
+        "year_renovated": 2018,
+    }
+    merged = merge_structured_and_extract(structured, None)
+    assert merged["plumbing_replaced"] == 1
+    assert merged["wiring_replaced"] == 0
+    assert merged["year_renovated"] == 2018
+    assert merged["ownership"] == "full"
+    assert merged["has_basement"] == 1
+
+
+def test_row_needs_attr_llm_skips_when_fingerprint_matches() -> None:
+    from happy_housing.app.attr_extract import (
+        description_fingerprint,
+        row_needs_attr_llm,
+    )
+
+    desc = "Wymieniona instalacja wodna i elektryczna, piwnica."
+    fp = description_fingerprint(desc[:900])
+    row = {
+        "description": desc,
+        "ownership": "full",
+        "has_basement": 1,
+        "has_outdoor_parking": 0,
+        "is_attic": 0,
+        "object_type": "flat",
+        "plumbing_replaced": None,
+        "wiring_replaced": None,
+        "year_renovated": None,
+        "attr_extract_fp": fp,
+    }
+    cols = set(row) | {
+        "plumbing_replaced",
+        "wiring_replaced",
+        "year_renovated",
+        "attr_extract_fp",
+    }
+    assert row_needs_attr_llm(row, cols, desc_fingerprint=fp) is False
+
+
+def test_row_needs_attr_llm_when_ownership_missing() -> None:
+    from happy_housing.app.attr_extract import row_needs_attr_llm
+
+    row = {
+        "description": "Mieszkanie z balkonem",
+        "has_basement": 0,
+        "has_outdoor_parking": 0,
+        "is_attic": 0,
+        "object_type": "flat",
+    }
+    assert row_needs_attr_llm(row, set(row), desc_fingerprint="abc") is True
+
+
+def test_enrich_frame_without_llm_keeps_plumbing() -> None:
+    import pandas as pd
+
+    from happy_housing.app.attr_extract import enrich_frame_listing_attrs
+
+    frame = pd.DataFrame({
+        "estate": ["FLAT"],
+        "description": ["desc"],
+        "has_basement": [1],
+        "has_outdoor_parking": [0],
+        "is_attic": [0],
+        "ownership": ["full"],
+        "plumbing_replaced": [1],
+        "wiring_replaced": [0],
+        "year_renovated": [2019],
+        "attr_extract_fp": ["already"],
+    })
+    out = enrich_frame_listing_attrs(frame, use_llm=False)
+    assert int(out.iloc[0]["plumbing_replaced"]) == 1
+    assert int(out.iloc[0]["wiring_replaced"]) == 0
