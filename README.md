@@ -72,11 +72,12 @@ Tunables: Admin → Stats (including SHAP sample size).
 
 ### Admin
 
-Tabbed settings (General · AI / LM Studio · Stars & News · Recommendations · Pipeline) — scrape, retrain, clear caches/memory. No raw JSON dump.
+Left section list (Overview · Commute · Run · Sources · …) — one short panel at
+a time for scrape, retrain, AI, and memory. No raw JSON dump.
 
-![Admin — General](docs/screenshots/09-admin.png)
+![Admin — Overview](docs/screenshots/09-admin.png)
 
-![Admin — AI / LM Studio](docs/screenshots/10-admin-settings.png)
+![Admin — Stats](docs/screenshots/10-admin-settings.png)
 
 Refresh screenshots after UI changes (app must be running):
 
