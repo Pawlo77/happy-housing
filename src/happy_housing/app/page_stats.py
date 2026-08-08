@@ -50,6 +50,7 @@ from happy_housing.app.stats_insights import (
     transit_price_curve,
     year_paradox,
 )
+from happy_housing.app.ui_help import STATS_FILTER_HELP
 
 logger = logging.getLogger(__name__)
 
@@ -94,28 +95,33 @@ def _sidebar_filters(frame: pd.DataFrame) -> StatsFilterState:
         options=districts,
         default=[],
         key="stats_districts",
+        help=STATS_FILTER_HELP["districts"],
     )
     picked_sources = st.sidebar.multiselect(
         "Sources",
         options=sources,
         default=[],
         key="stats_sources",
+        help=STATS_FILTER_HELP["sources"],
     )
     picked_months = st.sidebar.multiselect(
         "Listed months",
         options=months,
         default=[],
         key="stats_months",
+        help=STATS_FILTER_HELP["months"],
     )
     valuation = st.sidebar.selectbox(
         "Valuation",
         options=["(all)", "underpriced", "overpriced"],
         key="stats_valuation",
+        help=STATS_FILTER_HELP["valuation"],
     )
     oou = st.sidebar.selectbox(
         "Aircraft Lden ≥ 55 dB",
         options=["(all)", "inside", "outside"],
         key="stats_oou",
+        help=STATS_FILTER_HELP["oou"],
     )
     price_range = st.sidebar.slider(
         "Listing zł/m²",
@@ -123,6 +129,7 @@ def _sidebar_filters(frame: pd.DataFrame) -> StatsFilterState:
         max_value=float(max(ppm_max, ppm_min + 1.0)),
         value=(float(ppm_min), float(ppm_max)),
         key="stats_price",
+        help=STATS_FILTER_HELP["price"],
     )
     area_range = st.sidebar.slider(
         "Area m²",
@@ -130,6 +137,7 @@ def _sidebar_filters(frame: pd.DataFrame) -> StatsFilterState:
         max_value=float(max(area_hi, area_lo + 1.0)),
         value=(float(area_lo), float(area_hi)),
         key="stats_area",
+        help=STATS_FILTER_HELP["area"],
     )
     rooms_range = st.sidebar.slider(
         "Rooms",
@@ -137,6 +145,7 @@ def _sidebar_filters(frame: pd.DataFrame) -> StatsFilterState:
         max_value=int(max(rooms_hi, rooms_lo)),
         value=(int(rooms_lo), int(rooms_hi)),
         key="stats_rooms",
+        help=STATS_FILTER_HELP["rooms"],
     )
 
     return StatsFilterState(

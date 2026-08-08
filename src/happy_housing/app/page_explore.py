@@ -113,6 +113,13 @@ from happy_housing.app.stars import (
     stars_path,
     toggle_star,
 )
+from happy_housing.app.ui_help import (
+    BASEMAP_HELP,
+    FILTER_HELP,
+    PREF_HELP,
+    SPATIAL_METRIC_HELP,
+    layer_help,
+)
 from happy_housing.ingest.otodom import fetch_listing_detail, otodom_session
 from happy_housing.models.train import build_feature_matrix
 
@@ -177,17 +184,19 @@ def _sidebar_filters(frame: pd.DataFrame) -> tuple[FilterState, bool]:
     district = st.sidebar.selectbox(
         "District",
         ["(all)", *districts],
+        help=FILTER_HELP["district"],
         key="explore_district",
     )
     source = st.sidebar.selectbox(
         "Source",
         ["(all)", *sources],
+        help=FILTER_HELP["source"],
         key="explore_source",
     )
     oou = st.sidebar.selectbox(
         "Aircraft Lden ≥ 55 dB",
         ["(all)", "inside", "outside"],
-        help="EEA END major-airport Lden band (≥55 dB). Binary filter on exposure.",
+        help=FILTER_HELP["oou"],
         key="explore_oou",
     )
     max_ppm = st.sidebar.slider(
@@ -195,6 +204,7 @@ def _sidebar_filters(frame: pd.DataFrame) -> tuple[FilterState, bool]:
         min_value=ppm_min,
         max_value=max(ppm_max, ppm_min + 1),
         value=max(ppm_max, ppm_min + 1),
+        help=FILTER_HELP["max_ppm"],
         key="explore_max_ppm",
     )
     month = "(all)"
@@ -203,6 +213,7 @@ def _sidebar_filters(frame: pd.DataFrame) -> tuple[FilterState, bool]:
             "Listed month",
             options=["(all)", *months],
             value="(all)",
+            help=FILTER_HELP["month"],
             key="explore_month",
         )
     starred_only = st.sidebar.checkbox(
@@ -234,6 +245,7 @@ def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
             "Basemap",
             options=["Streets", "Satellite"],
             default="Streets",
+            help=BASEMAP_HELP,
             key="explore_basemap",
         )
         or "Streets"
@@ -247,39 +259,82 @@ def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
             format="%02d:00",
             help=(
                 "Filters GTFS departures by hour and scales the traffic-intensity "
-                "proxy (typical diurnal curve — not live vehicle counts)."
+                "proxy (typical diurnal curve — not live vehicle counts). "
+                "Peak hours ≈ noisier corridors for living comfort."
             ),
             key="explore_hour",
         )
     )
-    st.sidebar.caption("Toggle overlays. Hover any pin for details.")
+    st.sidebar.caption(
+        "Toggle overlays (hover ? for what / price / livability). "
+        "Hover map pins for details."
+    )
     flags = LayerFlags(
         offers=st.sidebar.checkbox(
-            "Offers (Δ price)", value=True, key="explore_ly_offers"
+            "Offers (Δ price)",
+            value=True,
+            help=layer_help("offers"),
+            key="explore_ly_offers",
         ),
         oou=st.sidebar.checkbox(
-            "Aircraft Lden contours", value=True, key="explore_ly_oou"
+            "Aircraft Lden contours",
+            value=True,
+            help=layer_help("oou"),
+            key="explore_ly_oou",
         ),
         transit=st.sidebar.checkbox(
-            "Public transport (GTFS)", value=False, key="explore_ly_transit"
+            "Public transport (GTFS)",
+            value=False,
+            help=layer_help("transit"),
+            key="explore_ly_transit",
         ),
         traffic=st.sidebar.checkbox(
-            "Traffic intensity proxy", value=False, key="explore_ly_traffic"
+            "Traffic intensity proxy",
+            value=False,
+            help=layer_help("traffic"),
+            key="explore_ly_traffic",
         ),
-        shops=st.sidebar.checkbox("Shops", value=False, key="explore_ly_shops"),
+        shops=st.sidebar.checkbox(
+            "Shops",
+            value=False,
+            help=layer_help("shops"),
+            key="explore_ly_shops",
+        ),
         hospitals=st.sidebar.checkbox(
-            "Hospitals", value=False, key="explore_ly_hospitals"
+            "Hospitals",
+            value=False,
+            help=layer_help("hospitals"),
+            key="explore_ly_hospitals",
         ),
         fire_stations=st.sidebar.checkbox(
-            "Fire stations", value=False, key="explore_ly_fire"
+            "Fire stations",
+            value=False,
+            help=layer_help("fire_stations"),
+            key="explore_ly_fire",
         ),
-        police=st.sidebar.checkbox("Police", value=False, key="explore_ly_police"),
+        police=st.sidebar.checkbox(
+            "Police",
+            value=False,
+            help=layer_help("police"),
+            key="explore_ly_police",
+        ),
         air=st.sidebar.checkbox(
-            "Air-quality stations", value=False, key="explore_ly_air"
+            "Air-quality stations",
+            value=False,
+            help=layer_help("air"),
+            key="explore_ly_air",
         ),
-        gunb=st.sidebar.checkbox("GUNB permits", value=False, key="explore_ly_gunb"),
+        gunb=st.sidebar.checkbox(
+            "GUNB permits",
+            value=False,
+            help=layer_help("gunb"),
+            key="explore_ly_gunb",
+        ),
         commute_target=st.sidebar.checkbox(
-            "Commute target", value=False, key="explore_ly_commute"
+            "Commute target",
+            value=False,
+            help=layer_help("commute_target"),
+            key="explore_ly_commute",
         ),
     )
     return flags, hour, basemap
@@ -359,11 +414,14 @@ def _tab_spatial(
     )
     labels = [m.label for m in SPATIAL_METRICS]
     keys = [m.key for m in SPATIAL_METRICS]
+    prev_label = st.session_state.get("explore_spatial_metric", labels[0])
+    prev_key = keys[labels.index(str(prev_label))] if prev_label in labels else keys[0]
     choice = st.selectbox(
         "Spatial metric",
         options=labels,
         index=0,
         key="explore_spatial_metric",
+        help=SPATIAL_METRIC_HELP[prev_key],
     )
     metric_key = keys[labels.index(str(choice))]
     metric = get_spatial_metric(metric_key)
@@ -371,7 +429,10 @@ def _tab_spatial(
         "Show hex elevation (3D)",
         value=False,
         key="explore_spatial_hex",
-        help="Extruded hex bins weighted by the same metric (listing metrics only).",
+        help=(
+            "Extrude hex bins by the same metric weight. Listing metrics only — "
+            "disabled for traffic proxy. Visual density ≠ price change by itself."
+        ),
         disabled=metric_key == "traffic",
     )
 
@@ -384,7 +445,7 @@ def _tab_spatial(
         f"{headline:,.0f}" if headline == headline else "—",
     )
     k3.metric("Districts ranked", f"{int(kpis['districts']):,}")
-    st.caption(metric.blurb)
+    st.caption(SPATIAL_METRIC_HELP.get(metric_key, metric.blurb))
 
     map_col, chart_col = st.columns([1.35, 1.0], gap="large")
     with map_col:
@@ -444,17 +505,7 @@ def _tab_spatial(
                 )
 
     st.subheader("How to read this")
-    tips = {
-        "price_ppm": "Warm = high asking zł/m². Cross-check with Bargain heat.",
-        "listing_density": "Warm = many open asks. Inventory pressure, not sales.",
-        "sold_density": "RCN-only points — closed deals, not Otodom asks.",
-        "avg_area": "Warm = larger floor plates in that pocket.",
-        "popularity": "Newer listed_month values weigh more (fresh inventory).",
-        "commute": "Warm = shorter modelled commute to Daszyńskiego.",
-        "bargain": "Warm = more negative listing - model residual.",
-        "traffic": "Warm = higher diurnal road activity proxy at the selected hour.",
-    }
-    st.markdown(tips.get(metric_key, metric.blurb))
+    st.markdown(SPATIAL_METRIC_HELP.get(metric_key, metric.blurb))
 
 
 @st.cache_data(show_spinner=False)  # type: ignore[misc]
@@ -1002,6 +1053,7 @@ def _tab_prefs(
         "Apply preferences to Map/Board",
         value=prefs.enabled,
         key="prefs_enabled",
+        help=PREF_HELP["enabled"],
     )
     districts_default = sorted({
         str(d) for d in frame.get("district", pd.Series(dtype=str)).dropna().unique()
@@ -1014,12 +1066,14 @@ def _tab_prefs(
         options=districts_default,
         default=[d for d in prefs.districts if d in districts_default],
         key="prefs_districts",
+        help=PREF_HELP["districts"],
     )
     sources = st.multiselect(
         "Sources",
         options=sources_default,
         default=[s for s in prefs.sources if s in sources_default],
         key="prefs_sources",
+        help=PREF_HELP["sources"],
     )
     oou_labels = {
         OOU_ANY: "Any noise contour",
@@ -1034,6 +1088,7 @@ def _tab_prefs(
         options=[oou_labels[k] for k in oou_keys],
         index=oou_idx,
         key="prefs_oou",
+        help=PREF_HELP["oou"],
     )
     oou = oou_keys[[oou_labels[k] for k in oou_keys].index(str(oou_label))]
 
@@ -1045,6 +1100,7 @@ def _tab_prefs(
             value=float(prefs.min_price_pln or 0.0),
             step=10_000.0,
             key="prefs_min_price",
+            help=PREF_HELP["min_price"],
         )
         max_price = st.number_input(
             "Max price PLN",
@@ -1052,6 +1108,7 @@ def _tab_prefs(
             value=float(prefs.max_price_pln or 0.0),
             step=10_000.0,
             key="prefs_max_price",
+            help=PREF_HELP["max_price"],
         )
         min_ppm = st.number_input(
             "Min zł/m²",
@@ -1059,6 +1116,7 @@ def _tab_prefs(
             value=float(prefs.min_price_per_m2 or 0.0),
             step=500.0,
             key="prefs_min_ppm",
+            help=PREF_HELP["min_ppm"],
         )
         max_ppm = st.number_input(
             "Max zł/m²",
@@ -1066,6 +1124,7 @@ def _tab_prefs(
             value=float(prefs.max_price_per_m2 or 0.0),
             step=500.0,
             key="prefs_max_ppm",
+            help=PREF_HELP["max_ppm"],
         )
     with c2:
         min_area = st.number_input(
@@ -1074,6 +1133,7 @@ def _tab_prefs(
             value=float(prefs.min_area_m2 or 0.0),
             step=1.0,
             key="prefs_min_area",
+            help=PREF_HELP["min_area"],
         )
         max_area = st.number_input(
             "Max area m²",
@@ -1081,6 +1141,7 @@ def _tab_prefs(
             value=float(prefs.max_area_m2 or 0.0),
             step=1.0,
             key="prefs_max_area",
+            help=PREF_HELP["max_area"],
         )
         min_rooms = st.number_input(
             "Min rooms",
@@ -1088,6 +1149,7 @@ def _tab_prefs(
             value=int(prefs.min_rooms or 0),
             step=1,
             key="prefs_min_rooms",
+            help=PREF_HELP["min_rooms"],
         )
         max_rooms = st.number_input(
             "Max rooms",
@@ -1095,6 +1157,7 @@ def _tab_prefs(
             value=int(prefs.max_rooms or 0),
             step=1,
             key="prefs_max_rooms",
+            help=PREF_HELP["max_rooms"],
         )
     with c3:
         min_year = st.number_input(
@@ -1103,6 +1166,7 @@ def _tab_prefs(
             value=int(prefs.min_year_built or 0),
             step=1,
             key="prefs_min_year",
+            help=PREF_HELP["min_year"],
         )
         max_commute = st.number_input(
             "Max commute min",
@@ -1110,6 +1174,7 @@ def _tab_prefs(
             value=float(prefs.max_commute_min or 0.0),
             step=1.0,
             key="prefs_max_commute",
+            help=PREF_HELP["max_commute"],
         )
         max_transit = st.number_input(
             "Max transit m",
@@ -1117,6 +1182,7 @@ def _tab_prefs(
             value=float(prefs.max_dist_transit_m or 0.0),
             step=50.0,
             key="prefs_max_transit",
+            help=PREF_HELP["max_transit"],
         )
         max_delta = st.number_input(
             "Max delta zł/m²",
@@ -1128,12 +1194,13 @@ def _tab_prefs(
             ),
             step=50.0,
             key="prefs_max_delta",
-            help="0 = fair or better; leave 0 and uncheck underpriced for no cap.",
+            help=PREF_HELP["max_delta"],
         )
     require_under = st.checkbox(
         "Require underpriced (delta < 0)",
         value=prefs.require_underpriced,
         key="prefs_require_under",
+        help=PREF_HELP["require_under"],
     )
     d1, d2, d3 = st.columns(3)
     with d1:
@@ -1143,6 +1210,7 @@ def _tab_prefs(
             value=float(prefs.max_dist_hospital_m or 0.0),
             step=100.0,
             key="prefs_max_hospital",
+            help=PREF_HELP["max_hospital"],
         )
         max_fire = st.number_input(
             "Max fire station m",
@@ -1150,6 +1218,7 @@ def _tab_prefs(
             value=float(prefs.max_dist_fire_m or 0.0),
             step=100.0,
             key="prefs_max_fire",
+            help=PREF_HELP["max_fire"],
         )
     with d2:
         max_police = st.number_input(
@@ -1158,6 +1227,7 @@ def _tab_prefs(
             value=float(prefs.max_dist_police_m or 0.0),
             step=100.0,
             key="prefs_max_police",
+            help=PREF_HELP["max_police"],
         )
         max_air = st.number_input(
             "Max air station m",
@@ -1165,6 +1235,7 @@ def _tab_prefs(
             value=float(prefs.max_dist_air_m or 0.0),
             step=100.0,
             key="prefs_max_air",
+            help=PREF_HELP["max_air"],
         )
     with d3:
         max_gunb = st.number_input(
@@ -1173,6 +1244,7 @@ def _tab_prefs(
             value=float(prefs.max_dist_gunb_m or 0.0),
             step=100.0,
             key="prefs_max_gunb",
+            help=PREF_HELP["max_gunb"],
         )
 
     nl_text = st.text_area(
