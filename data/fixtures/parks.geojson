@@ -1,0 +1,37 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "name": "Park Testowy Wola" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [20.97, 52.23],
+            [20.98, 52.23],
+            [20.98, 52.235],
+            [20.97, 52.235],
+            [20.97, 52.23]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Skwer Testowy Centrum" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [21.00, 52.225],
+            [21.01, 52.225],
+            [21.01, 52.23],
+            [21.00, 52.23],
+            [21.00, 52.225]
+          ]
+        ]
+      }
+    }
+  ]
+}

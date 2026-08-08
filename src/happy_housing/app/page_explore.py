@@ -41,6 +41,7 @@ from happy_housing.app.data import (
     load_gtfs_hourly,
     load_gtfs_stops,
     load_gunb_points,
+    load_parks,
     load_scored,
     load_shap_bundle,
     load_shops,
@@ -330,6 +331,12 @@ def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
             help=layer_help("gunb"),
             key="explore_ly_gunb",
         ),
+        parks=st.sidebar.checkbox(
+            "Parks & squares (UM)",
+            value=False,
+            help=layer_help("parks"),
+            key="explore_ly_parks",
+        ),
         commute_target=st.sidebar.checkbox(
             "Commute target",
             value=False,
@@ -351,6 +358,7 @@ def _tab_map(
     traffic_sample: pd.DataFrame,
     air_stations: pd.DataFrame,
     gunb: pd.DataFrame,
+    parks: gpd.GeoDataFrame,
     flags: LayerFlags,
     hour: int,
     basemap: str,
@@ -362,6 +370,7 @@ def _tab_map(
         "Offers: green = model says underpriced, red = overpriced. "
         "Transit uses real GTFS departures at the selected hour. "
         "Traffic is a diurnal mobility proxy (not live sensors). "
+        "Parks from UM Warszawa PLACE_SKWERY (testmapa). "
         "Lden bands from EEA END major-airport contours. Hover pins for details."
     )
     if filtered.empty and flags.offers:
@@ -377,6 +386,7 @@ def _tab_map(
         traffic_sample=traffic_sample,
         air_stations=air_stations,
         gunb=gunb,
+        parks=parks,
         commute_lon=commute_lon,
         commute_lat=commute_lat,
         hour=hour,
@@ -656,6 +666,7 @@ def _tab_offer(
     traffic_sample: pd.DataFrame,
     air_stations: pd.DataFrame,
     gunb: pd.DataFrame,
+    parks: gpd.GeoDataFrame,
     flags: LayerFlags,
     hour: int,
     basemap: str,
@@ -757,6 +768,7 @@ def _tab_offer(
             traffic_sample=traffic_sample,
             air_stations=air_stations,
             gunb=gunb,
+            parks=parks,
             commute_lon=commute_lon,
             commute_lat=commute_lat,
             hour=hour,
@@ -1246,6 +1258,14 @@ def _tab_prefs(
             key="prefs_max_gunb",
             help=PREF_HELP["max_gunb"],
         )
+        max_park = st.number_input(
+            "Max park m",
+            min_value=0.0,
+            value=float(prefs.max_dist_park_m or 0.0),
+            step=50.0,
+            key="prefs_max_park",
+            help=PREF_HELP["max_park"],
+        )
 
     nl_text = st.text_area(
         "Natural-language preferences",
@@ -1281,6 +1301,7 @@ def _tab_prefs(
                 max_dist_police_m=_opt_num(max_police),
                 max_dist_air_m=_opt_num(max_air),
                 max_dist_gunb_m=_opt_num(max_gunb),
+                max_dist_park_m=_opt_num(max_park),
                 max_delta_price_per_m2=max_delta_val,
                 require_underpriced=bool(require_under),
                 nl_text=str(nl_text or ""),
@@ -1365,6 +1386,7 @@ def render_explore() -> None:
     traffic_sample = load_traffic_sample()
     air_stations = load_gios_stations()
     gunb = load_gunb_points()
+    parks = load_parks()
 
     if "explore_section" not in st.session_state:
         st.session_state["explore_section"] = "Map"
@@ -1377,6 +1399,7 @@ def render_explore() -> None:
         "traffic_sample": traffic_sample,
         "air_stations": air_stations,
         "gunb": gunb,
+        "parks": parks,
         "flags": flags,
         "hour": hour,
         "basemap": basemap,

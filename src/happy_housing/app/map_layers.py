@@ -61,6 +61,8 @@ class LayerFlags:
     """GIOŚ air-quality stations."""
     gunb: bool = False
     """GUNB construction / permit points."""
+    parks: bool = False
+    """UM Warszawa parks / squares (PLACE_SKWERY)."""
     commute_target: bool = False
     """Rondo Daszyńskiego commute target."""
 

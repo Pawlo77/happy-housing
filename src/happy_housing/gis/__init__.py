@@ -328,10 +328,11 @@ def enrich_listings(
     commute_lon: float,
     commute_lat: float,
     gunb_points: gpd.GeoDataFrame | None = None,
+    parks: gpd.GeoDataFrame | None = None,
     aircraft_lden_path: Path | None = None,
     aircraft_lnight_path: Path | None = None,
 ) -> gpd.GeoDataFrame:
-    """Attach aircraft noise, amenity, air, transit, GUNB, and commute features."""
+    """Attach noise, amenity, park, air, transit, GUNB, commute features."""
     gdf = listings_to_gdf(listings)
     lden = (
         load_noise_contours(aircraft_lden_path, "lden_db")
@@ -360,6 +361,11 @@ def enrich_listings(
         else:
             subset = amenities.iloc[0:0]
         gdf = nearest_distance_meters(gdf, subset, projected_crs, col)
+
+    if parks is not None and not parks.empty:
+        gdf = nearest_distance_meters(gdf, parks, projected_crs, "dist_park_m")
+    else:
+        gdf["dist_park_m"] = float("nan")
 
     if not gios_stations.empty:
         air = gpd.GeoDataFrame(

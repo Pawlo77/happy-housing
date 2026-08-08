@@ -129,6 +129,17 @@ def load_amenities() -> gpd.GeoDataFrame:
     return _read_amenities(str(cache), str(fixture), max(mtimes, default=0.0))
 
 
+def load_parks() -> gpd.GeoDataFrame:
+    """Load UM Warszawa PLACE_SKWERY parks from cache or fixture."""
+    config = load_config()
+    cache = config.data.cache_path() / "warsaw_parks.geojson"
+    fixture = config.data.fixtures_path() / "parks.geojson"
+    for path in (cache, fixture):
+        if path.exists():
+            return read_geojson_gdf(str(path), path.stat().st_mtime)
+    return gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
+
+
 def load_aircraft_lden() -> gpd.GeoDataFrame | None:
     """Load Chopin aircraft Lden contour bands when present."""
     path = load_config().data.fixtures_path() / "chopin_aircraft_lden.geojson"

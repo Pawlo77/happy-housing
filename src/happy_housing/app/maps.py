@@ -157,6 +157,49 @@ def amenity_layers(
     return layers
 
 
+def parks_layer(parks: gpd.GeoDataFrame | None) -> pdk.Layer | None:
+    """UM Warszawa PLACE_SKWERY park / square polygons."""
+    if parks is None or parks.empty:
+        return None
+    work = parks.copy()
+    if work.crs is not None and str(work.crs) != "EPSG:4326":
+        work = work.to_crs("EPSG:4326")
+    records: list[dict[str, Any]] = []
+    for _, row in work.iterrows():
+        geom = row.geometry
+        if geom is None or geom.is_empty:
+            continue
+        name = (
+            str(row["name"]) if "name" in work.columns and row.get("name") else "Park"
+        )
+        polys = (
+            [geom] if geom.geom_type == "Polygon" else list(getattr(geom, "geoms", []))
+        )
+        for poly in polys:
+            if poly.geom_type != "Polygon":
+                continue
+            coords = [[float(x), float(y)] for x, y in poly.exterior.coords]
+            records.append({
+                "coordinates": [coords],
+                "fill_color": [34, 139, 34, 70],
+                "line_color": [20, 100, 20, 200],
+                "tooltip_name": name,
+                "tooltip_detail": "UM Warszawa PLACE_SKWERY (testmapa parks/squares)",
+            })
+    if not records:
+        return None
+    return pdk.Layer(
+        "PolygonLayer",
+        data=records,
+        get_polygon="coordinates",
+        get_fill_color="fill_color",
+        get_line_color="line_color",
+        line_width_min_pixels=1,
+        pickable=True,
+        id="warsaw-parks",
+    )
+
+
 def aircraft_noise_layers(
     lden: gpd.GeoDataFrame | None,
 ) -> list[pdk.Layer]:
@@ -463,6 +506,7 @@ def build_explore_layers(
     traffic_sample: pd.DataFrame,
     air_stations: pd.DataFrame,
     gunb: pd.DataFrame,
+    parks: gpd.GeoDataFrame | None,
     commute_lon: float,
     commute_lat: float,
     hour: int,
@@ -471,6 +515,10 @@ def build_explore_layers(
     layers: list[pdk.Layer] = []
     if flags.oou:
         layers.extend(aircraft_noise_layers(oou))
+    if flags.parks:
+        park_layer = parks_layer(parks)
+        if park_layer is not None:
+            layers.append(park_layer)
     if flags.traffic:
         heat = traffic_heatmap_layer(traffic_sample, hour=hour)
         if heat is not None:

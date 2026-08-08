@@ -75,6 +75,7 @@ def livability_rows(row: pd.Series) -> pd.DataFrame:
         ("dist_police_m", "Nearest police", "m"),
         ("dist_air_station_m", "Nearest air station", "m"),
         ("dist_gunb_m", "Nearest GUNB permit", "m"),
+        ("dist_park_m", "Nearest park / square", "m"),
         ("dist_daszynskiego_m", "Distance to Daszyńskiego", "m"),
     )
     out: list[dict[str, Any]] = []

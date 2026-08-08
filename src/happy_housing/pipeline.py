@@ -37,6 +37,7 @@ from happy_housing.ingest import (
 from happy_housing.ingest.gunb import download_gunb_mazowieckie, gunb_points_gdf
 from happy_housing.ingest.otodom import scrape_otodom_warsaw
 from happy_housing.ingest.rcn import extract_rcn_transactions
+from happy_housing.ingest.warsaw_map import fetch_warsaw_parks
 from happy_housing.models.metrics import coerce_opt_metric
 from happy_housing.models.neighborhood import attach_neighborhood_rcn_features
 from happy_housing.models.train import (
@@ -238,6 +239,11 @@ def run_pipeline(
     else:
         amenities = load_amenity_points(fixtures / "amenities.json")
 
+    parks = fetch_warsaw_parks(
+        cache,
+        fixture_path=fixtures / "parks.geojson",
+    )
+
     enriched = enrich_listings(
         listings,
         projected_crs=config.bbox.projected_crs,
@@ -247,6 +253,7 @@ def run_pipeline(
         commute_lon=config.commute_target_lon,
         commute_lat=config.commute_target_lat,
         gunb_points=gunb,
+        parks=parks,
         aircraft_lden_path=fixtures / "chopin_aircraft_lden.geojson",
         aircraft_lnight_path=fixtures / "chopin_aircraft_lnight.geojson",
     )

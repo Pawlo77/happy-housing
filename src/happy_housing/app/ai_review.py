@@ -74,6 +74,7 @@ _PROXIMITY_KEYS: tuple[tuple[str, str], ...] = (
     ("dist_daszynskiego_m", "Distance to Daszyńskiego (m)"),
     ("dist_transit_stop_m", "Nearest transit stop (m)"),
     ("dist_metro_m", "Nearest metro (m)"),
+    ("dist_park_m", "Nearest park / square (m)"),
     ("dist_hospital_m", "Nearest hospital (m)"),
     ("dist_fire_station_m", "Nearest fire station (m)"),
     ("dist_police_m", "Nearest police (m)"),

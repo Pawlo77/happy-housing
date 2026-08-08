@@ -115,9 +115,16 @@ DEFAULT_SOURCE_CATALOG: tuple[DataSource, ...] = (
     DataSource(
         name="OpenStreetMap / OSMnx amenities",
         url="https://www.openstreetmap.org/",
-        role="Hospital, fire, and police amenity distances.",
+        role="Hospital, fire, police, shops, and other amenity distances.",
         key="osm",
         unit="amenities",
+    ),
+    DataSource(
+        name="UM Warszawa PLACE_SKWERY (testmapa WFS)",
+        url="https://testmapa.um.warszawa.pl/",
+        role="Official parks and squares — nearest-park distance (dist_park_m).",
+        key="warsaw_parks",
+        unit="parks",
     ),
     DataSource(
         name="ZTM Warsaw GTFS via mkuran.pl",

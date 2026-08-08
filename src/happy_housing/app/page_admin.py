@@ -581,6 +581,11 @@ def _tab_pipeline() -> None:
     use_osm = st.checkbox(
         "Fetch OSM amenities + shops (else fixture/cache)", value=True
     )
+    st.caption(
+        "Pipeline also downloads UM Warszawa PLACE_SKWERY parks "
+        "(testmapa WFS → dist_park_m). Strategic road/rail noise on testmapa "
+        "is WMS-only for now — aircraft Lden still from EEA END."
+    )
     if st.button(
         "Run pipeline (enrich + train + score)", type="primary", key="run_pipe"
     ):

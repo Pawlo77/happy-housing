@@ -56,6 +56,11 @@ LAYER_HELP: dict[str, str] = {
         "construction disruption now or future supply — can hurt short-term "
         "livability; dist_gunb_m is a model feature."
     ),
+    "parks": (
+        "UM Warszawa PLACE_SKWERY parks & squares (same layer as testmapa). "
+        "Closer green space raises day-to-day livability and often supports "
+        "price; dist_park_m is a model feature and Prefs can cap max distance."
+    ),
     "commute_target": (
         "Fixed commute destination (Rondo Daszyńskiego). "
         "Reference for commute minutes / dist_daszynskiego_m — shorter trips "
@@ -165,6 +170,10 @@ PREF_HELP: dict[str, str] = {
     "max_gunb": (
         "Max metres to GUNB permit. Avoid dense construction if you want "
         "quieter living; model uses dist_gunb_m."
+    ),
+    "max_park": (
+        "Max metres to nearest UM park/square (PLACE_SKWERY). Closer greenery "
+        "improves livability; model uses dist_park_m."
     ),
 }
 """Explore Prefs form field help texts."""
