@@ -65,6 +65,7 @@ def test_normalize_search_item_maps_price_and_rooms() -> None:
 class _FakeResponse:
     def __init__(self, html: str) -> None:
         self.text = html
+        self.status_code = 200
 
     def raise_for_status(self) -> None:
         return None

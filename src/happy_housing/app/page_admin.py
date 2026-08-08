@@ -505,6 +505,15 @@ def _tab_pipeline() -> None:
         value=True,
         help="Uses every search page Otodom reports. Rate-limited; can take hours.",
     )
+    incremental = st.checkbox(
+        "Incremental (new/updated only)",
+        value=True,
+        help=(
+            "Sort newest-first, stop once known pages repeat, skip unchanged "
+            "detail fetches, merge into existing parquet."
+        ),
+        key="otodom_incremental",
+    )
     max_pages = None
     max_listings = None
     if not download_all:
@@ -518,6 +527,7 @@ def _tab_pipeline() -> None:
         out_path = processed_dir() / "otodom_listings.parquet"
         pages_arg = "None" if max_pages is None else str(int(max_pages))
         listings_arg = "None" if max_listings is None else str(int(max_listings))
+        incr_arg = "True" if incremental else "False"
         cmd = [
             sys.executable,
             "-c",
@@ -527,14 +537,17 @@ def _tab_pipeline() -> None:
                 "from happy_housing.ingest.otodom import scrape_otodom_warsaw; "
                 "configure_logging(); "
                 f"scrape_otodom_warsaw(Path({str(out_path)!r}), "
-                f"max_pages={pages_arg}, max_listings={listings_arg})"
+                f"max_pages={pages_arg}, max_listings={listings_arg}, "
+                f"incremental={incr_arg})"
             ),
         ]
         logger.info(
-            "Admin starting Otodom scrape → %s (max_pages=%s max_listings=%s)",
+            "Admin starting Otodom scrape → %s (max_pages=%s max_listings=%s "
+            "incremental=%s)",
             out_path,
             pages_arg,
             listings_arg,
+            incr_arg,
         )
         with st.spinner("Scraping Otodom (full run may take hours)…"):
             try:

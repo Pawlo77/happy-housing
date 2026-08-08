@@ -22,6 +22,7 @@ def test_load_default_experiment_yaml() -> None:
     assert config.bbox.west < config.bbox.east
     assert config.ingest.otodom_max_pages is None
     assert config.ingest.otodom_max_listings is None
+    assert config.ingest.otodom_incremental is True
     assert config.ingest.rcn_max_rows is None
     assert "wynik_mazowieckie.zip" in config.ingest_urls.gunb_zip
     assert config.logging.level == "INFO"

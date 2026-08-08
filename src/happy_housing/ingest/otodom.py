@@ -8,7 +8,7 @@ import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 from urllib.parse import urlencode
 
 import pandas as pd
@@ -26,6 +26,35 @@ _USER_AGENT = (
 
 _SEARCH_URL = "https://www.otodom.pl/pl/wyniki/sprzedaz/mieszkanie/mazowieckie/warszawa"
 """Warsaw flat-sale search base URL."""
+
+DEFAULT_CONNECT_TIMEOUT_S: Final[float] = 10.0
+"""TCP connect timeout for Otodom HTTP calls."""
+
+DEFAULT_READ_TIMEOUT_S: Final[float] = 60.0
+"""Read timeout for Otodom HTTP calls."""
+
+DEFAULT_TIMEOUT: Final[tuple[float, float]] = (
+    DEFAULT_CONNECT_TIMEOUT_S,
+    DEFAULT_READ_TIMEOUT_S,
+)
+"""``(connect, read)`` timeout pair passed to ``requests``."""
+
+_RETRYABLE_STATUS: Final[frozenset[int]] = frozenset({
+    408,
+    425,
+    429,
+    500,
+    502,
+    503,
+    504,
+})
+"""HTTP statuses that warrant a retry."""
+
+_MAX_CONSECUTIVE_PAGE_FAILURES: Final[int] = 5
+"""Abort search walk after this many consecutive failed pages."""
+
+_DEFAULT_STOP_AFTER_KNOWN_PAGES: Final[int] = 2
+"""Incremental mode: stop after this many fully-known newest pages."""
 
 _ROOMS_MAP: dict[str, int] = {
     "ONE": 1,
@@ -249,6 +278,77 @@ def otodom_session() -> requests.Session:
     return _session()
 
 
+def is_retryable_http_error(exc: BaseException) -> bool:
+    """Return True for timeouts, connection errors, and retryable HTTP codes."""
+    if isinstance(exc, (requests.Timeout, requests.ConnectionError)):
+        return True
+    if isinstance(exc, requests.HTTPError) and exc.response is not None:
+        return int(exc.response.status_code) in _RETRYABLE_STATUS
+    return isinstance(exc, requests.RequestException)
+
+
+def _retry_sleep_s(attempt: int, *, status_code: int | None = None) -> float:
+    """Backoff delay; 403/429 get a longer cool-down."""
+    base = min(2.0 * attempt, 20.0)
+    if status_code in {403, 429}:
+        return min(base * 2.5, 45.0)
+    return base
+
+
+def _http_get(
+    session: requests.Session,
+    url: str,
+    *,
+    timeout: float | tuple[float, float] = DEFAULT_TIMEOUT,
+    retries: int = 5,
+    label: str,
+) -> requests.Response | None:
+    """GET with retries; return ``None`` after exhausting retryable failures."""
+    last_exc: Exception | None = None
+    for attempt in range(1, retries + 1):
+        status_code: int | None = None
+        try:
+            response = session.get(url, timeout=timeout)
+            status_code = int(response.status_code)
+            response.raise_for_status()
+            return response
+        except (
+            requests.RequestException,
+            ValueError,
+            TypeError,
+            KeyError,
+        ) as exc:
+            last_exc = exc
+            if isinstance(exc, requests.HTTPError) and exc.response is not None:
+                status_code = int(exc.response.status_code)
+            retryable = is_retryable_http_error(exc) or status_code in {
+                403,
+                *_RETRYABLE_STATUS,
+            }
+            if not retryable or attempt >= retries:
+                logger.warning(
+                    "%s failed permanently (attempt %s/%s): %s",
+                    label,
+                    attempt,
+                    retries,
+                    exc,
+                )
+                break
+            sleep_for = _retry_sleep_s(attempt, status_code=status_code)
+            logger.warning(
+                "%s failed (attempt %s/%s): %s; retry in %.1fs",
+                label,
+                attempt,
+                retries,
+                exc,
+                sleep_for,
+            )
+            time.sleep(sleep_for)
+    if last_exc is not None:
+        logger.debug("Last error for %s: %s", label, last_exc)
+    return None
+
+
 def _extract_next_data(html: str) -> dict[str, Any]:
     """Parse the ``__NEXT_DATA__`` JSON blob from an Otodom HTML page."""
     marker = 'id="__NEXT_DATA__"'
@@ -267,72 +367,67 @@ def fetch_search_page(
     session: requests.Session,
     page: int,
     limit: int = 36,
-    timeout_s: float = 45.0,
+    timeout_s: float | tuple[float, float] = DEFAULT_TIMEOUT,
     retries: int = 5,
-) -> dict[str, Any]:
-    """Fetch one Otodom search results page and return pageProps data."""
-    params = {"limit": limit, "page": page}
+    sort_by: str | None = None,
+) -> dict[str, Any] | None:
+    """Fetch one Otodom search results page.
+
+    Returns:
+        ``searchAds`` dict, or ``None`` if the page could not be fetched after
+        retries (caller should skip / continue rather than abort the run).
+    """
+    params: dict[str, Any] = {"limit": limit, "page": page}
+    if sort_by:
+        params["by"] = sort_by
     url = f"{_SEARCH_URL}?{urlencode(params)}"
-    last_exc: Exception | None = None
-    for attempt in range(1, retries + 1):
-        try:
-            response = session.get(url, timeout=timeout_s)
-            response.raise_for_status()
-            data = _extract_next_data(response.text)
-            ads = data["props"]["pageProps"]["data"]["searchAds"]
-            if not isinstance(ads, dict):
-                raise TypeError("Otodom searchAds payload must be a dict")
-            return ads
-        except (requests.RequestException, ValueError, TypeError, KeyError) as exc:
-            last_exc = exc
-            sleep_for = min(2.0 * attempt, 12.0)
-            logger.warning(
-                "Otodom search page %s failed (attempt %s/%s): %s; retry in %.1ss",
-                page,
-                attempt,
-                retries,
-                exc,
-                sleep_for,
-            )
-            time.sleep(sleep_for)
-    if last_exc is None:
-        raise RuntimeError(f"Otodom search page {page} failed without exception")
-    raise last_exc
+    response = _http_get(
+        session,
+        url,
+        timeout=timeout_s,
+        retries=retries,
+        label=f"Otodom search page {page}",
+    )
+    if response is None:
+        return None
+    try:
+        data = _extract_next_data(response.text)
+        ads = data["props"]["pageProps"]["data"]["searchAds"]
+        if not isinstance(ads, dict):
+            raise TypeError("Otodom searchAds payload must be a dict")
+        return ads
+    except (ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
+        logger.warning("Otodom search page %s parse failed: %s", page, exc)
+        return None
 
 
 def fetch_listing_detail(
     session: requests.Session,
     slug: str,
-    timeout_s: float = 45.0,
+    timeout_s: float | tuple[float, float] = DEFAULT_TIMEOUT,
     retries: int = 4,
 ) -> dict[str, Any]:
-    """Fetch detail page and flatten all Otodom ad fields we care about."""
+    """Fetch detail page and flatten all Otodom ad fields we care about.
+
+    Raises:
+        requests.RequestException: When the detail page cannot be fetched.
+        ValueError: When the HTML payload cannot be parsed.
+    """
     url = f"https://www.otodom.pl/pl/oferta/{slug}"
-    last_exc: Exception | None = None
-    for attempt in range(1, retries + 1):
-        try:
-            response = session.get(url, timeout=timeout_s)
-            response.raise_for_status()
-            data = _extract_next_data(response.text)
-            ad = data["props"]["pageProps"].get("ad") or {}
-            if not isinstance(ad, dict):
-                return flatten_otodom_ad({})
-            return flatten_otodom_ad(ad)
-        except (requests.RequestException, ValueError, TypeError, KeyError) as exc:
-            last_exc = exc
-            sleep_for = min(1.5 * attempt, 10.0)
-            logger.warning(
-                "Otodom detail %s failed (attempt %s/%s): %s; retry in %.1ss",
-                slug,
-                attempt,
-                retries,
-                exc,
-                sleep_for,
-            )
-            time.sleep(sleep_for)
-    if last_exc is None:
-        raise RuntimeError(f"Otodom detail {slug} failed without exception")
-    raise last_exc
+    response = _http_get(
+        session,
+        url,
+        timeout=timeout_s,
+        retries=retries,
+        label=f"Otodom detail {slug}",
+    )
+    if response is None:
+        raise requests.RequestException(f"Otodom detail {slug} failed after retries")
+    data = _extract_next_data(response.text)
+    ad = data["props"]["pageProps"].get("ad") or {}
+    if not isinstance(ad, dict):
+        return flatten_otodom_ad({})
+    return flatten_otodom_ad(ad)
 
 
 def _district_from_item(item: dict[str, Any]) -> str:
@@ -409,6 +504,55 @@ def _ad_description(ad: dict[str, Any]) -> str | None:
     return None
 
 
+def _existing_by_id(frame: pd.DataFrame) -> dict[str, dict[str, Any]]:
+    if frame.empty or "listing_id" not in frame.columns:
+        return {}
+    out: dict[str, dict[str, Any]] = {}
+    for row in frame.to_dict(orient="records"):
+        lid = str(row.get("listing_id") or "")
+        if lid:
+            out[lid] = row
+    return out
+
+
+def card_needs_detail_refresh(
+    card: dict[str, Any],
+    existing_by_id: dict[str, dict[str, Any]],
+) -> bool:
+    """True when listing is new, missing coords, or search price changed."""
+    lid = str(card.get("listing_id") or "")
+    prior = existing_by_id.get(lid)
+    if prior is None:
+        return True
+    lat = prior.get("lat")
+    lon = prior.get("lon")
+    if lat is None or lon is None or lat != lat or lon != lon:
+        return True
+    new_price = card.get("price_pln")
+    old_price = prior.get("price_pln")
+    if new_price is None or old_price is None:
+        return new_price != old_price
+    try:
+        return abs(float(new_price) - float(old_price)) > 0.5
+    except (TypeError, ValueError):
+        return True
+
+
+def merge_otodom_frames(
+    existing: pd.DataFrame,
+    fresh: pd.DataFrame,
+) -> pd.DataFrame:
+    """Union existing + fresh rows; fresh wins on duplicate ``listing_id``."""
+    if existing.empty:
+        return fresh.copy()
+    if fresh.empty:
+        return existing.copy()
+    combined = pd.concat([existing, fresh], ignore_index=True, sort=False)
+    return combined.drop_duplicates(subset=["listing_id"], keep="last").reset_index(
+        drop=True
+    )
+
+
 def scrape_otodom_warsaw(
     output_parquet: Path,
     *,
@@ -417,8 +561,17 @@ def scrape_otodom_warsaw(
     detail_workers: int = 8,
     sleep_s: float = 0.25,
     page_size: int = 72,
+    incremental: bool = True,
+    stop_after_known_pages: int = _DEFAULT_STOP_AFTER_KNOWN_PAGES,
+    timeout_s: float | tuple[float, float] = DEFAULT_TIMEOUT,
 ) -> pd.DataFrame:
     """Scrape Warsaw flat-sale listings from Otodom into a parquet file.
+
+    Search-page HTTP failures are skipped after retries (run continues). Detail
+    failures drop that listing only. When ``incremental`` and an existing
+    parquet is present, search is sorted newest-first and stops after
+    ``stop_after_known_pages`` fully-known pages; only new/price-changed cards
+    hit the detail endpoint; results merge into the prior file.
 
     Args:
         output_parquet: Destination path.
@@ -427,26 +580,95 @@ def scrape_otodom_warsaw(
         detail_workers: Parallel detail-page workers.
         sleep_s: Pause between search page requests.
         page_size: Search page size requested from Otodom.
+        incremental: Prefer newest-first + merge when prior parquet exists.
+        stop_after_known_pages: Incremental early-stop after N known pages.
+        timeout_s: Connect/read timeout(s) for HTTP calls.
 
     Returns:
         Normalized listings dataframe.
     """
     page_cap = resolve_ingest_cap(max_pages)
     listing_cap = resolve_ingest_cap(max_listings)
+    existing = (
+        pd.read_parquet(output_parquet)
+        if incremental and output_parquet.exists()
+        else pd.DataFrame()
+    )
+    existing_by_id = _existing_by_id(existing)
+    use_incremental = bool(incremental and existing_by_id)
+    sort_by = "LATEST" if use_incremental else None
+    if use_incremental:
+        logger.info(
+            "Otodom incremental mode: %s prior listings; sort=%s stop_after_known=%s",
+            len(existing_by_id),
+            sort_by,
+            stop_after_known_pages,
+        )
+
     session = _session()
     cards: list[dict[str, Any]] = []
     page = 1
     total_items: int | None = None
+    consecutive_failures = 0
+    known_page_streak = 0
     while True:
         if page_cap is not None and page > page_cap:
             break
         logger.info("Otodom search page %s", page)
-        ads = fetch_search_page(session, page=page, limit=page_size)
+        try:
+            ads = fetch_search_page(
+                session,
+                page=page,
+                limit=page_size,
+                timeout_s=timeout_s,
+                sort_by=sort_by,
+            )
+        except Exception as exc:
+            logger.warning("Otodom search page %s unexpected error: %s", page, exc)
+            ads = None
+        if ads is None:
+            consecutive_failures += 1
+            logger.warning(
+                "Skipping Otodom search page %s (%s consecutive failures)",
+                page,
+                consecutive_failures,
+            )
+            if consecutive_failures >= _MAX_CONSECUTIVE_PAGE_FAILURES:
+                logger.error(
+                    "Aborting Otodom search after %s consecutive page failures",
+                    consecutive_failures,
+                )
+                break
+            page += 1
+            time.sleep(sleep_s)
+            continue
+        consecutive_failures = 0
         items = ads.get("items") or []
         if not items:
             break
-        for item in items:
-            cards.append(_normalize_search_item(item))
+        page_cards = [_normalize_search_item(item) for item in items]
+        page_all_known = True
+        page_needs_refresh = False
+        for card in page_cards:
+            cards.append(card)
+            lid = str(card.get("listing_id") or "")
+            if lid not in existing_by_id:
+                page_all_known = False
+            elif card_needs_detail_refresh(card, existing_by_id):
+                page_needs_refresh = True
+        if use_incremental and page_all_known and not page_needs_refresh:
+            known_page_streak += 1
+            logger.info(
+                "Otodom page %s fully known (%s/%s); early-stop soon",
+                page,
+                known_page_streak,
+                stop_after_known_pages,
+            )
+            if known_page_streak >= max(1, stop_after_known_pages):
+                logger.info("Otodom incremental early-stop at page %s", page)
+                break
+        else:
+            known_page_streak = 0
         pagination = ads.get("pagination") or {}
         total_pages = int(pagination.get("totalPages") or page)
         if total_items is None and pagination.get("totalItems") is not None:
@@ -474,6 +696,15 @@ def scrape_otodom_warsaw(
         cards = cards[:listing_cap]
     logger.info("Otodom unique search cards: %s", len(cards))
 
+    to_enrich = [
+        card
+        for card in cards
+        if (not use_incremental) or card_needs_detail_refresh(card, existing_by_id)
+    ]
+    skipped = len(cards) - len(to_enrich)
+    if skipped:
+        logger.info("Otodom incremental skip detail for %s unchanged listings", skipped)
+
     enriched: list[dict[str, Any]] = []
 
     def _enrich(row: dict[str, Any]) -> dict[str, Any] | None:
@@ -482,7 +713,9 @@ def scrape_otodom_warsaw(
             return None
         detail_session = _session()
         try:
-            detail = fetch_listing_detail(detail_session, str(slug))
+            detail = fetch_listing_detail(
+                detail_session, str(slug), timeout_s=timeout_s
+            )
         except Exception as exc:
             logger.warning("Detail failed for %s: %s", slug, exc)
             return None
@@ -515,9 +748,13 @@ def scrape_otodom_warsaw(
         return out
 
     with ThreadPoolExecutor(max_workers=detail_workers) as pool:
-        futures = [pool.submit(_enrich, card) for card in cards]
+        futures = [pool.submit(_enrich, card) for card in to_enrich]
         for fut in as_completed(futures):
-            detail_row = fut.result()
+            try:
+                detail_row = fut.result()
+            except Exception as exc:
+                logger.warning("Detail worker crashed: %s", exc)
+                continue
             if detail_row is None:
                 continue
             enriched.append(detail_row)
@@ -526,7 +763,8 @@ def scrape_otodom_warsaw(
                     pending.cancel()
                 break
 
-    frame = pd.DataFrame(enriched)
+    fresh = pd.DataFrame(enriched)
+    frame = merge_otodom_frames(existing, fresh) if use_incremental else fresh
     required = [
         "listing_id",
         "lat",
@@ -547,5 +785,11 @@ def scrape_otodom_warsaw(
     frame["price_per_m2"] = frame["price_pln"] / frame["area_m2"]
     output_parquet.parent.mkdir(parents=True, exist_ok=True)
     frame.to_parquet(output_parquet, index=False)
-    logger.info("Wrote %s Otodom listings to %s", len(frame), output_parquet)
+    logger.info(
+        "Wrote %s Otodom listings to %s (fresh=%s prior=%s)",
+        len(frame),
+        output_parquet,
+        len(fresh),
+        len(existing),
+    )
     return frame

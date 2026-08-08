@@ -149,6 +149,7 @@ def run_pipeline(
                 otodom_parquet,
                 max_pages=page_cap,
                 max_listings=listing_cap,
+                incremental=limits.otodom_incremental,
             )
             otodom["source"] = "otodom"
             listings_parts.append(otodom)

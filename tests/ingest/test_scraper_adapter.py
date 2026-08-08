@@ -17,8 +17,9 @@ def test_scrape_with_adapter_uses_injected_fn(tmp_path: Path) -> None:
         *,
         max_pages: int | None = None,
         max_listings: int | None = None,
+        incremental: bool = True,
     ) -> pd.DataFrame:
-        del max_pages, max_listings
+        del max_pages, max_listings, incremental
         frame = pd.DataFrame({"listing_id": ["X"], "price_pln": [1.0]})
         path.parent.mkdir(parents=True, exist_ok=True)
         frame.to_parquet(path, index=False)

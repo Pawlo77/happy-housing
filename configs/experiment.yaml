@@ -47,6 +47,8 @@ ingest_urls:
 ingest:
   otodom_max_pages: null
   otodom_max_listings: null
+  # true = newest-first merge into existing parquet (skip unchanged details)
+  otodom_incremental: true
   rcn_max_rows: null
 
 logging:

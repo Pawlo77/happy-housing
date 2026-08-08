@@ -248,6 +248,8 @@ class IngestLimitsConfig:
     """Otodom search pages; ``None`` walks every reported page."""
     otodom_max_listings: int | None = None
     """Geocoded Otodom listings; ``None`` keeps every successful detail."""
+    otodom_incremental: bool = True
+    """Merge into existing Otodom parquet; fetch only new/updated cards."""
     rcn_max_rows: int | None = None
     """RCN joined Warsaw rows; ``None`` parses the full GML."""
 
@@ -272,9 +274,11 @@ class IngestLimitsConfig:
             value = int(mapping[key])
             return None if value <= 0 else value
 
+        incremental = mapping.get("otodom_incremental", True)
         return cls(
             otodom_max_pages=_opt_int("otodom_max_pages"),
             otodom_max_listings=_opt_int("otodom_max_listings"),
+            otodom_incremental=bool(incremental),
             rcn_max_rows=_opt_int("rcn_max_rows"),
         )
 

@@ -27,6 +27,7 @@ def scrape_with_adapter(
     scrape_fn: ScrapeFn | None = None,
     max_pages: int | None = None,
     max_listings: int | None = None,
+    incremental: bool = True,
 ) -> pd.DataFrame:
     """Run a scrape function behind a narrow adapter boundary.
 
@@ -39,4 +40,5 @@ def scrape_with_adapter(
         output_parquet,
         max_pages=max_pages,
         max_listings=max_listings,
+        incremental=incremental,
     )
