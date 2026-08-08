@@ -125,7 +125,7 @@ def _tab_ai(settings: AppSettings, settings_file: Path, proc: Path) -> None:
         key="settings_lm_model",
     )
     ai_on_open = st.checkbox(
-        "Auto-review when opening Offer → Overview",
+        "Auto-review when opening Offer → AI review",
         value=settings.ai_review_on_offer_open,
         key="settings_ai_on_open",
     )

@@ -35,7 +35,7 @@ class AppSettings:
     lm_model: str = DEFAULT_LM_MODEL
     """LM Studio model id for offer AI reviews / NL tools."""
     ai_review_on_offer_open: bool = True
-    """Auto-request AI review when opening an Offer overview."""
+    """Auto-request AI review when opening Offer → AI review."""
     ai_review_system_prompt: str = DEFAULT_AI_REVIEW_SYSTEM_PROMPT
     """System prompt sent to LM Studio for offer reviews."""
     ai_review_include_preferences: bool = True

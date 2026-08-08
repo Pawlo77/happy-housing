@@ -328,7 +328,7 @@ def _trigger_ai_review(
     enabled: bool,
     settings: AppSettings,
 ) -> None:
-    """Load or generate AI review when Overview opens; cache in DuckDB."""
+    """Load or generate AI review when the AI review tab is open; cache in DuckDB."""
     if not enabled:
         return
     db = reviews_db_path(processed_dir())
@@ -449,21 +449,19 @@ def _tab_offer(
     if description:
         row["description"] = description
 
-    overview, context, local_map, explain, ai_tab = st.tabs([
-        "Overview",
-        "Context",
-        "Map",
-        "Explain",
-        "AI review",
-    ])
+    overview, context, local_map, explain, ai_tab = st.tabs(
+        [
+            "Overview",
+            "Context",
+            "Map",
+            "Explain",
+            "AI review",
+        ],
+        key="offer_subtab",
+        on_change="rerun",
+    )
 
     with overview:
-        _trigger_ai_review(
-            row,
-            model=lm_model,
-            enabled=ai_review_on_open,
-            settings=app_settings,
-        )
         left, right = st.columns([1.1, 1.6])
         with left:
             if isinstance(row.get("image_url"), str) and row["image_url"]:
@@ -527,6 +525,13 @@ def _tab_offer(
     with ai_tab:
         listing_id = str(row.get("listing_id") or "")
         db = reviews_db_path(processed_dir())
+        if ai_tab.open:
+            _trigger_ai_review(
+                row,
+                model=lm_model,
+                enabled=ai_review_on_open,
+                settings=app_settings,
+            )
         text = st.session_state.get(f"ai_review_{listing_id}", "")
         err = st.session_state.get(f"ai_review_error_{listing_id}", "")
         st.caption(f"Model: `{lm_model}` · cached in DuckDB after first ask.")
@@ -534,8 +539,10 @@ def _tab_offer(
             st.markdown(text)
         elif err:
             st.warning(f"AI review unavailable: {err}")
+        elif not ai_review_on_open:
+            st.info("Auto-review is off — use Regenerate below to ask the model.")
         else:
-            st.info("Open Overview to request a review, or regenerate below.")
+            st.info("Switch to this tab to request a review.")
         if st.button("Regenerate AI review", key=f"regen_{listing_id}"):
             with st.spinner(f"Re-asking {lm_model}…"):
                 try:
