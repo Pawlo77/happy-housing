@@ -174,10 +174,12 @@ _BOARD_COLUMNS: tuple[str, ...] = (
 )
 """Column order for the Explore board table when present."""
 
+EXPLORE_SIDEBAR_TABS: tuple[str, str] = ("Filters", "Map layers")
+"""Sidebar tab labels: filters vs map overlays (avoids long stacked scroll)."""
+
 
 def _sidebar_filters(frame: pd.DataFrame) -> tuple[FilterState, bool]:
-    """Render Explore filters in the sidebar; return state + starred-only flag."""
-    st.sidebar.header("Filters")
+    """Render Explore filters; call inside the Filters sidebar tab."""
     districts = sorted(
         frame["district"].dropna().astype(str).unique().tolist()
         if "district" in frame.columns
@@ -196,25 +198,25 @@ def _sidebar_filters(frame: pd.DataFrame) -> tuple[FilterState, bool]:
     age_finite = ages.dropna()
     age_max = int(age_finite.max()) if not age_finite.empty else 0
 
-    district = st.sidebar.selectbox(
+    district = st.selectbox(
         "District",
         ["(all)", *districts],
         help=FILTER_HELP["district"],
         key="explore_district",
     )
-    source = st.sidebar.selectbox(
+    source = st.selectbox(
         "Source",
         ["(all)", *sources],
         help=FILTER_HELP["source"],
         key="explore_source",
     )
-    oou = st.sidebar.selectbox(
+    oou = st.selectbox(
         "Aircraft Lden ≥ 55 dB",
         ["(all)", "inside", "outside"],
         help=FILTER_HELP["oou"],
         key="explore_oou",
     )
-    max_ppm = st.sidebar.slider(
+    max_ppm = st.slider(
         "Max listing zł/m²",
         min_value=ppm_min,
         max_value=max(ppm_max, ppm_min + 1),
@@ -224,7 +226,7 @@ def _sidebar_filters(frame: pd.DataFrame) -> tuple[FilterState, bool]:
     )
     max_age_months: int | None = None
     if age_max > 0:
-        picked_age = st.sidebar.slider(
+        picked_age = st.slider(
             "Offer age (months)",
             min_value=0,
             max_value=age_max,
@@ -234,7 +236,7 @@ def _sidebar_filters(frame: pd.DataFrame) -> tuple[FilterState, bool]:
         )
         if picked_age < age_max:
             max_age_months = int(picked_age)
-    starred_only = st.sidebar.checkbox(
+    starred_only = st.checkbox(
         "Starred only",
         value=False,
         key="explore_starred_only",
@@ -256,10 +258,9 @@ def _sidebar_filters(frame: pd.DataFrame) -> tuple[FilterState, bool]:
 
 
 def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
-    """Map basemap, hour-of-day, and per-layer toggles."""
-    st.sidebar.header("Map layers")
+    """Map basemap, hour-of-day, and per-layer toggles; call inside Map layers tab."""
     basemap = (
-        st.sidebar.segmented_control(
+        st.segmented_control(
             "Basemap",
             options=["Streets", "Satellite"],
             default="Streets",
@@ -269,7 +270,7 @@ def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
         or "Streets"
     )
     hour = int(
-        st.sidebar.slider(
+        st.slider(
             "Time of day (transit & traffic)",
             min_value=0,
             max_value=23,
@@ -283,108 +284,108 @@ def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
             key="explore_hour",
         )
     )
-    st.sidebar.caption(
+    st.caption(
         "Toggle overlays (hover ? for what / price / livability). "
         "Hover map pins for details."
     )
     flags = LayerFlags(
-        offers=st.sidebar.checkbox(
+        offers=st.checkbox(
             "Offers (Δ price)",
             value=True,
             help=layer_help("offers"),
             key="explore_ly_offers",
         ),
-        oou=st.sidebar.checkbox(
+        oou=st.checkbox(
             "Aircraft Lden contours",
             value=True,
             help=layer_help("oou"),
             key="explore_ly_oou",
         ),
-        transit_intensity=st.sidebar.checkbox(
+        transit_intensity=st.checkbox(
             "Transit intensity (hourly)",
             value=False,
             help=layer_help("transit_intensity"),
             key="explore_ly_transit_intensity",
         ),
-        transit_network=st.sidebar.checkbox(
+        transit_network=st.checkbox(
             "Transit lines & stops",
             value=False,
             help=layer_help("transit_network"),
             key="explore_ly_transit_network",
         ),
-        transit_show_metro=st.sidebar.checkbox(
+        transit_show_metro=st.checkbox(
             "  Metro lines",
             value=True,
             help=layer_help("transit_show_metro"),
             key="explore_ly_transit_metro",
         ),
-        transit_show_tram=st.sidebar.checkbox(
+        transit_show_tram=st.checkbox(
             "  Tram lines",
             value=True,
             help=layer_help("transit_show_tram"),
             key="explore_ly_transit_tram",
         ),
-        transit_show_bus=st.sidebar.checkbox(
+        transit_show_bus=st.checkbox(
             "  Bus lines",
             value=True,
             help=layer_help("transit_show_bus"),
             key="explore_ly_transit_bus",
         ),
-        transit_show_rail=st.sidebar.checkbox(
+        transit_show_rail=st.checkbox(
             "  Train / rail lines",
             value=True,
             help=layer_help("transit_show_rail"),
             key="explore_ly_transit_rail",
         ),
-        traffic=st.sidebar.checkbox(
+        traffic=st.checkbox(
             "Traffic intensity proxy",
             value=False,
             help=layer_help("traffic"),
             key="explore_ly_traffic",
         ),
-        shops=st.sidebar.checkbox(
+        shops=st.checkbox(
             "Shops",
             value=False,
             help=layer_help("shops"),
             key="explore_ly_shops",
         ),
-        hospitals=st.sidebar.checkbox(
+        hospitals=st.checkbox(
             "Hospitals",
             value=False,
             help=layer_help("hospitals"),
             key="explore_ly_hospitals",
         ),
-        fire_stations=st.sidebar.checkbox(
+        fire_stations=st.checkbox(
             "Fire stations",
             value=False,
             help=layer_help("fire_stations"),
             key="explore_ly_fire",
         ),
-        police=st.sidebar.checkbox(
+        police=st.checkbox(
             "Police",
             value=False,
             help=layer_help("police"),
             key="explore_ly_police",
         ),
-        air=st.sidebar.checkbox(
+        air=st.checkbox(
             "Air-quality stations",
             value=False,
             help=layer_help("air"),
             key="explore_ly_air",
         ),
-        gunb=st.sidebar.checkbox(
+        gunb=st.checkbox(
             "GUNB permits",
             value=False,
             help=layer_help("gunb"),
             key="explore_ly_gunb",
         ),
-        parks=st.sidebar.checkbox(
+        parks=st.checkbox(
             "Parks & squares (UM)",
             value=False,
             help=layer_help("parks"),
             key="explore_ly_parks",
         ),
-        commute_target=st.sidebar.checkbox(
+        commute_target=st.checkbox(
             "Commute target",
             value=False,
             help=layer_help("commute_target"),
@@ -392,6 +393,18 @@ def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
         ),
     )
     return flags, hour, basemap
+
+
+def _render_explore_sidebar(
+    frame: pd.DataFrame,
+) -> tuple[FilterState, bool, LayerFlags, int, str]:
+    """Sidebar tabs for filters and map layers; return Explore control state."""
+    tab_filters, tab_layers = st.sidebar.tabs(list(EXPLORE_SIDEBAR_TABS))
+    with tab_filters:
+        state, starred_only = _sidebar_filters(frame)
+    with tab_layers:
+        flags, hour, basemap = _sidebar_map_controls()
+    return state, starred_only, flags, hour, basemap
 
 
 def _tab_map(
@@ -1478,7 +1491,7 @@ def _tab_prefs(
 
 
 def render_explore() -> None:
-    """Render Explore with sidebar filters and Map / Offer / Board / News / Prefs."""
+    """Render Explore with sidebar Filter/Map-layer tabs + main content tabs."""
     logger.info("Rendering Explore")
     st.title("Explore")
     try:
@@ -1488,8 +1501,7 @@ def render_explore() -> None:
         st.error(str(exc))
         st.stop()
 
-    state, starred_only = _sidebar_filters(frame)
-    flags, hour, basemap = _sidebar_map_controls()
+    state, starred_only, flags, hour, basemap = _render_explore_sidebar(frame)
     filtered = apply_filters(frame, state)
     logger.debug(
         "Explore filters → %s/%s offers (district=%s source=%s starred_only=%s)",
