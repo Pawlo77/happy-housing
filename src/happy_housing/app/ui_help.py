@@ -29,6 +29,13 @@ LAYER_HELP: dict[str, str] = {
         "Roads/corridors stay loud; quiet parks stay transparent. "
         "Model features include each source + noise_total_lden_db."
     ),
+    "aq_overlay": (
+        "Continuous air-quality field interpolated (IDW) from live GIOŚ "
+        "Warsaw stations — AQI, PM2.5, PM10, or NO₂. Not an official AQ map; "
+        "sparse sensors smoothed across the city. Listing features use the "
+        "same field (air_aq_index / air_pm*_ug_m3 / air_no2_ug_m3 + "
+        "in_poor_air). Station pins remain available separately."
+    ),
     "transit_intensity": (
         "Real GTFS stop-hour departure heatmap + busy stops at the sidebar "
         "clock. Shows where service is dense (popularity), not the physical "
@@ -87,9 +94,10 @@ LAYER_HELP: dict[str, str] = {
         "dist_police_m is a model feature and Prefs can require a max distance."
     ),
     "air": (
-        "GIOŚ monitoring stations with nearest-station AQI and PM10/PM2.5/NO2. "
-        "Model uses dist_air_station_m plus air_aq_index / air_pm*_ug_m3 / "
-        "air_no2_ug_m3 — distance alone is not enough."
+        "GIOŚ monitoring stations (sensors for the IDW field). Prefer the "
+        "Air quality field overlay for city-wide AQI/PM; model uses "
+        "dist_air_station_m plus interpolated air_aq_index / air_pm*_ug_m3 / "
+        "air_no2_ug_m3 and in_poor_air."
     ),
     "gunb": (
         "GUNB / GUGiK building-permit points. Map shows a Warsaw sample "
@@ -161,6 +169,10 @@ FILTER_HELP: dict[str, str] = {
     "high_noise": (
         "Filter by total energy-sum Lden ≥55 dB across road, rail, tram, "
         "aircraft, and industry. Stronger livability cut than aircraft-only."
+    ),
+    "poor_air": (
+        "Filter by interpolated GIOŚ AQI ≥3 (sufficient / bad / very bad). "
+        "Uses the continuous IDW field, not only the nearest station pin."
     ),
     "max_noise_total": (
         "Cap energy-sum total Lden (dB). 0 = no cap. Quieter homes usually "

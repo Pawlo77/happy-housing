@@ -74,6 +74,7 @@ _STRUCTURAL_FEATURE_COLUMNS: tuple[str, ...] = (
     "air_pm10_ug_m3",
     "air_pm25_ug_m3",
     "air_no2_ug_m3",
+    "in_poor_air",
     "dist_transit_stop_m",
     "dist_daszynskiego_m",
     "commute_min",

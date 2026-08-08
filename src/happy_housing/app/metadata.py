@@ -137,8 +137,9 @@ DEFAULT_SOURCE_CATALOG: tuple[DataSource, ...] = (
         name="GIOŚ air-quality stations (API v1)",
         url="https://powietrze.gios.gov.pl/",
         role=(
-            "Nearest air-quality station distance plus station AQI and "
-            "latest PM10/PM2.5/NO2 (µg/m³) from GIOŚ API v1."
+            "GIOŚ station measurements → continuous IDW AQI/PM/NO₂ field "
+            "sampled onto listings (plus station distance); Explore BitmapLayer "
+            "overlay mirrors strategic noise."
         ),
         key="gios",
         unit="stations",

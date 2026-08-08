@@ -16,6 +16,7 @@ from happy_housing.app.io_cache import clear_io_caches, file_mtime, read_geojson
 from happy_housing.app.listing_attrs import promote_listing_flags
 from happy_housing.app.metadata import RunMetadata, load_run_metadata
 from happy_housing.config import ExperimentConfig, load_experiment_config
+from happy_housing.gis.gios_aq_field import AqMapOverlay
 from happy_housing.gis.warsaw_noise import NoiseMapOverlay
 from happy_housing.ingest import build_gtfs_stop_hourly
 from happy_housing.ingest.market import backfill_market_primary
@@ -291,6 +292,75 @@ def load_warsaw_noise_heatmap(overlay_key: str) -> pd.DataFrame:
     """Deprecated densified points; prefer :func:`load_warsaw_noise_overlay`."""
     del overlay_key
     return pd.DataFrame(columns=["lon", "lat", "db", "weight"])
+
+
+@st.cache_data(show_spinner=False)  # type: ignore[misc]
+def _load_gios_aq_overlay(
+    cache_root: str, mtime: float, overlay_key: str
+) -> dict[str, object] | None:
+    """Cached continuous GIOŚ AQ BitmapLayer payload (dict for Streamlit cache)."""
+    del mtime
+    from happy_housing.gis.gios_aq_field import (
+        load_gios_aq_field_rasters,
+        prepare_aq_overlay_for_key,
+    )
+
+    cache = Path(cache_root)
+    rasters = load_gios_aq_field_rasters(cache)
+    if not rasters:
+        return None
+    bbox: tuple[float, float, float, float] | None = None
+    meta_path = cache / "gios_aq_field" / "meta.json"
+    if meta_path.exists():
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        raw = meta.get("bbox_wgs84")
+        if isinstance(raw, list) and len(raw) == 4:
+            bbox = (
+                float(raw[0]),
+                float(raw[1]),
+                float(raw[2]),
+                float(raw[3]),
+            )
+    overlay = prepare_aq_overlay_for_key(rasters, overlay_key, bbox_wgs84=bbox)
+    if overlay is None:
+        return None
+    return {
+        "layer_key": overlay.layer_key,
+        "image_data_uri": overlay.image_data_uri,
+        "bounds": list(overlay.bounds),
+        "width": overlay.width,
+        "height": overlay.height,
+    }
+
+
+def load_gios_aq_overlay(overlay_key: str) -> AqMapOverlay | None:
+    """Load a continuous GIOŚ IDW air-quality overlay for the selected key."""
+    if not overlay_key or overlay_key == "off":
+        return None
+    cache = load_config().data.cache_path()
+    meta = cache / "gios_aq_field" / "meta.json"
+    if not meta.exists():
+        return None
+    payload = _load_gios_aq_overlay(
+        str(cache.resolve()), file_mtime(meta), str(overlay_key)
+    )
+    if not payload:
+        return None
+    bounds_raw = payload["bounds"]
+    if not isinstance(bounds_raw, list) or len(bounds_raw) != 4:
+        return None
+    return AqMapOverlay(
+        layer_key=str(payload["layer_key"]),
+        image_data_uri=str(payload["image_data_uri"]),
+        bounds=(
+            float(bounds_raw[0]),
+            float(bounds_raw[1]),
+            float(bounds_raw[2]),
+            float(bounds_raw[3]),
+        ),
+        width=int(payload["width"]),
+        height=int(payload["height"]),
+    )
 
 
 @st.cache_resource(show_spinner=False)  # type: ignore[misc]

@@ -156,6 +156,10 @@ class AppSettings:
     """Re-download GTFS during pipeline."""
     download_gios: bool = True
     """Re-download GIOŚ stations during pipeline."""
+    aq_field_enabled: bool = True
+    """Build IDW air-quality field from GIOŚ stations (model + map overlay)."""
+    aq_idw_power: float = 2.0
+    """Inverse-distance power for the GIOŚ AQ field."""
     download_rcn: bool = True
     """Re-download RCN during pipeline."""
     download_gunb: bool = True
@@ -478,6 +482,13 @@ def load_app_settings(path: Path) -> AppSettings:
         ),
         download_gtfs=bool(payload.get("download_gtfs", defaults.download_gtfs)),
         download_gios=bool(payload.get("download_gios", defaults.download_gios)),
+        aq_field_enabled=bool(
+            payload.get("aq_field_enabled", defaults.aq_field_enabled)
+        ),
+        aq_idw_power=min(
+            4.0,
+            max(0.5, float(payload.get("aq_idw_power", defaults.aq_idw_power))),
+        ),
         download_rcn=bool(payload.get("download_rcn", defaults.download_rcn)),
         download_gunb=bool(payload.get("download_gunb", defaults.download_gunb)),
         download_crime=bool(payload.get("download_crime", defaults.download_crime)),

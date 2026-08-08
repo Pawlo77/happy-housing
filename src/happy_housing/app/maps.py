@@ -33,6 +33,7 @@ from happy_housing.app.zone_overlays import (
     prepare_zone_records,
 )
 from happy_housing.gis.bike_paths import prepare_bike_paths_for_map
+from happy_housing.gis.gios_aq_field import AqMapOverlay
 from happy_housing.gis.warsaw_noise import NoiseMapOverlay
 
 logger = logging.getLogger(__name__)
@@ -592,6 +593,26 @@ def warsaw_noise_bitmap_layer(
     )
 
 
+def air_quality_bitmap_layer(
+    overlay: AqMapOverlay | None,
+    *,
+    opacity: float = 0.65,
+) -> pdk.Layer | None:
+    """Continuous GIOŚ IDW air-quality field as a georeferenced BitmapLayer."""
+    if overlay is None:
+        return None
+    west, south, east, north = overlay.bounds
+    image = f'"{overlay.image_data_uri}"'
+    return pdk.Layer(
+        "BitmapLayer",
+        image=image,
+        bounds=[float(west), float(south), float(east), float(north)],
+        opacity=float(opacity),
+        pickable=False,
+        id="gios-aq-bitmap",
+    )
+
+
 def bike_paths_layer(paths: gpd.GeoDataFrame | pd.DataFrame) -> pdk.Layer | None:
     """OSM bicycle infrastructure as PathLayer polylines."""
     if isinstance(paths, gpd.GeoDataFrame):
@@ -622,7 +643,7 @@ def air_stations_layer(stations: pd.DataFrame) -> pdk.Layer | None:
         lat_col="lat",
         lon_col="lon",
         name_col="name",
-        detail="air station (AQI + PM/NO₂ + distance in model)",
+        detail="GIOŚ sensor (IDW field + dist_air_station_m in model)",
         layer_label="Air",
     )
     return _icon(
@@ -935,6 +956,7 @@ def build_explore_layers(
     city_pois: gpd.GeoDataFrame | None = None,
     bike_paths: gpd.GeoDataFrame | None = None,
     noise_overlay: NoiseMapOverlay | None = None,
+    aq_overlay: AqMapOverlay | None = None,
 ) -> list[pdk.Layer]:
     """Assemble enabled Explore map layers in draw order."""
     layers: list[pdk.Layer] = []
@@ -951,6 +973,10 @@ def build_explore_layers(
         noise = warsaw_noise_bitmap_layer(noise_overlay)
         if noise is not None:
             layers.append(noise)
+    if flags.aq_overlay and flags.aq_overlay != "off":
+        aq = air_quality_bitmap_layer(aq_overlay)
+        if aq is not None:
+            layers.append(aq)
     if flags.oou:
         layers.extend(aircraft_noise_layers(oou))
     if flags.parks:

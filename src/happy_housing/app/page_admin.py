@@ -363,6 +363,8 @@ def _apply_pipeline_widgets(
     gtfs_zip_url: str,
     download_gios: bool,
     gios_stations_url: str,
+    aq_field_enabled: bool,
+    aq_idw_power: float,
     download_gunb: bool,
     gunb_zip_url: str,
     download_crime: bool,
@@ -384,6 +386,8 @@ def _apply_pipeline_widgets(
     settings.gtfs_zip_url = str(gtfs_zip_url).strip()
     settings.download_gios = bool(download_gios)
     settings.gios_stations_url = str(gios_stations_url).strip()
+    settings.aq_field_enabled = bool(aq_field_enabled)
+    settings.aq_idw_power = float(aq_idw_power)
     settings.download_gunb = bool(download_gunb)
     settings.gunb_zip_url = str(gunb_zip_url).strip()
     settings.download_crime = bool(download_crime)
@@ -610,6 +614,28 @@ def _panel_sources(settings: AppSettings, settings_file: Path, proc: Path) -> No
             key="pipe_download_crime",
         )
 
+    aq_field_enabled = st.checkbox(
+        "Build GIOŚ air-quality IDW field (model + map)",
+        value=bool(settings.aq_field_enabled),
+        help=(
+            "Interpolate continuous AQI/PM/NO₂ from Warsaw GIOŚ stations "
+            "(same pattern as strategic noise rasters). Disable to keep "
+            "nearest-station values only."
+        ),
+        key="pipe_aq_field_enabled",
+    )
+    aq_idw_power = float(
+        st.number_input(
+            "AQ IDW power",
+            min_value=0.5,
+            max_value=4.0,
+            value=float(settings.aq_idw_power),
+            step=0.5,
+            help="Higher = sharper local influence around stations.",
+            key="pipe_aq_idw_power",
+        )
+    )
+
     st.subheader("OSM / enrich")
     use_osm = st.checkbox(
         "Fetch OSM amenities + shops (else fixture/cache)",
@@ -690,6 +716,8 @@ def _panel_sources(settings: AppSettings, settings_file: Path, proc: Path) -> No
             gtfs_zip_url=gtfs_zip_url,
             download_gios=download_gios,
             gios_stations_url=gios_stations_url,
+            aq_field_enabled=aq_field_enabled,
+            aq_idw_power=aq_idw_power,
             download_gunb=download_gunb,
             gunb_zip_url=gunb_zip_url,
             download_crime=download_crime,

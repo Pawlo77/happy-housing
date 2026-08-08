@@ -43,6 +43,10 @@ from happy_housing.gis import (
     load_shop_points,
 )
 from happy_housing.gis.bike_paths import fetch_bike_paths, load_bike_path_sample
+from happy_housing.gis.gios_aq_field import (
+    attach_gios_aq_field_features,
+    fetch_gios_aq_field_rasters,
+)
 from happy_housing.gis.location_fix import snap_listings_out_of_parks
 from happy_housing.gis.routing import (
     attach_commute_minutes,
@@ -438,6 +442,16 @@ def run_pipeline(
     )
     if noise_rasters:
         enriched = attach_warsaw_noise_features(enriched, noise_rasters)
+    if app_settings.aq_field_enabled and not gios_stations.empty:
+        aq_rasters = fetch_gios_aq_field_rasters(
+            cache,
+            gios_stations,
+            bbox_wgs84=config.bbox.as_tuple(),
+            power=float(app_settings.aq_idw_power),
+            force_refresh=force_gis_refresh,
+        )
+        if aq_rasters:
+            enriched = attach_gios_aq_field_features(enriched, aq_rasters)
     train_frame = pd.DataFrame(enriched.drop(columns=["geometry"], errors="ignore"))
     train_frame = promote_listing_flags(train_frame)
     train_frame = attach_crime_features(train_frame, crime_by_district)

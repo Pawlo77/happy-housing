@@ -48,6 +48,7 @@ from happy_housing.app.data import (
     load_city_boundary,
     load_city_pois,
     load_config,
+    load_gios_aq_overlay,
     load_gios_stations,
     load_gtfs_hourly,
     load_gtfs_route_shapes,
@@ -165,6 +166,7 @@ from happy_housing.gis.amenity_catalog import (
     amenity_keys,
     coerce_amenity_weights,
 )
+from happy_housing.gis.gios_aq_field import AQ_MAP_OVERLAYS, AqMapOverlay
 from happy_housing.gis.warsaw_noise import NOISE_MAP_OVERLAYS, NoiseMapOverlay
 from happy_housing.ingest.otodom import fetch_listing_detail, otodom_session
 from happy_housing.models.train import (
@@ -250,6 +252,12 @@ def _sidebar_filters(frame: pd.DataFrame) -> tuple[FilterState, bool]:
         help=FILTER_HELP["high_noise"],
         key="explore_high_noise",
     )
+    poor_air = st.selectbox(
+        "Air quality AQI ≥ 3 (IDW)",
+        ["(all)", "inside", "outside"],
+        help=FILTER_HELP["poor_air"],
+        key="explore_poor_air",
+    )
     noise_cap = st.number_input(
         "Max total Lden (dB, 0 = off)",
         min_value=0.0,
@@ -295,6 +303,7 @@ def _sidebar_filters(frame: pd.DataFrame) -> tuple[FilterState, bool]:
             source=source,
             oou=oou,
             high_noise=high_noise,
+            poor_air=poor_air,
             max_noise_total_lden_db=float(noise_cap) if float(noise_cap) > 0 else None,
             max_price_per_m2=float(max_ppm),
             max_age_months=max_age_months,
@@ -492,6 +501,20 @@ def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
         key="explore_ly_noise_overlay",
     )
     flags.noise_overlay = noise_by_label.get(str(noise_label), "off")
+    aq_labels = [label for label, _ in AQ_MAP_OVERLAYS]
+    aq_by_label = {label: key for label, key in AQ_MAP_OVERLAYS}
+    default_aq_label = next(
+        (label for label, key in AQ_MAP_OVERLAYS if key == "off"),
+        aq_labels[0],
+    )
+    aq_label = st.selectbox(
+        "Air quality field (GIOŚ IDW)",
+        options=aq_labels,
+        index=aq_labels.index(default_aq_label),
+        help=layer_help("aq_overlay"),
+        key="explore_ly_aq_overlay",
+    )
+    flags.aq_overlay = aq_by_label.get(str(aq_label), "off")
     label_by_key = {t.key: f"{t.group}: {t.label}" for t in AMENITY_TYPES}
     default_keys = list(DEFAULT_MAP_OBJECT_TYPES)
     selected_labels = st.multiselect(
@@ -662,6 +685,7 @@ def _tab_map(
     airport: gpd.GeoDataFrame,
     city_pois: gpd.GeoDataFrame,
     noise_overlay_data: NoiseMapOverlay | None,
+    aq_overlay_data: AqMapOverlay | None,
     flags: LayerFlags,
     hour: int,
     basemap: str,
@@ -693,6 +717,7 @@ def _tab_map(
         airport=airport,
         city_pois=city_pois,
         noise_overlay=noise_overlay_data,
+        aq_overlay=aq_overlay_data,
         commute_lon=commute_lon,
         commute_lat=commute_lat,
         hour=hour,
@@ -1088,6 +1113,7 @@ def _tab_offer(
     airport: gpd.GeoDataFrame,
     city_pois: gpd.GeoDataFrame,
     noise_overlay_data: NoiseMapOverlay | None,
+    aq_overlay_data: AqMapOverlay | None,
     flags: LayerFlags,
     hour: int,
     basemap: str,
@@ -1208,6 +1234,7 @@ def _tab_offer(
                 airport=airport,
                 city_pois=city_pois,
                 noise_overlay=noise_overlay_data,
+                aq_overlay=aq_overlay_data,
                 commute_lon=commute_lon,
                 commute_lat=commute_lat,
                 hour=hour,
@@ -1906,6 +1933,9 @@ def render_explore() -> None:
         if "warsaw_noise" in needed
         else None
     )
+    aq_overlay_data = (
+        load_gios_aq_overlay(flags.aq_overlay) if "gios_aq" in needed else None
+    )
 
     commute = resolve_commute_target(app_settings, config)
     render_assistant_popover(
@@ -1932,6 +1962,7 @@ def render_explore() -> None:
         "rail_areas": rail_areas,
         "airport": airport,
         "noise_overlay_data": noise_overlay_data,
+        "aq_overlay_data": aq_overlay_data,
         "flags": flags,
         "hour": hour,
         "basemap": basemap,

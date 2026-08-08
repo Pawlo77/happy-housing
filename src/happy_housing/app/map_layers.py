@@ -49,6 +49,8 @@ class LayerFlags:
     """Legacy Chopin aircraft Lden contour polygons (EEA END fixture)."""
     noise_overlay: str = "off"
     """UM WMS noise overlay key (``off`` / ``total_lden`` / ``road_lden`` / …)."""
+    aq_overlay: str = "off"
+    """GIOŚ IDW AQ overlay key (``off`` / ``aq_index`` / ``pm25_ug_m3`` / …)."""
     hospitals: bool = False
     """OSM hospitals."""
     fire_stations: bool = False
@@ -121,6 +123,8 @@ def explore_datasets_needed(
         needed.add("oou")
     if flags.noise_overlay and flags.noise_overlay != "off":
         needed.add("warsaw_noise")
+    if flags.aq_overlay and flags.aq_overlay != "off":
+        needed.add("gios_aq")
     if flags.city_boundary:
         needed.add("city_boundary")
     if flags.military:

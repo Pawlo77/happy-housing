@@ -33,7 +33,8 @@ then market pulse charts, model hold-out metrics, and open-data source inventory
 
 Sidebar filters + map overlays. **Map / Spatial / Offer / Board / News / Chat / Prefs**:
 
-- **Map** — underpriced (green) vs overpriced (red) pins, OOU/noise, transit, amenities
+- **Map** — underpriced (green) vs overpriced (red) pins, OOU/noise, continuous
+  GIOŚ air-quality IDW field, transit, amenities
 - **Offer** — deep dive (Overview · Context · Map · Explain · AI review), star watching
 - **Board** — filterable table; row click opens Offer
 - **News** — field changes on starred offers
