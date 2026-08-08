@@ -65,6 +65,27 @@ def test_apply_filters_district_source_oou() -> None:
     assert list(out["listing_id"]) == ["c"]
 
 
+def test_apply_filters_max_total_noise() -> None:
+    frame = pd.DataFrame({
+        "listing_id": ["quiet", "loud"],
+        "district": ["wola", "wola"],
+        "source": ["otodom", "otodom"],
+        "in_oou": [0, 0],
+        "in_high_noise": [0, 1],
+        "noise_total_lden_db": [48.0, 68.0],
+        "price_per_m2": [10000.0, 10000.0],
+        "listed_at": ["2026-07-01", "2026-07-01"],
+    })
+    out = apply_filters(
+        frame,
+        FilterState(max_noise_total_lden_db=55.0),
+        as_of=date(2026, 8, 8),
+    )
+    assert list(out["listing_id"]) == ["quiet"]
+    out2 = apply_filters(frame, FilterState(high_noise="outside"))
+    assert list(out2["listing_id"]) == ["quiet"]
+
+
 def test_apply_starred_only_keeps_starred_ids() -> None:
     frame = pd.DataFrame({"listing_id": ["a", "b", "c"], "x": [1, 2, 3]})
     out = apply_starred_only(frame, frozenset({"b", "c"}))

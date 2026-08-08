@@ -67,9 +67,20 @@ _MODEL_KEYS: tuple[tuple[str, str], ...] = (
 """Model valuation fields."""
 
 _PROXIMITY_KEYS: tuple[tuple[str, str], ...] = (
-    ("aircraft_lden_db", "Aircraft Lden (dB, EEA END)"),
-    ("aircraft_lnight_db", "Aircraft Lnight (dB, EEA END)"),
+    ("aircraft_lden_db", "Aircraft Lden (dB, UM 2022)"),
+    ("aircraft_lnight_db", "Aircraft Lnight (dB, UM 2022)"),
     ("in_oou", "Aircraft Lden ≥ 55 dB"),
+    ("road_lden_db", "Road Lden (dB)"),
+    ("road_lnight_db", "Road Lnight (dB)"),
+    ("rail_lden_db", "Rail Lden (dB)"),
+    ("rail_lnight_db", "Rail Lnight (dB)"),
+    ("tram_lden_db", "Tram Lden (dB)"),
+    ("tram_lnight_db", "Tram Lnight (dB)"),
+    ("industry_lden_db", "Industry Lden (dB)"),
+    ("industry_lnight_db", "Industry Lnight (dB)"),
+    ("noise_total_lden_db", "Total Lden (dB, energy sum)"),
+    ("noise_total_lnight_db", "Total Lnight (dB, energy sum)"),
+    ("in_high_noise", "Total Lden ≥ 55 dB"),
     ("commute_min", "Commute min to Daszyńskiego"),
     ("dist_daszynskiego_m", "Distance to Daszyńskiego (m)"),
     ("dist_transit_stop_m", "Nearest transit stop (m)"),
@@ -173,6 +184,13 @@ _LISTING_FINGERPRINT_KEYS: tuple[str, ...] = (
     "aircraft_lden_db",
     "aircraft_lnight_db",
     "in_oou",
+    "road_lden_db",
+    "rail_lden_db",
+    "tram_lden_db",
+    "industry_lden_db",
+    "noise_total_lden_db",
+    "noise_total_lnight_db",
+    "in_high_noise",
     "commute_min",
     "dist_metro_m",
     "dist_transit_stop_m",
@@ -424,10 +442,10 @@ def build_review_prompt(
         if body:
             sections.append(
                 "## Proximity & livability\n"
-                "(distances in metres; aircraft Lden/Lnight are EEA END "
-                "contour band lower edges in dB; traffic intensity is a "
-                "map-layer diurnal proxy and is not stored per offer)\n"
-                + "\n".join(body)
+                "(distances in metres; noise bands are UM 2022 strategic "
+                "map lower edges in dB; noise_total_* is energy-sum; "
+                "traffic intensity is a map-layer diurnal proxy and is not "
+                "stored per offer)\n" + "\n".join(body)
             )
 
     if cfg.ai_review_include_neighborhood_prices:

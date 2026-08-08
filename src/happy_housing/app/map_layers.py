@@ -44,8 +44,10 @@ class LayerFlags:
 
     offers: bool = True
     """Scored listing pins."""
-    oou: bool = True
-    """Chopin aircraft Lden contour bands (EEA END)."""
+    oou: bool = False
+    """Legacy Chopin aircraft Lden contour polygons (EEA END fixture)."""
+    noise_overlay: str = "total_lden"
+    """UM WMS noise heatmap key (``off`` / ``total_lden`` / ``road_lden`` / …)."""
     hospitals: bool = False
     """OSM hospitals."""
     fire_stations: bool = False
@@ -116,6 +118,8 @@ def explore_datasets_needed(
         needed.update({"city_boundary", "military", "rail_areas", "airport", "traffic"})
     if flags.oou:
         needed.add("oou")
+    if flags.noise_overlay and flags.noise_overlay != "off":
+        needed.add("warsaw_noise")
     if flags.city_boundary:
         needed.add("city_boundary")
     if flags.military:

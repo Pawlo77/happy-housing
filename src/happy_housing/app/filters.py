@@ -20,6 +20,10 @@ class FilterState:
     """Listing source or ``(all)``."""
     oou: str = "(all)"
     """Aircraft Lden ≥55 dB: ``(all)``, ``inside``, or ``outside``."""
+    high_noise: str = "(all)"
+    """Total Lden ≥55 dB: ``(all)``, ``inside``, or ``outside``."""
+    max_noise_total_lden_db: float | None = None
+    """Upper bound on energy-sum total Lden (dB); ``None`` = no cap."""
     max_price_per_m2: float | None = None
     """Upper bound on listing zł/m²."""
     max_age_months: int | None = None
@@ -102,6 +106,17 @@ def apply_filters(
         mask &= pd.to_numeric(frame["in_oou"], errors="coerce").eq(1)
     elif state.oou == "outside" and "in_oou" in frame.columns:
         mask &= pd.to_numeric(frame["in_oou"], errors="coerce").eq(0)
+    if state.high_noise == "inside" and "in_high_noise" in frame.columns:
+        mask &= pd.to_numeric(frame["in_high_noise"], errors="coerce").eq(1)
+    elif state.high_noise == "outside" and "in_high_noise" in frame.columns:
+        mask &= pd.to_numeric(frame["in_high_noise"], errors="coerce").eq(0)
+    if (
+        state.max_noise_total_lden_db is not None
+        and "noise_total_lden_db" in frame.columns
+    ):
+        mask &= pd.to_numeric(frame["noise_total_lden_db"], errors="coerce").le(
+            float(state.max_noise_total_lden_db)
+        )
     if state.max_price_per_m2 is not None and "price_per_m2" in frame.columns:
         mask &= pd.to_numeric(frame["price_per_m2"], errors="coerce").le(
             float(state.max_price_per_m2)

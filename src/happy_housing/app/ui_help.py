@@ -17,9 +17,15 @@ LAYER_HELP: dict[str, str] = {
         "Valuation only — does not change living-condition overlays."
     ),
     "oou": (
-        "EEA END Chopin aircraft Lden / Lnight contour bands (≥55 dB). "
-        "Higher aircraft noise hurts sleep/outdoor comfort and often lowers "
-        "willingness-to-pay; the model also uses Lden / in_oou as features."
+        "Legacy EEA END Chopin aircraft Lden contour polygons. Prefer the "
+        "UM 2022 Strategic noise heatmap (all sources) for city-wide coverage; "
+        "model uses aircraft_lden_db / in_oou from UM WMS when cached."
+    ),
+    "noise_overlay": (
+        "UM Warszawa 2022 strategic noise GetMap heatmap: total energy-sum "
+        "or road / rail / tram / aircraft / industry x Lden or Lnight. "
+        "Warmer = louder band. Model features include each source + "
+        "noise_total_lden_db; Explore can filter by total Lden."
     ),
     "transit_intensity": (
         "Real GTFS stop-hour departure heatmap + busy stops at the sidebar "
@@ -138,8 +144,16 @@ FILTER_HELP: dict[str, str] = {
         "'price' means (asking vs transaction)."
     ),
     "oou": (
-        "Filter by aircraft Lden ≥55 dB (EEA END). Inside = noisier living "
-        "conditions and usually weaker price attractiveness."
+        "Filter by aircraft Lden ≥55 dB (UM strategic map / legacy END). "
+        "Inside = noisier aircraft exposure."
+    ),
+    "high_noise": (
+        "Filter by total energy-sum Lden ≥55 dB across road, rail, tram, "
+        "aircraft, and industry. Stronger livability cut than aircraft-only."
+    ),
+    "max_noise_total": (
+        "Cap energy-sum total Lden (dB). 0 = no cap. Quieter homes usually "
+        "command stronger willingness-to-pay; model uses noise_total_lden_db."
     ),
     "max_ppm": (
         "Cap asking zł/m². Hard budget filter on price attractiveness; "
@@ -230,6 +244,10 @@ PREF_HELP: dict[str, str] = {
     "max_bike_path": (
         "Max metres to nearest OSM bike path / cycleway. Model also uses "
         "bike_path_coverage_m (path length nearby)."
+    ),
+    "max_noise_total": (
+        "Max energy-sum total Lden (dB) from UM 2022 maps (road+rail+tram+"
+        "aircraft+industry). 0 = no cap. Hard filter when Prefs enabled."
     ),
 }
 """Explore Prefs form field help texts."""

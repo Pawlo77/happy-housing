@@ -49,6 +49,10 @@ from happy_housing.gis.routing import (
     attach_transit_commute_minutes,
 )
 from happy_housing.gis.traffic import fetch_traffic_road_sample
+from happy_housing.gis.warsaw_noise import (
+    attach_warsaw_noise_features,
+    fetch_warsaw_noise_rasters,
+)
 from happy_housing.ingest import (
     build_gtfs_stop_hourly,
     download_file,
@@ -404,6 +408,13 @@ def run_pipeline(
         road_lden_path=road_lden_path if road_lden_path.exists() else None,
         rail_lden_path=rail_lden_path if rail_lden_path.exists() else None,
     )
+    noise_rasters = fetch_warsaw_noise_rasters(
+        cache,
+        bbox=config.bbox.as_tuple(),
+        force_refresh=force_gis_refresh,
+    )
+    if noise_rasters:
+        enriched = attach_warsaw_noise_features(enriched, noise_rasters)
     train_frame = pd.DataFrame(enriched.drop(columns=["geometry"], errors="ignore"))
     train_frame = promote_listing_flags(train_frame)
     if app_settings.extract_attrs_enabled:

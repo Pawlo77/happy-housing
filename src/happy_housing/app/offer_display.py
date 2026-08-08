@@ -233,9 +233,20 @@ def livability_rows(
     """Livability signals with distances rounded to whole metres."""
     short = commute_label if len(commute_label) <= 40 else commute_label[:37] + "..."
     specs: tuple[tuple[str, str, str], ...] = (
+        ("noise_total_lden_db", "Total Lden (dB, all sources)", "db"),
+        ("noise_total_lnight_db", "Total Lnight (dB, all sources)", "db"),
+        ("in_high_noise", "Total Lden ≥ 55 dB", "flag"),
+        ("road_lden_db", "Road Lden (dB)", "db"),
+        ("road_lnight_db", "Road Lnight (dB)", "db"),
+        ("rail_lden_db", "Rail Lden (dB)", "db"),
+        ("rail_lnight_db", "Rail Lnight (dB)", "db"),
+        ("tram_lden_db", "Tram Lden (dB)", "db"),
+        ("tram_lnight_db", "Tram Lnight (dB)", "db"),
         ("aircraft_lden_db", "Aircraft Lden (dB)", "db"),
         ("aircraft_lnight_db", "Aircraft Lnight (dB)", "db"),
-        ("in_oou", "Lden ≥ 55 dB", "flag"),
+        ("industry_lden_db", "Industry Lden (dB)", "db"),
+        ("industry_lnight_db", "Industry Lnight (dB)", "db"),
+        ("in_oou", "Aircraft Lden ≥ 55 dB", "flag"),
         ("commute_min", f"Commute to {short}", "min"),
         ("dist_transit_stop_m", "Nearest transit stop", "m"),
         ("dist_metro_m", "Nearest metro", "m"),

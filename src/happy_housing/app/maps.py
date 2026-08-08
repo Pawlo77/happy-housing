@@ -517,6 +517,34 @@ def traffic_heatmap_layer(sample: pd.DataFrame, *, hour: int) -> pdk.Layer | Non
     )
 
 
+def warsaw_noise_heatmap_layer(points: pd.DataFrame) -> pdk.Layer | None:
+    """UM strategic noise densified points as a HeatmapLayer."""
+    if points is None or getattr(points, "empty", True):
+        return None
+    work = points.copy()
+    if "weight" not in work.columns and "db" in work.columns:
+        db = pd.to_numeric(work["db"], errors="coerce").fillna(0.0)
+        work["weight"] = ((db - 40.0) / 40.0).clip(lower=0.05, upper=1.0)
+    keep = [c for c in ("lon", "lat", "weight") if c in work.columns]
+    if len(keep) < 3:
+        return None
+    slim = work.loc[:, keep].dropna()
+    if slim.empty:
+        return None
+    return pdk.Layer(
+        "HeatmapLayer",
+        data=slim,
+        get_position="[lon, lat]",
+        get_weight="weight",
+        radiusPixels=22,
+        intensity=1.15,
+        threshold=0.04,
+        opacity=0.55,
+        pickable=False,
+        id="warsaw-noise-heat",
+    )
+
+
 def bike_paths_layer(paths: gpd.GeoDataFrame | pd.DataFrame) -> pdk.Layer | None:
     """OSM bicycle infrastructure as PathLayer polylines."""
     if isinstance(paths, gpd.GeoDataFrame):
@@ -802,6 +830,7 @@ def build_explore_layers(
     airport: gpd.GeoDataFrame | None = None,
     city_pois: gpd.GeoDataFrame | None = None,
     bike_paths: gpd.GeoDataFrame | None = None,
+    noise_points: pd.DataFrame | None = None,
 ) -> list[pdk.Layer]:
     """Assemble enabled Explore map layers in draw order."""
     layers: list[pdk.Layer] = []
@@ -814,6 +843,12 @@ def build_explore_layers(
             airport=airport,
         )
     )
+    if flags.noise_overlay and flags.noise_overlay != "off":
+        noise = warsaw_noise_heatmap_layer(
+            noise_points if noise_points is not None else pd.DataFrame()
+        )
+        if noise is not None:
+            layers.append(noise)
     if flags.oou:
         layers.extend(aircraft_noise_layers(oou))
     if flags.parks:

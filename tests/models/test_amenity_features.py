@@ -29,4 +29,8 @@ def test_core_features_include_city_poi_distances() -> None:
     assert "dist_airport_area_m" in CORE_FEATURE_COLUMNS
     assert "dist_traffic_road_m" in CORE_FEATURE_COLUMNS
     assert "traffic_weight_nearby" in CORE_FEATURE_COLUMNS
+    assert "noise_total_lden_db" in CORE_FEATURE_COLUMNS
+    assert "tram_lden_db" in CORE_FEATURE_COLUMNS
+    assert "industry_lden_db" in CORE_FEATURE_COLUMNS
+    assert "in_high_noise" in CORE_FEATURE_COLUMNS
     assert FEATURE_COLUMNS[0] == CORE_FEATURE_COLUMNS[0]

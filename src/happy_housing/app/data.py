@@ -221,6 +221,42 @@ def load_aircraft_lnight() -> gpd.GeoDataFrame | None:
     return read_geojson_gdf(str(path), path.stat().st_mtime)
 
 
+@st.cache_data(show_spinner=False)  # type: ignore[misc]
+def _load_warsaw_noise_heatmap(
+    cache_root: str, mtime: float, overlay_key: str
+) -> pd.DataFrame:
+    """Cached densified UM noise heatmap points for Explore."""
+    del mtime
+    from happy_housing.gis.warsaw_noise import (
+        load_warsaw_noise_rasters,
+        prepare_noise_map_points,
+        prepare_total_noise_map_points,
+    )
+
+    rasters = load_warsaw_noise_rasters(Path(cache_root))
+    if not rasters:
+        return pd.DataFrame(columns=["lon", "lat", "db", "weight"])
+    key = str(overlay_key)
+    if key == "total_lden":
+        return prepare_total_noise_map_points(rasters, indicator="lden")
+    if key == "total_lnight":
+        return prepare_total_noise_map_points(rasters, indicator="lnight")
+    return prepare_noise_map_points(rasters, layer_key=key)
+
+
+def load_warsaw_noise_heatmap(overlay_key: str) -> pd.DataFrame:
+    """Load densified Warsaw UM noise points for the selected overlay key."""
+    if not overlay_key or overlay_key == "off":
+        return pd.DataFrame(columns=["lon", "lat", "db", "weight"])
+    cache = load_config().data.cache_path()
+    meta = cache / "warsaw_noise" / "meta.json"
+    if not meta.exists():
+        return pd.DataFrame(columns=["lon", "lat", "db", "weight"])
+    return _load_warsaw_noise_heatmap(
+        str(cache.resolve()), file_mtime(meta), str(overlay_key)
+    )
+
+
 @st.cache_resource(show_spinner=False)  # type: ignore[misc]
 def _shap_bundle(
     model_file: str, mtime: float

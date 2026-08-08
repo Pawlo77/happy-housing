@@ -88,3 +88,13 @@ def test_apply_preferences_outside_only_oou() -> None:
     )
     assert set(out["listing_id"]) == {"a", "c", "d"}
     assert (out["in_oou"] == 0).all()
+
+
+def test_apply_preferences_max_total_noise() -> None:
+    frame = _frame()
+    frame["noise_total_lden_db"] = [50.0, 70.0, 52.0, 80.0]
+    out = apply_preferences(
+        frame,
+        UserPreferences(enabled=True, max_noise_total_lden_db=55.0),
+    )
+    assert set(out["listing_id"]) == {"a", "c"}

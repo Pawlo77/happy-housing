@@ -957,7 +957,8 @@ def _tab_pipeline(settings: AppSettings, settings_file: Path) -> None:
 
     st.caption(
         "Full-source downloads can take hours (Otodom detail crawl + multi-GB RCN). "
-        "UM parks WFS + GIOŚ AQ; strategic noise WMS-only / EEA aircraft; "
+        "UM parks WFS + GIOŚ AQ; UM 2022 strategic noise WMS (road/rail/tram/"
+        "aircraft/industry Lden+Lnight → noise_total_*); "
         "Admin caps override YAML when saved."
     )
 

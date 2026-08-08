@@ -60,6 +60,7 @@ from happy_housing.app.data import (
     load_shap_bundle,
     load_shops,
     load_traffic_sample,
+    load_warsaw_noise_heatmap,
     processed_dir,
 )
 from happy_housing.app.explore_nav import (
@@ -153,6 +154,7 @@ from happy_housing.gis.amenity_catalog import (
     amenity_keys,
     coerce_amenity_weights,
 )
+from happy_housing.gis.warsaw_noise import NOISE_MAP_OVERLAYS
 from happy_housing.ingest.otodom import fetch_listing_detail, otodom_session
 from happy_housing.models.train import (
     FEATURE_COLUMNS,
@@ -231,6 +233,21 @@ def _sidebar_filters(frame: pd.DataFrame) -> tuple[FilterState, bool]:
         help=FILTER_HELP["oou"],
         key="explore_oou",
     )
+    high_noise = st.selectbox(
+        "Total noise Lden ≥ 55 dB",
+        ["(all)", "inside", "outside"],
+        help=FILTER_HELP["high_noise"],
+        key="explore_high_noise",
+    )
+    noise_cap = st.number_input(
+        "Max total Lden (dB, 0 = off)",
+        min_value=0.0,
+        max_value=100.0,
+        value=0.0,
+        step=1.0,
+        help=FILTER_HELP["max_noise_total"],
+        key="explore_max_noise_total",
+    )
     max_ppm = st.slider(
         "Max listing zł/m²",
         min_value=ppm_min,
@@ -266,6 +283,8 @@ def _sidebar_filters(frame: pd.DataFrame) -> tuple[FilterState, bool]:
             district=district,
             source=source,
             oou=oou,
+            high_noise=high_noise,
+            max_noise_total_lden_db=float(noise_cap) if float(noise_cap) > 0 else None,
             max_price_per_m2=float(max_ppm),
             max_age_months=max_age_months,
             **prop,
@@ -309,8 +328,8 @@ def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
             key="explore_ly_offers",
         ),
         oou=st.checkbox(
-            "Aircraft Lden contours",
-            value=True,
+            "Aircraft Lden contours (legacy)",
+            value=False,
             help=layer_help("oou"),
             key="explore_ly_oou",
         ),
@@ -436,6 +455,20 @@ def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
         ),
         city_poi_types=(),
     )
+    noise_labels = [label for label, _ in NOISE_MAP_OVERLAYS]
+    noise_by_label = {label: key for label, key in NOISE_MAP_OVERLAYS}
+    default_noise_label = next(
+        (label for label, key in NOISE_MAP_OVERLAYS if key == "total_lden"),
+        noise_labels[0],
+    )
+    noise_label = st.selectbox(
+        "Strategic noise (UM 2022)",
+        options=noise_labels,
+        index=noise_labels.index(default_noise_label),
+        help=layer_help("noise_overlay"),
+        key="explore_ly_noise_overlay",
+    )
+    flags.noise_overlay = noise_by_label.get(str(noise_label), "total_lden")
     label_by_key = {t.key: f"{t.group}: {t.label}" for t in AMENITY_TYPES}
     default_keys = list(DEFAULT_MAP_OBJECT_TYPES)
     selected_labels = st.multiselect(
@@ -487,6 +520,7 @@ def _tab_map(
     rail_areas: gpd.GeoDataFrame,
     airport: gpd.GeoDataFrame,
     city_pois: gpd.GeoDataFrame,
+    noise_points: pd.DataFrame,
     flags: LayerFlags,
     hour: int,
     basemap: str,
@@ -516,6 +550,7 @@ def _tab_map(
         rail_areas=rail_areas,
         airport=airport,
         city_pois=city_pois,
+        noise_points=noise_points,
         commute_lon=commute_lon,
         commute_lat=commute_lat,
         hour=hour,
@@ -903,6 +938,7 @@ def _tab_offer(
     rail_areas: gpd.GeoDataFrame,
     airport: gpd.GeoDataFrame,
     city_pois: gpd.GeoDataFrame,
+    noise_points: pd.DataFrame,
     flags: LayerFlags,
     hour: int,
     basemap: str,
@@ -988,7 +1024,7 @@ def _tab_offer(
         if context.open:
             st.caption(
                 "Distances rounded to whole metres. "
-                "Aircraft Lden/Lnight from EEA END contour bands (dB lower edge)."
+                "Noise bands from UM Warszawa 2022 strategic maps (dB lower edge)."
             )
             st.dataframe(
                 livability_rows(row, commute_label=commute_label),
@@ -1022,6 +1058,7 @@ def _tab_offer(
                 rail_areas=rail_areas,
                 airport=airport,
                 city_pois=city_pois,
+                noise_points=noise_points,
                 commute_lon=commute_lon,
                 commute_lat=commute_lat,
                 hour=hour,
@@ -1575,6 +1612,14 @@ def _tab_prefs(
             key="prefs_max_bike_path",
             help=PREF_HELP["max_bike_path"],
         )
+        max_noise_total = st.number_input(
+            "Max total Lden (dB)",
+            min_value=0.0,
+            value=float(prefs.max_noise_total_lden_db or 0.0),
+            step=1.0,
+            key="prefs_max_noise_total",
+            help=PREF_HELP["max_noise_total"],
+        )
 
     nl_text = st.text_area(
         "Natural-language preferences",
@@ -1612,6 +1657,7 @@ def _tab_prefs(
                 max_dist_gunb_m=_opt_num(max_gunb),
                 max_dist_park_m=_opt_num(max_park),
                 max_dist_bike_path_m=_opt_num(max_bike_path),
+                max_noise_total_lden_db=_opt_num(max_noise_total),
                 max_delta_price_per_m2=max_delta_val,
                 require_underpriced=bool(require_under),
                 nl_text=str(nl_text or ""),
@@ -1706,6 +1752,11 @@ def render_explore() -> None:
     military = load_military_areas() if "military" in needed else empty_gdf
     rail_areas = load_rail_areas() if "rail_areas" in needed else empty_gdf
     airport = load_airport_areas() if "airport" in needed else empty_gdf
+    noise_points = (
+        load_warsaw_noise_heatmap(flags.noise_overlay)
+        if "warsaw_noise" in needed
+        else empty_df
+    )
 
     commute = resolve_commute_target(app_settings, config)
     render_assistant_popover(
@@ -1731,6 +1782,7 @@ def render_explore() -> None:
         "military": military,
         "rail_areas": rail_areas,
         "airport": airport,
+        "noise_points": noise_points,
         "flags": flags,
         "hour": hour,
         "basemap": basemap,

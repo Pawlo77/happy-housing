@@ -28,14 +28,29 @@ def test_explore_datasets_needed_includes_bike_paths() -> None:
         rail_areas=False,
         airport=False,
         oou=False,
+        noise_overlay="off",
     )
     needed = explore_datasets_needed(section="Map", flags=flags)
     assert "bike_paths" in needed
 
 
+def test_explore_datasets_needed_includes_warsaw_noise() -> None:
+    flags = LayerFlags(
+        noise_overlay="total_lden",
+        city_boundary=False,
+        military=False,
+        rail_areas=False,
+        airport=False,
+        oou=False,
+    )
+    needed = explore_datasets_needed(section="Map", flags=flags)
+    assert "warsaw_noise" in needed
+
+
 def test_explore_datasets_needed_includes_defaults_for_map() -> None:
     flags = LayerFlags(
         oou=True,
+        noise_overlay="total_lden",
         city_boundary=True,
         military=True,
         rail_areas=True,
@@ -44,6 +59,7 @@ def test_explore_datasets_needed_includes_defaults_for_map() -> None:
     )
     needed = explore_datasets_needed(section="Map", flags=flags)
     assert "oou" in needed
+    assert "warsaw_noise" in needed
     assert "city_boundary" in needed
     assert "military" in needed
     assert "city_pois" in needed
