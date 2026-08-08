@@ -81,6 +81,8 @@ class UserPreferences:
     """Max metres to nearest GUNB site."""
     max_dist_park_m: float | None = None
     """Max metres to nearest UM Warszawa park / square."""
+    max_dist_bike_path_m: float | None = None
+    """Max metres to nearest OSM bike path."""
     max_delta_price_per_m2: float | None = None
     """Max listing - model delta (e.g. 0 = fair or better)."""
     require_underpriced: bool = False
@@ -130,6 +132,7 @@ class UserPreferences:
             "max_dist_air_m",
             "max_dist_gunb_m",
             "max_dist_park_m",
+            "max_dist_bike_path_m",
             "max_delta_price_per_m2",
         ):
             if float_key in data:
@@ -248,6 +251,10 @@ def apply_preferences(frame: pd.DataFrame, prefs: UserPreferences) -> pd.DataFra
         mask &= _numeric(frame, "dist_gunb_m").le(float(prefs.max_dist_gunb_m))
     if prefs.max_dist_park_m is not None:
         mask &= _numeric(frame, "dist_park_m").le(float(prefs.max_dist_park_m))
+    if prefs.max_dist_bike_path_m is not None:
+        mask &= _numeric(frame, "dist_bike_path_m").le(
+            float(prefs.max_dist_bike_path_m)
+        )
     if prefs.max_delta_price_per_m2 is not None:
         mask &= _numeric(frame, "delta_price_per_m2").le(
             float(prefs.max_delta_price_per_m2)

@@ -146,6 +146,8 @@ class AppSettings:
     """Fetch OSM amenities + shops during pipeline."""
     snap_listings_out_of_parks: bool = True
     """Snap park-interior listing pins to nearest OSM building."""
+    bike_path_coverage_radius_m: float = 500.0
+    """Neighbourhood radius (m) for ``bike_path_coverage_m`` feature."""
     download_gtfs: bool = True
     """Re-download GTFS during pipeline."""
     download_gios: bool = True
@@ -445,6 +447,15 @@ def load_app_settings(path: Path) -> AppSettings:
                 "snap_listings_out_of_parks",
                 defaults.snap_listings_out_of_parks,
             )
+        ),
+        bike_path_coverage_radius_m=max(
+            50.0,
+            float(
+                payload.get(
+                    "bike_path_coverage_radius_m",
+                    defaults.bike_path_coverage_radius_m,
+                )
+            ),
         ),
         download_gtfs=bool(payload.get("download_gtfs", defaults.download_gtfs)),
         download_gios=bool(payload.get("download_gios", defaults.download_gios)),

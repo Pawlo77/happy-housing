@@ -31,6 +31,7 @@ from happy_housing.app.zone_overlays import (
     ZONE_LINE,
     prepare_zone_records,
 )
+from happy_housing.gis.bike_paths import prepare_bike_paths_for_map
 
 logger = logging.getLogger(__name__)
 
@@ -516,6 +517,29 @@ def traffic_heatmap_layer(sample: pd.DataFrame, *, hour: int) -> pdk.Layer | Non
     )
 
 
+def bike_paths_layer(paths: gpd.GeoDataFrame | pd.DataFrame) -> pdk.Layer | None:
+    """OSM bicycle infrastructure as PathLayer polylines."""
+    if isinstance(paths, gpd.GeoDataFrame):
+        prepared = prepare_bike_paths_for_map(paths)
+    elif isinstance(paths, pd.DataFrame) and "path" in paths.columns:
+        prepared = paths
+    else:
+        prepared = pd.DataFrame()
+    if prepared.empty:
+        return None
+    return pdk.Layer(
+        "PathLayer",
+        data=prepared,
+        get_path="path",
+        get_color="[color_r, color_g, color_b, color_a]",
+        width_min_pixels=2,
+        width_max_pixels=5,
+        get_width=2.5,
+        pickable=True,
+        id="bike-paths",
+    )
+
+
 def air_stations_layer(stations: pd.DataFrame) -> pdk.Layer | None:
     """GIOŚ air-quality station markers (hexagon)."""
     prepared = prepare_point_layer(
@@ -777,6 +801,7 @@ def build_explore_layers(
     rail_areas: gpd.GeoDataFrame | None = None,
     airport: gpd.GeoDataFrame | None = None,
     city_pois: gpd.GeoDataFrame | None = None,
+    bike_paths: gpd.GeoDataFrame | None = None,
 ) -> list[pdk.Layer]:
     """Assemble enabled Explore map layers in draw order."""
     layers: list[pdk.Layer] = []
@@ -800,6 +825,12 @@ def build_explore_layers(
         heat = traffic_heatmap_layer(traffic_sample, hour=hour)
         if heat is not None:
             layers.append(heat)
+    if flags.bike_paths:
+        bike = bike_paths_layer(
+            bike_paths if bike_paths is not None else gpd.GeoDataFrame(geometry=[])
+        )
+        if bike is not None:
+            layers.append(bike)
     if flags.transit_intensity:
         layers.extend(transit_intensity_layers(stops, hourly, hour=hour))
     if flags.transit_network:

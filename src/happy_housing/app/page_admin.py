@@ -926,6 +926,7 @@ def _apply_pipeline_widgets(
     use_osm: bool,
     scrape_in_pipe: bool,
     snap_out_of_parks: bool,
+    bike_path_coverage_radius_m: float,
 ) -> None:
     """Copy Pipeline tab widget values onto ``settings`` (overrides on)."""
     settings.pipeline_overrides_enabled = True
@@ -944,6 +945,7 @@ def _apply_pipeline_widgets(
     settings.use_osm = bool(use_osm)
     settings.scrape_otodom_in_pipeline = bool(scrape_in_pipe)
     settings.snap_listings_out_of_parks = bool(snap_out_of_parks)
+    settings.bike_path_coverage_radius_m = float(bike_path_coverage_radius_m)
 
 
 def _tab_pipeline(settings: AppSettings, settings_file: Path) -> None:
@@ -1118,6 +1120,20 @@ def _tab_pipeline(settings: AppSettings, settings_file: Path) -> None:
         ),
         key="pipe_snap_out_of_parks",
     )
+    bike_path_coverage_radius_m = float(
+        st.number_input(
+            "Bike-path coverage radius (m)",
+            min_value=50.0,
+            max_value=2_000.0,
+            value=float(settings.bike_path_coverage_radius_m),
+            step=50.0,
+            help=(
+                "Neighbourhood radius for bike_path_coverage_m (metres of OSM "
+                "cycle infrastructure near each listing). Used at enrich/retrain."
+            ),
+            key="pipe_bike_path_coverage_radius_m",
+        )
+    )
 
     st.subheader("Remodel")
     scrape_in_pipe = st.checkbox(
@@ -1147,6 +1163,7 @@ def _tab_pipeline(settings: AppSettings, settings_file: Path) -> None:
                 use_osm=use_osm,
                 scrape_in_pipe=scrape_in_pipe,
                 snap_out_of_parks=snap_out_of_parks,
+                bike_path_coverage_radius_m=bike_path_coverage_radius_m,
             )
             save_app_settings(settings_file, settings)
             st.success("Pipeline settings saved (overrides YAML ingest).")
@@ -1175,6 +1192,7 @@ def _tab_pipeline(settings: AppSettings, settings_file: Path) -> None:
                 use_osm=use_osm,
                 scrape_in_pipe=scrape_in_pipe,
                 snap_out_of_parks=snap_out_of_parks,
+                bike_path_coverage_radius_m=bike_path_coverage_radius_m,
             )
             save_app_settings(settings_file, settings)
             cmd = [

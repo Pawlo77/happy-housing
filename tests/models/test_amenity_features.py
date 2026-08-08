@@ -22,4 +22,6 @@ def test_core_features_include_city_poi_distances() -> None:
     assert "dist_indoor_pool_m" in CORE_FEATURE_COLUMNS
     assert "dist_charging_station_m" in CORE_FEATURE_COLUMNS
     assert "dist_park_m" in CORE_FEATURE_COLUMNS
+    assert "dist_bike_path_m" in CORE_FEATURE_COLUMNS
+    assert "bike_path_coverage_m" in CORE_FEATURE_COLUMNS
     assert FEATURE_COLUMNS[0] == CORE_FEATURE_COLUMNS[0]

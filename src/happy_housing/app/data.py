@@ -155,6 +155,17 @@ def load_parks() -> gpd.GeoDataFrame:
     return gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
 
 
+def load_bike_paths() -> gpd.GeoDataFrame:
+    """Load OSM bicycle infrastructure lines from cache or fixture."""
+    config = load_config()
+    cache = config.data.cache_path() / "bike_paths.geojson"
+    fixture = config.data.fixtures_path() / "bike_paths.geojson"
+    for path in (cache, fixture):
+        if path.exists():
+            return read_geojson_gdf(str(path), path.stat().st_mtime)
+    return gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
+
+
 def load_city_pois() -> gpd.GeoDataFrame:
     """Load UM sports + civic city POIs from cache or fixture."""
     config = load_config()

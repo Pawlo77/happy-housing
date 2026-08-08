@@ -68,8 +68,10 @@ _STRUCTURAL_FEATURE_COLUMNS: tuple[str, ...] = (
     "commute_min",
     "transit_commute_min",
     "dist_gunb_m",
+    "dist_bike_path_m",
+    "bike_path_coverage_m",
 )
-"""Structural + noise + air + transit/commute/GUNB features."""
+"""Structural + noise + air + transit/commute/GUNB + bike-path features."""
 
 CORE_FEATURE_COLUMNS: tuple[str, ...] = (
     _STRUCTURAL_FEATURE_COLUMNS + model_distance_feature_columns()

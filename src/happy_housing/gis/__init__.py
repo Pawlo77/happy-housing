@@ -12,6 +12,10 @@ import pandas as pd
 from shapely.geometry import Point
 
 from happy_housing.gis.amenity_catalog import AMENITY_TYPES, dist_column
+from happy_housing.gis.bike_paths import (
+    BIKE_PATH_COVERAGE_RADIUS_M,
+    attach_bike_path_features,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -386,12 +390,14 @@ def enrich_listings(
     schools: gpd.GeoDataFrame | None = None,
     shops: gpd.GeoDataFrame | None = None,
     city_pois: gpd.GeoDataFrame | None = None,
+    bike_paths: gpd.GeoDataFrame | None = None,
+    bike_path_coverage_radius_m: float = BIKE_PATH_COVERAGE_RADIUS_M,
     aircraft_lden_path: Path | None = None,
     aircraft_lnight_path: Path | None = None,
     road_lden_path: Path | None = None,
     rail_lden_path: Path | None = None,
 ) -> gpd.GeoDataFrame:
-    """Attach noise, amenity, park, school, shop, city-POI, air, transit, GUNB."""
+    """Attach noise, amenities, parks, bike paths, transit, air, and GUNB."""
     gdf = listings_to_gdf(listings)
     lden = (
         load_noise_contours(aircraft_lden_path, "lden_db")
@@ -444,6 +450,18 @@ def enrich_listings(
         gdf = nearest_distance_meters(gdf, parks, projected_crs, "dist_park_m")
     else:
         gdf["dist_park_m"] = float("nan")
+
+    paths = (
+        bike_paths
+        if bike_paths is not None
+        else gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
+    )
+    gdf = attach_bike_path_features(
+        gdf,
+        paths,
+        projected_crs=projected_crs,
+        coverage_radius_m=float(bike_path_coverage_radius_m),
+    )
 
     school_src: gpd.GeoDataFrame | None = None
     if schools is not None and not schools.empty:

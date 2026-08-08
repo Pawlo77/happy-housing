@@ -249,6 +249,8 @@ def livability_rows(
         ("air_no2_ug_m3", "Nearest NO₂", "ug"),
         ("dist_gunb_m", "Nearest GUNB permit", "m"),
         ("dist_park_m", "Nearest park / square", "m"),
+        ("dist_bike_path_m", "Nearest bike path", "m"),
+        ("bike_path_coverage_m", "Bike path coverage nearby", "m"),
         ("dist_daszynskiego_m", f"Distance to {short}", "m"),
     )
     out: list[dict[str, Any]] = []

@@ -41,6 +41,7 @@ from happy_housing.gis import (
     load_amenity_points,
     load_shop_points,
 )
+from happy_housing.gis.bike_paths import fetch_bike_paths
 from happy_housing.gis.location_fix import snap_listings_out_of_parks
 from happy_housing.gis.routing import (
     attach_commute_minutes,
@@ -334,6 +335,12 @@ def run_pipeline(
         fixture_path=fixtures / "traffic_sample.json",
         force_refresh=force_gis_refresh,
     )
+    bike_paths = fetch_bike_paths(
+        cache,
+        bbox=config.bbox.as_tuple(),
+        fixture_path=fixtures / "bike_paths.geojson",
+        force_refresh=force_gis_refresh,
+    )
 
     if app_settings.snap_listings_out_of_parks:
         listings = snap_listings_out_of_parks(
@@ -364,6 +371,8 @@ def run_pipeline(
         schools=schools,
         shops=shops,
         city_pois=city_pois,
+        bike_paths=bike_paths,
+        bike_path_coverage_radius_m=float(app_settings.bike_path_coverage_radius_m),
         aircraft_lden_path=fixtures / "chopin_aircraft_lden.geojson",
         aircraft_lnight_path=fixtures / "chopin_aircraft_lnight.geojson",
         road_lden_path=road_lden_path if road_lden_path.exists() else None,

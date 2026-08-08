@@ -68,6 +68,8 @@ class LayerFlags:
     """Include rail / SKM-style lines when network is on."""
     traffic: bool = False
     """Road-activity heatmap proxy for the selected hour."""
+    bike_paths: bool = False
+    """OSM bicycle infrastructure polylines."""
     air: bool = False
     """GIOŚ air-quality stations."""
     gunb: bool = False
@@ -136,6 +138,8 @@ def explore_datasets_needed(
         needed.update({"stops", "route_shapes"})
     if flags.traffic:
         needed.add("traffic")
+    if flags.bike_paths:
+        needed.add("bike_paths")
     if flags.air:
         needed.add("air")
     if flags.gunb:

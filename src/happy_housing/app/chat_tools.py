@@ -39,6 +39,8 @@ _SLIM_KEYS: tuple[str, ...] = (
     "dist_transit_stop_m",
     "dist_metro_m",
     "dist_park_m",
+    "dist_bike_path_m",
+    "bike_path_coverage_m",
     "in_oou",
     "aircraft_lden_db",
     "has_balcony",

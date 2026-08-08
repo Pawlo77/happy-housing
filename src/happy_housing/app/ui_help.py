@@ -45,6 +45,12 @@ LAYER_HELP: dict[str, str] = {
         "(motorway→residential), scaled by hour-of-day. Warm corridors ≈ "
         "busier; not live vehicle counts. Prefer quieter streets for sleep."
     ),
+    "bike_paths": (
+        "OSM bicycle infrastructure (cycleways / designated bike routes) as "
+        "cyan polylines. Model uses dist_bike_path_m (nearest) and "
+        "bike_path_coverage_m (metres of path within the Admin coverage "
+        "radius). Prefs can cap max distance to the nearest path."
+    ),
     "shops": (
         "OpenStreetMap retail / shop POIs (full shop=* set). "
         "Nearby daily shopping raises convenience and neighbourhood amenity; "
@@ -217,6 +223,10 @@ PREF_HELP: dict[str, str] = {
     "max_park": (
         "Max metres to nearest UM park/square (PLACE_SKWERY). Closer greenery "
         "improves livability; model uses dist_park_m."
+    ),
+    "max_bike_path": (
+        "Max metres to nearest OSM bike path / cycleway. Model also uses "
+        "bike_path_coverage_m (path length nearby)."
     ),
 }
 """Explore Prefs form field help texts."""

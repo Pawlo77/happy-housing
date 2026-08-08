@@ -44,6 +44,7 @@ from happy_housing.app.data import (
     load_aircraft_lden,
     load_airport_areas,
     load_amenities,
+    load_bike_paths,
     load_city_boundary,
     load_city_pois,
     load_config,
@@ -379,6 +380,12 @@ def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
             help=layer_help("traffic"),
             key="explore_ly_traffic",
         ),
+        bike_paths=st.checkbox(
+            "Bike paths (OSM)",
+            value=False,
+            help=layer_help("bike_paths"),
+            key="explore_ly_bike_paths",
+        ),
         shops=st.checkbox(
             "Shops",
             value=False,
@@ -474,6 +481,7 @@ def _tab_map(
     air_stations: pd.DataFrame,
     gunb: pd.DataFrame,
     parks: gpd.GeoDataFrame,
+    bike_paths: gpd.GeoDataFrame,
     city_boundary: gpd.GeoDataFrame,
     military: gpd.GeoDataFrame,
     rail_areas: gpd.GeoDataFrame,
@@ -502,6 +510,7 @@ def _tab_map(
         air_stations=air_stations,
         gunb=gunb,
         parks=parks,
+        bike_paths=bike_paths,
         city_boundary=city_boundary,
         military=military,
         rail_areas=rail_areas,
@@ -888,6 +897,7 @@ def _tab_offer(
     air_stations: pd.DataFrame,
     gunb: pd.DataFrame,
     parks: gpd.GeoDataFrame,
+    bike_paths: gpd.GeoDataFrame,
     city_boundary: gpd.GeoDataFrame,
     military: gpd.GeoDataFrame,
     rail_areas: gpd.GeoDataFrame,
@@ -1006,6 +1016,7 @@ def _tab_offer(
                 air_stations=air_stations,
                 gunb=gunb,
                 parks=parks,
+                bike_paths=bike_paths,
                 city_boundary=city_boundary,
                 military=military,
                 rail_areas=rail_areas,
@@ -1556,6 +1567,14 @@ def _tab_prefs(
             key="prefs_max_park",
             help=PREF_HELP["max_park"],
         )
+        max_bike_path = st.number_input(
+            "Max bike path m",
+            min_value=0.0,
+            value=float(prefs.max_dist_bike_path_m or 0.0),
+            step=50.0,
+            key="prefs_max_bike_path",
+            help=PREF_HELP["max_bike_path"],
+        )
 
     nl_text = st.text_area(
         "Natural-language preferences",
@@ -1592,6 +1611,7 @@ def _tab_prefs(
                 max_dist_air_m=_opt_num(max_air),
                 max_dist_gunb_m=_opt_num(max_gunb),
                 max_dist_park_m=_opt_num(max_park),
+                max_dist_bike_path_m=_opt_num(max_bike_path),
                 max_delta_price_per_m2=max_delta_val,
                 require_underpriced=bool(require_under),
                 nl_text=str(nl_text or ""),
@@ -1677,6 +1697,7 @@ def render_explore() -> None:
     hourly = load_gtfs_hourly() if "hourly" in needed else empty_df
     route_shapes = load_gtfs_route_shapes() if "route_shapes" in needed else empty_df
     traffic_sample = load_traffic_sample() if "traffic" in needed else empty_df
+    bike_paths = load_bike_paths() if "bike_paths" in needed else empty_gdf
     air_stations = load_gios_stations() if "air" in needed else empty_df
     gunb = load_gunb_points() if "gunb" in needed else empty_df
     parks = load_parks() if "parks" in needed else empty_gdf
@@ -1704,6 +1725,7 @@ def render_explore() -> None:
         "air_stations": air_stations,
         "gunb": gunb,
         "parks": parks,
+        "bike_paths": bike_paths,
         "city_pois": city_pois,
         "city_boundary": city_boundary,
         "military": military,
