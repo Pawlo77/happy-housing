@@ -41,9 +41,9 @@ LAYER_HELP: dict[str, str] = {
     ),
     "transit_show_rail": ("Draw rail / SKM-style routes (green). GTFS route_type=2."),
     "traffic": (
-        "Diurnal road-activity heatmap proxy at the sidebar hour "
-        "(not live sensors). Peak hours ≈ more congestion/noise — worse "
-        "living comfort near busy corridors; context only, not a model feature."
+        "Diurnal street-activity heatmap along densified OSM drive roads "
+        "(motorway→residential), scaled by hour-of-day. Warm corridors ≈ "
+        "busier; not live vehicle counts. Prefer quieter streets for sleep."
     ),
     "shops": (
         "OpenStreetMap retail / shop POIs (full shop=* set). "
@@ -251,7 +251,7 @@ SPATIAL_METRIC_HELP: dict[str, str] = {
         "price attractiveness vs fair value — core bargain hunt map."
     ),
     "traffic": (
-        "OSM diurnal road proxy at the sidebar hour. Warm = busier corridors "
+        "OSM densified drive-road heatmap x hour curve. Warm = busier streets "
         "— noise/congestion trade-off for living comfort."
     ),
 }

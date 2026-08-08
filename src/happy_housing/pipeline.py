@@ -45,6 +45,7 @@ from happy_housing.gis.routing import (
     attach_commute_minutes,
     attach_transit_commute_minutes,
 )
+from happy_housing.gis.traffic import fetch_traffic_road_sample
 from happy_housing.ingest import (
     build_gtfs_stop_hourly,
     download_file,
@@ -324,6 +325,12 @@ def run_pipeline(
     city_pois = fetch_warsaw_city_pois(
         cache,
         fixture_path=fixtures / "city_pois.geojson",
+        force_refresh=force_gis_refresh,
+    )
+    fetch_traffic_road_sample(
+        cache,
+        bbox=config.bbox.as_tuple(),
+        fixture_path=fixtures / "traffic_sample.json",
         force_refresh=force_gis_refresh,
     )
 

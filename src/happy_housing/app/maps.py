@@ -492,19 +492,23 @@ def transit_network_layers(
 
 
 def traffic_heatmap_layer(sample: pd.DataFrame, *, hour: int) -> pdk.Layer | None:
-    """Diurnal road-activity proxy heatmap (not live vehicle counts)."""
+    """Diurnal street-activity heatmap along densified OSM roads."""
     prepared = traffic_weights_for_hour(sample, hour=hour)
     if prepared.empty:
         return None
+    # Dense road sample → larger radius + lower threshold reads as corridors,
+    # not scattered blob points.
+    n = len(prepared)
+    radius = 55 if n >= 5_000 else 40
     return pdk.Layer(
         "HeatmapLayer",
         data=prepared,
         get_position="[lon, lat]",
         get_weight="weight",
-        radiusPixels=32,
-        intensity=1.4,
-        threshold=0.04,
-        opacity=0.5,
+        radiusPixels=radius,
+        intensity=1.15,
+        threshold=0.02,
+        opacity=0.55,
         pickable=False,
         id="traffic-heat",
     )

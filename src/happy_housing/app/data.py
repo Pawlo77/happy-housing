@@ -348,8 +348,19 @@ def load_shops() -> pd.DataFrame:
 
 
 def load_traffic_sample() -> pd.DataFrame:
-    """Load corridor sample points for the diurnal traffic-proxy heatmap."""
-    fixture = load_config().data.fixtures_path() / "traffic_sample.json"
-    if not fixture.exists():
-        return pd.DataFrame(columns=["name", "lon", "lat", "base_weight"])
-    return _read_json_points(str(fixture), fixture.stat().st_mtime)
+    """Load densified OSM road sample for the diurnal traffic-proxy heatmap."""
+    config = load_config()
+    cache = config.data.cache_path()
+    cache_path = cache / "traffic_roads.parquet"
+    fixture = config.data.fixtures_path() / "traffic_sample.json"
+    if cache_path.exists():
+        frame = _read_parquet_frame(str(cache_path), cache_path.stat().st_mtime)
+        if not frame.empty and {"lon", "lat", "base_weight"}.issubset(frame.columns):
+            return frame
+    from happy_housing.gis.traffic import fetch_traffic_road_sample
+
+    return fetch_traffic_road_sample(
+        cache,
+        bbox=config.bbox.as_tuple(),
+        fixture_path=fixture if fixture.exists() else None,
+    )
