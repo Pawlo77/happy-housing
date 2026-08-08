@@ -3,10 +3,18 @@
 from __future__ import annotations
 
 import logging
+import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pandas as pd
 
+from happy_housing.app.metadata import (
+    DEFAULT_METHODOLOGY,
+    DEFAULT_SOURCES,
+    RunMetadata,
+    write_run_metadata,
+)
 from happy_housing.config import load_experiment_config
 from happy_housing.gis import (
     enrich_listings,
@@ -24,6 +32,7 @@ from happy_housing.ingest.gunb import download_gunb_mazowieckie, gunb_points_gdf
 from happy_housing.ingest.otodom import scrape_otodom_warsaw
 from happy_housing.ingest.rcn import extract_rcn_transactions
 from happy_housing.models.train import (
+    FEATURE_COLUMNS,
     predict_price_per_m2,
     run_training_with_mlflow,
 )
@@ -81,6 +90,7 @@ def run_pipeline(
     rcn_max_rows: int = 40000,
 ) -> dict[str, Path]:
     """Run the full local pipeline and return key output paths."""
+    started = time.perf_counter()
     config = load_experiment_config(config_path)
     raw = config.data.raw_path()
     processed = config.data.processed_path()
@@ -210,6 +220,27 @@ def run_pipeline(
     scored_path = processed / "listings_scored.parquet"
     train_frame.to_parquet(scored_path, index=False)
 
+    duration_s = time.perf_counter() - started
+    n_by_source = (
+        train_frame["source"].astype(str).value_counts().to_dict()
+        if "source" in train_frame.columns
+        else {}
+    )
+    write_run_metadata(
+        processed / "run_metadata.json",
+        RunMetadata(
+            refreshed_at=datetime.now(tz=UTC).isoformat(),
+            duration_s=float(duration_s),
+            n_offers=len(train_frame),
+            n_by_source={str(k): int(v) for k, v in n_by_source.items()},
+            model_metrics=dict(result.metrics),
+            model_path=str(model_path),
+            feature_columns=list(FEATURE_COLUMNS),
+            sources=list(DEFAULT_SOURCES),
+            methodology=DEFAULT_METHODOLOGY,
+        ),
+    )
+
     return {
         "enriched": enriched_path,
         "scored": scored_path,
@@ -219,6 +250,7 @@ def run_pipeline(
         "rcn": rcn_parquet,
         "otodom": otodom_parquet,
         "gunb": gunb_parquet,
+        "metadata": processed / "run_metadata.json",
     }
 
 
