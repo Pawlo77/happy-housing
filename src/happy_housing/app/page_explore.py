@@ -77,7 +77,7 @@ from happy_housing.app.filters import (
     offer_age_months,
 )
 from happy_housing.app.llm_metrics import llm_metrics_path
-from happy_housing.app.map_layers import LayerFlags
+from happy_housing.app.map_layers import LayerFlags, explore_datasets_needed
 from happy_housing.app.maps import (
     basemap_style,
     build_explore_layers,
@@ -939,8 +939,6 @@ def _tab_offer(
             st.rerun()
 
     row = filtered.loc[filtered["listing_id"] == selected_id].iloc[0].copy()
-    row = _ensure_offer_media(row)
-    description = str(row.get("description") or "").strip()
 
     overview, context, local_map, explain, ai_tab = st.tabs(
         [
@@ -955,76 +953,86 @@ def _tab_offer(
     )
 
     with overview:
-        left, right = st.columns([1.1, 1.6])
-        with left:
-            _render_offer_gallery(row)
-            if isinstance(row.get("url"), str) and row["url"]:
-                st.link_button("Open source listing", str(row["url"]), width="stretch")
-        with right:
-            title = row.get("title") or row.get("listing_id")
-            st.subheader(str(title))
-            _price_metrics(row)
-            st.dataframe(offer_fact_rows(row), hide_index=True, width="stretch")
-        st.markdown("#### Source description")
-        if description:
-            st.markdown(sanitize_listing_html(description), unsafe_allow_html=True)
-        else:
-            st.info("No listing description available for this offer.")
+        if overview.open:
+            row = _ensure_offer_media(row)
+            description = str(row.get("description") or "").strip()
+            left, right = st.columns([1.1, 1.6])
+            with left:
+                _render_offer_gallery(row)
+                if isinstance(row.get("url"), str) and row["url"]:
+                    st.link_button(
+                        "Open source listing", str(row["url"]), width="stretch"
+                    )
+            with right:
+                title = row.get("title") or row.get("listing_id")
+                st.subheader(str(title))
+                _price_metrics(row)
+                st.dataframe(offer_fact_rows(row), hide_index=True, width="stretch")
+            st.markdown("#### Source description")
+            if description:
+                st.markdown(sanitize_listing_html(description), unsafe_allow_html=True)
+            else:
+                st.info("No listing description available for this offer.")
 
     with context:
-        st.caption(
-            "Distances rounded to whole metres. "
-            "Aircraft Lden/Lnight from EEA END contour bands (dB lower edge)."
-        )
-        st.dataframe(
-            livability_rows(row, commute_label=commute_label),
-            hide_index=True,
-            width="stretch",
-        )
-        _price_metrics(row)
+        if context.open:
+            st.caption(
+                "Distances rounded to whole metres. "
+                "Aircraft Lden/Lnight from EEA END contour bands (dB lower edge)."
+            )
+            st.dataframe(
+                livability_rows(row, commute_label=commute_label),
+                hide_index=True,
+                width="stretch",
+            )
+            _price_metrics(row)
 
     with local_map:
-        st.caption("Same layer stack as the main Explore map (sidebar toggles apply).")
-        lat, lon = float(row["lat"]), float(row["lon"])
-        layers = build_explore_layers(
-            listings=filtered,
-            flags=flags,
-            oou=oou,
-            amenities=amenities,
-            shops=shops,
-            stops=stops,
-            hourly=hourly,
-            route_shapes=route_shapes,
-            traffic_sample=traffic_sample,
-            air_stations=air_stations,
-            gunb=gunb,
-            parks=parks,
-            city_boundary=city_boundary,
-            military=military,
-            rail_areas=rail_areas,
-            airport=airport,
-            city_pois=city_pois,
-            commute_lon=commute_lon,
-            commute_lat=commute_lat,
-            hour=hour,
-            commute_label=commute_label,
-        )
-        layers.append(focus_marker_layer(lat, lon))
-        render_deck(
-            layers,
-            latitude=lat,
-            longitude=lon,
-            zoom=13.5,
-            map_style=basemap_style(basemap),
-        )
+        if local_map.open:
+            st.caption(
+                "Same layer stack as the main Explore map (sidebar toggles apply)."
+            )
+            lat, lon = float(row["lat"]), float(row["lon"])
+            layers = build_explore_layers(
+                listings=filtered,
+                flags=flags,
+                oou=oou,
+                amenities=amenities,
+                shops=shops,
+                stops=stops,
+                hourly=hourly,
+                route_shapes=route_shapes,
+                traffic_sample=traffic_sample,
+                air_stations=air_stations,
+                gunb=gunb,
+                parks=parks,
+                city_boundary=city_boundary,
+                military=military,
+                rail_areas=rail_areas,
+                airport=airport,
+                city_pois=city_pois,
+                commute_lon=commute_lon,
+                commute_lat=commute_lat,
+                hour=hour,
+                commute_label=commute_label,
+            )
+            layers.append(focus_marker_layer(lat, lon))
+            render_deck(
+                layers,
+                latitude=lat,
+                longitude=lon,
+                zoom=13.5,
+                map_style=basemap_style(basemap),
+            )
 
     with explain:
-        st.caption(
-            "Feature contributions to the model zł/m². "
-            "Green lowers the fair price; red raises it."
-        )
-        one = filtered.loc[filtered["listing_id"] == selected_id]
-        _render_shap(one)
+        if explain.open:
+            st.caption(
+                "Feature contributions to the model zł/m². "
+                "Green lowers the fair price; red raises it."
+            )
+            one = filtered.loc[filtered["listing_id"] == selected_id]
+            _render_shap(one)
 
     with ai_tab:
         listing_id = str(row.get("listing_id") or "")
@@ -1644,39 +1652,40 @@ def render_explore() -> None:
     prefs = load_preferences(prefs_file)
     snaps_file = starred_snapshots_path(proc)
     news_file = starred_news_path(proc)
-    # Sync against the full scored universe so sidebar filters never fake removals.
-    sync_starred_news(
-        starred,
-        frame,
-        snapshots_path=snaps_file,
-        news_path=news_file,
-        history_cap=app_settings.news_history_cap,
-    )
-    news_items = load_news(news_file)
     map_board = apply_starred_only(filtered, starred) if starred_only else filtered
     if prefs.enabled:
         map_board = apply_preferences(map_board, prefs)
     config = load_config()
 
-    oou = load_aircraft_lden()
-    amenities = load_amenities()
-    shops = load_shops()
-    stops = load_gtfs_stops()
-    hourly = load_gtfs_hourly()
-    route_shapes = load_gtfs_route_shapes()
-    traffic_sample = load_traffic_sample()
-    air_stations = load_gios_stations()
-    gunb = load_gunb_points()
-    parks = load_parks()
-    city_pois = load_city_pois()
-    city_boundary = load_city_boundary()
-    military = load_military_areas()
-    rail_areas = load_rail_areas()
-    airport = load_airport_areas()
-
     apply_explore_section_pending()
     if "explore_section" not in st.session_state:
         st.session_state["explore_section"] = "Map"
+    section = str(st.session_state.get("explore_section") or "Map")
+    offer_subtab = str(st.session_state.get("offer_subtab") or "Overview")
+    needed = explore_datasets_needed(
+        section=section,
+        flags=flags,
+        offer_subtab=offer_subtab,
+    )
+
+    empty_gdf = gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
+    empty_df = pd.DataFrame()
+    oou = load_aircraft_lden() if "oou" in needed else None
+    amenities = load_amenities() if "amenities" in needed else empty_gdf
+    shops = load_shops() if "shops" in needed else empty_df
+    stops = load_gtfs_stops() if "stops" in needed else empty_df
+    hourly = load_gtfs_hourly() if "hourly" in needed else empty_df
+    route_shapes = load_gtfs_route_shapes() if "route_shapes" in needed else empty_df
+    traffic_sample = load_traffic_sample() if "traffic" in needed else empty_df
+    air_stations = load_gios_stations() if "air" in needed else empty_df
+    gunb = load_gunb_points() if "gunb" in needed else empty_df
+    parks = load_parks() if "parks" in needed else empty_gdf
+    city_pois = load_city_pois() if "city_pois" in needed else empty_gdf
+    city_boundary = load_city_boundary() if "city_boundary" in needed else empty_gdf
+    military = load_military_areas() if "military" in needed else empty_gdf
+    rail_areas = load_rail_areas() if "rail_areas" in needed else empty_gdf
+    airport = load_airport_areas() if "airport" in needed else empty_gdf
+
     commute = resolve_commute_target(app_settings, config)
     render_assistant_popover(
         scored=frame,
@@ -1773,9 +1782,17 @@ def render_explore() -> None:
             )
     with tab_news:
         if tab_news.open:
+            # Sync against full scored universe so sidebar filters never fake removals.
+            sync_starred_news(
+                starred,
+                frame,
+                snapshots_path=snaps_file,
+                news_path=news_file,
+                history_cap=app_settings.news_history_cap,
+            )
             _tab_news(
                 starred=starred,
-                items=news_items,
+                items=load_news(news_file),
                 news_file=news_file,
                 scored=frame,
                 prefs=prefs,

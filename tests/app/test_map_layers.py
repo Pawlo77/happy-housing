@@ -51,6 +51,7 @@ def test_traffic_weights_scale_with_hour() -> None:
     night = traffic_weights_for_hour(sample, hour=3)
     peak = traffic_weights_for_hour(sample, hour=8)
     assert peak["weight"].sum() > night["weight"].sum()
+    assert list(peak.columns) == ["lon", "lat", "weight"]
 
 
 def test_prepare_listings_and_shops_expose_tooltip_fields() -> None:

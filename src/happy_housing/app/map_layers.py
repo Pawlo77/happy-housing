@@ -88,6 +88,61 @@ class LayerFlags:
     """Rondo Daszyńskiego commute target."""
 
 
+def explore_datasets_needed(
+    *,
+    section: str,
+    flags: LayerFlags,
+    offer_subtab: str = "Overview",
+) -> frozenset[str]:
+    """Which heavy Explore datasets to load for the active tab + layer flags.
+
+    Board / Chat / Prefs skip GIS entirely. News only needs star-news sync.
+    Map / Spatial load overlays gated by ``flags``. Offer loads GIS only when
+    the Offer → Map subtab is open.
+    """
+    name = str(section or "").strip()
+    if name == "News":
+        return frozenset({"star_news"})
+    if name == "Offer" and str(offer_subtab or "Overview") != "Map":
+        return frozenset()
+    if name not in {"Map", "Offer", "Spatial"}:
+        return frozenset()
+
+    needed: set[str] = set()
+    # Spatial always draws zone context + traffic heat for metrics.
+    if name == "Spatial":
+        needed.update({"city_boundary", "military", "rail_areas", "airport", "traffic"})
+    if flags.oou:
+        needed.add("oou")
+    if flags.city_boundary:
+        needed.add("city_boundary")
+    if flags.military:
+        needed.add("military")
+    if flags.rail_areas:
+        needed.add("rail_areas")
+    if flags.airport:
+        needed.add("airport")
+    if flags.parks:
+        needed.add("parks")
+    if flags.city_poi_types:
+        needed.add("city_pois")
+    if flags.hospitals or flags.fire_stations or flags.police:
+        needed.add("amenities")
+    if flags.shops:
+        needed.add("shops")
+    if flags.transit_intensity:
+        needed.update({"stops", "hourly"})
+    if flags.transit_network:
+        needed.update({"stops", "route_shapes"})
+    if flags.traffic:
+        needed.add("traffic")
+    if flags.air:
+        needed.add("air")
+    if flags.gunb:
+        needed.add("gunb")
+    return frozenset(needed)
+
+
 MAX_GUNB_MAP_POINTS = 3000
 """Hard cap for GUNB IconLayer rows sent to the browser."""
 
@@ -449,9 +504,13 @@ def prepare_transit_stops_network(
 
 
 def traffic_weights_for_hour(sample: pd.DataFrame, *, hour: int) -> pd.DataFrame:
-    """Scale road-sample base weights by the diurnal traffic curve."""
+    """Scale road-sample base weights by the diurnal traffic curve.
+
+    Returns only ``lon`` / ``lat`` / ``weight`` — HeatmapLayer is non-pickable,
+    so tooltip columns only inflate the pydeck JSON payload.
+    """
     if sample.empty:
-        return pd.DataFrame()
+        return pd.DataFrame(columns=["lon", "lat", "weight"])
     out = sample.copy()
     out["lat"] = pd.to_numeric(out["lat"], errors="coerce")
     out["lon"] = pd.to_numeric(out["lon"], errors="coerce")
@@ -459,14 +518,4 @@ def traffic_weights_for_hour(sample: pd.DataFrame, *, hour: int) -> pd.DataFrame
     out = out.dropna(subset=["lat", "lon"])
     factor = diurnal_traffic_weight(hour)
     out["weight"] = out["base_weight"] * factor
-    name = (
-        out["name"].astype(str)
-        if "name" in out.columns
-        else pd.Series("corridor", index=out.index)
-    )
-    out["tooltip_name"] = name
-    out["tooltip_detail"] = (
-        f"Traffic proxy · {int(hour):02d}:00 · intensity {factor:.2f}x"
-    )
-    out["layer_label"] = "Traffic"
-    return out.reset_index(drop=True)
+    return out[["lon", "lat", "weight"]].reset_index(drop=True)

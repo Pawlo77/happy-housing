@@ -176,6 +176,8 @@ def amenity_layers(
     show_police: bool = True,
 ) -> list[pdk.Layer]:
     """Toggleable OSM amenity markers with distinct silhouettes per type."""
+    if not (show_hospital or show_fire or show_police):
+        return []
     if amenities.empty or "amenity" not in amenities.columns:
         return []
     pts = amenities.copy()
