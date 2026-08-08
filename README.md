@@ -31,12 +31,13 @@ charts, model hold-out metrics, and open-data source inventory.
 
 ### Explore
 
-Sidebar filters + map overlays. **Map / Offer / Board / News**:
+Sidebar filters + map overlays. **Map / Spatial / Offer / Board / News / Chat / Prefs**:
 
 - **Map** — underpriced (green) vs overpriced (red) pins, OOU/noise, transit, amenities
 - **Offer** — deep dive (Overview · Context · Map · Explain · AI review), star watching
 - **Board** — filterable table; row click opens Offer
 - **News** — field changes on starred offers
+- **Chat** — LMS Assistant (also **Assistant** popover): search/recommend, prefs, stars, web opinions, open offers; conversations persist and reload
 
 ![Explore — Map](docs/screenshots/04-explore-map.png)
 

@@ -13,6 +13,7 @@ EXPLORE_SECTIONS: tuple[str, ...] = (
     "Offer",
     "Board",
     "News",
+    "Chat",
     "Prefs",
 )
 """Top-level Explore section labels."""

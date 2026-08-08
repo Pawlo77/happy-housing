@@ -808,6 +808,7 @@ def render_deck(
     map_style: str | dict[str, Any] | None = None,
     tooltip: dict[str, Any] | None = None,
     selection_key: str | None = None,
+    chart_key: str | None = None,
 ) -> Any:
     """Render a pydeck chart; optional click selection when ``selection_key`` set."""
     view = pdk.ViewState(latitude=latitude, longitude=longitude, zoom=zoom)
@@ -830,7 +831,10 @@ def render_deck(
                 selection_mode="single-object",
                 key=selection_key,
             )
-        st.pydeck_chart(deck)
+        if chart_key:
+            st.pydeck_chart(deck, key=chart_key)
+        else:
+            st.pydeck_chart(deck)
         return None
     except Exception as exc:
         logger.exception("pydeck render failed: %s", exc)

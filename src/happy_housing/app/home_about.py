@@ -59,20 +59,9 @@ ABOUT_SECTIONS: tuple[AboutSection, ...] = (
             "Not a bank appraisal, not a notary opinion, and not investment "
             "advice. Listings go stale; public layers have gaps; the model "
             "can be wrong on odd flats. Treat it as a research lens — then "
-            "verify on the street and with people you trust."
-        ),
-    ),
-    AboutSection(
-        title="Where to go next",
-        body=(
-            "**Explore** — map, offer deep-dive, board, and starred news.\n\n"
-            "**Stats** — inventory and value patterns under filters "
-            "(district, price, amenities, ownership, and more).\n\n"
-            "**Market pulse** (next tab) — a quick cut of the scored universe.\n\n"
-            "**Model** / **Data sources** — hold-out metrics and attributions "
-            "if you want the plumbing.\n\n"
-            "**Admin** — refresh scrapes, retrain, and tune settings when you "
-            "run the pipeline yourself."
+            "verify on the street and with people you trust. "
+            "Use the Explore Assistant for questions, preferences, and "
+            "recommendations."
         ),
     ),
 )

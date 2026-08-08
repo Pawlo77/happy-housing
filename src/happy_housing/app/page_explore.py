@@ -38,6 +38,7 @@ from happy_housing.app.charts import (
     bar_chart,
     diverging_bar_chart,
 )
+from happy_housing.app.chat_ui import render_assistant_popover, render_assistant_tab
 from happy_housing.app.commute_target import resolve_commute_target
 from happy_housing.app.data import (
     load_aircraft_lden,
@@ -1587,6 +1588,12 @@ def render_explore() -> None:
     if "explore_section" not in st.session_state:
         st.session_state["explore_section"] = "Map"
     commute = resolve_commute_target(app_settings, config)
+    render_assistant_popover(
+        scored=frame,
+        processed=proc,
+        prefs=prefs,
+        settings=app_settings,
+    )
     map_kwargs = {
         "oou": oou,
         "amenities": amenities,
@@ -1609,7 +1616,7 @@ def render_explore() -> None:
         "commute_lat": float(commute.lat),
         "commute_label": commute.label,
     }
-    tab_map, tab_spatial, tab_offer, tab_board, tab_news, tab_prefs = st.tabs(
+    tab_map, tab_spatial, tab_offer, tab_board, tab_news, tab_chat, tab_prefs = st.tabs(
         list(EXPLORE_SECTIONS),
         key="explore_section",
         on_change="rerun",
@@ -1683,6 +1690,14 @@ def render_explore() -> None:
                 prefs=prefs,
                 app_settings=app_settings,
                 proc=proc,
+            )
+    with tab_chat:
+        if tab_chat.open:
+            render_assistant_tab(
+                scored=frame,
+                processed=proc,
+                prefs=prefs,
+                settings=app_settings,
             )
     with tab_prefs:
         if tab_prefs.open:

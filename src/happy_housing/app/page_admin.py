@@ -22,6 +22,7 @@ from happy_housing.app.app_settings import (
     settings_path,
 )
 from happy_housing.app.attr_extract import enrich_frame_listing_attrs
+from happy_housing.app.chat_store import chat_db_path, clear_all_conversations
 from happy_housing.app.commute_target import (
     CommuteTarget,
     commute_compare_view,
@@ -85,10 +86,19 @@ def _run_command(command: list[str], timeout_s: int) -> tuple[int, str]:
 
 
 @st.cache_data(ttl=300, show_spinner=False)  # type: ignore[misc]
-def _cached_place_search(query: str) -> tuple[dict[str, float | str], ...]:
+def _cached_place_search(query: str) -> tuple[dict[str, float | str | int], ...]:
     """Cached Nominatim hits for live Admin place search."""
     hits = search_places(query)
-    return tuple({"label": h.label, "lon": h.lon, "lat": h.lat} for h in hits)
+    return tuple(
+        {
+            "label": h.label,
+            "lon": h.lon,
+            "lat": h.lat,
+            "osm_id": h.osm_id,
+            "osm_type": h.osm_type,
+        }
+        for h in hits
+    )
 
 
 def _tab_general(settings: AppSettings, settings_file: Path, proc: Path) -> None:
@@ -124,18 +134,17 @@ def _tab_general(settings: AppSettings, settings_file: Path, proc: Path) -> None
         st.session_state["admin_commute_label"] = str(target.label)
 
     search_seed = str(st.session_state.get("admin_commute_search_seed") or "").strip()
-    hit_rows: tuple[dict[str, float | str], ...] = ()
+    hit_rows: tuple[dict[str, float | str | int], ...] = ()
     if live_search_ready(search_seed):
         try:
             hit_rows = _cached_place_search(search_seed)
         except Exception as exc:
             st.error(f"Nominatim search failed: {exc}")
             hit_rows = ()
-    hit_labels = [str(row["label"]) for row in hit_rows]
-    hit_by_label = {str(row["label"]): row for row in hit_rows}
+    option_labels = [f"{i + 1}. {row['label']}" for i, row in enumerate(hit_rows)]
     place_pick = st.selectbox(
         "Search place",
-        options=hit_labels,
+        options=option_labels,
         index=None,
         placeholder="Type a place, press Enter, then pick a match…",
         accept_new_options=True,
@@ -146,8 +155,8 @@ def _tab_general(settings: AppSettings, settings_file: Path, proc: Path) -> None
         ),
     )
     if place_pick:
-        if place_pick in hit_by_label:
-            chosen = hit_by_label[str(place_pick)]
+        if place_pick in option_labels:
+            chosen = hit_rows[option_labels.index(str(place_pick))]
             new_lon = float(chosen["lon"])
             new_lat = float(chosen["lat"])
             new_label = str(chosen["label"])[:120]
@@ -163,11 +172,16 @@ def _tab_general(settings: AppSettings, settings_file: Path, proc: Path) -> None
                 st.rerun()
         elif live_search_ready(place_pick):
             needle = str(place_pick).strip()
+            # Strip accidental "N. " prefix if user re-typed an option.
+            if needle[:3].rstrip(". ").isdigit() and ". " in needle:
+                needle = needle.split(". ", 1)[-1].strip()
             if needle != search_seed:
                 st.session_state["admin_commute_search_seed"] = needle
                 st.rerun()
             elif not hit_rows:
                 st.caption("No Nominatim matches for this query.")
+            else:
+                st.caption(f"{len(hit_rows)} matches — pick one from the list.")
 
     lon_in = st.number_input(
         "Longitude",
@@ -194,8 +208,19 @@ def _tab_general(settings: AppSettings, settings_file: Path, proc: Path) -> None
         latitude=view_lat,
         longitude=view_lon,
         zoom=view_zoom,
+        chart_key=(
+            f"admin_commute_map_{target.lon:.5f}_{target.lat:.5f}_"
+            f"{draft.lon:.5f}_{draft.lat:.5f}_{view_zoom:.1f}"
+        ),
     )
-    st.caption("Slate pin = saved target · Teal pin = new (draft) target")
+    same_pin = (
+        abs(float(target.lon) - float(draft.lon)) < 1e-5
+        and abs(float(target.lat) - float(draft.lat)) < 1e-5
+    )
+    if same_pin:
+        st.caption("Pins overlap — draft equals saved target (slate under teal).")
+    else:
+        st.caption("Slate pin = saved target · Teal pin = new (draft) target")
     st.caption(f"Active: **{target.label}** · {target.lon:.5f}, {target.lat:.5f}")
     if commute_target_stale(settings):
         st.warning(
@@ -257,6 +282,8 @@ def _tab_general(settings: AppSettings, settings_file: Path, proc: Path) -> None
             st.session_state["admin_commute_lon"] = settings.commute_target_lon
             st.session_state["admin_commute_lat"] = settings.commute_target_lat
             st.session_state["admin_commute_label"] = settings.commute_target_label
+            st.session_state.pop("admin_commute_search_seed", None)
+            st.session_state.pop("admin_commute_place_combo", None)
             st.success("Reset override to experiment.yaml coordinates.")
             st.rerun()
 
@@ -539,6 +566,59 @@ def _tab_ai(settings: AppSettings, settings_file: Path, proc: Path) -> None:
             key="settings_ai_max_tokens",
         )
 
+    st.subheader("Explore Assistant")
+    st.caption(
+        "Popover + Chat tab. LMS tool calls over scored listings, prefs, "
+        "recommendations, stars, reviews, and web search."
+    )
+    chat_on = st.checkbox(
+        "Enable Assistant",
+        value=settings.chat_enabled,
+        key="settings_chat_enabled",
+    )
+    chat_prompt = st.text_area(
+        "Assistant system prompt (optional override)",
+        value=settings.chat_system_prompt,
+        height=100,
+        key="settings_chat_prompt",
+        help="Leave blank to use the built-in Warsaw housing assistant prompt.",
+    )
+    c_a, c_b, c_c, c_d = st.columns(4)
+    with c_a:
+        chat_temp = st.number_input(
+            "Chat temperature",
+            min_value=0.0,
+            max_value=1.5,
+            value=float(settings.chat_temperature),
+            step=0.05,
+            key="settings_chat_temp",
+        )
+    with c_b:
+        chat_tokens = st.number_input(
+            "Chat max tokens",
+            min_value=64,
+            max_value=4000,
+            value=int(settings.chat_max_tokens),
+            step=50,
+            key="settings_chat_tokens",
+        )
+    with c_c:
+        chat_hist = st.number_input(
+            "History messages",
+            min_value=4,
+            max_value=80,
+            value=int(settings.chat_history_max_messages),
+            key="settings_chat_hist",
+        )
+    with c_d:
+        chat_rounds = st.number_input(
+            "Max tool rounds",
+            min_value=1,
+            max_value=12,
+            value=int(settings.chat_max_tool_rounds),
+            key="settings_chat_rounds",
+        )
+
     if st.button("Save AI settings", type="primary", key="save_ai_settings"):
         settings.lm_model = lm_model.strip() or settings.lm_model
         settings.extract_lm_model = (
@@ -564,6 +644,12 @@ def _tab_ai(settings: AppSettings, settings_file: Path, proc: Path) -> None:
         settings.ai_review_max_field_chars = int(max_field)
         settings.ai_review_temperature = float(temperature)
         settings.ai_review_max_tokens = int(max_tokens)
+        settings.chat_enabled = bool(chat_on)
+        settings.chat_system_prompt = str(chat_prompt or "")
+        settings.chat_temperature = float(chat_temp)
+        settings.chat_max_tokens = int(chat_tokens)
+        settings.chat_history_max_messages = int(chat_hist)
+        settings.chat_max_tool_rounds = int(chat_rounds)
         settings.buyer_pref_notes = str(pref_notes)
         settings.buyer_must_haves = str(must_haves)
         settings.buyer_preferred_districts = str(districts)
@@ -585,6 +671,14 @@ def _tab_ai(settings: AppSettings, settings_file: Path, proc: Path) -> None:
         st.success(
             f"AI review cache cleared{f' · {cleared} session keys' if cleared else ''}."
         )
+    chat_db = chat_db_path(proc)
+    st.caption(f"Assistant chats DB: `{'present' if chat_db.exists() else 'empty'}`")
+    if st.button("Clear all Assistant conversations", key="clear_chat_convs"):
+        clear_all_conversations(chat_db)
+        for key in list(st.session_state.keys()):
+            if str(key).startswith("assistant_"):
+                st.session_state.pop(key, None)
+        st.success("Assistant conversations cleared.")
 
     st.subheader("LM Studio call metrics")
     st.caption(

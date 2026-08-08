@@ -159,6 +159,18 @@ class AppSettings:
     """Override GUNB zip URL; empty → YAML."""
     train_otodom_labels_only: bool = True
     """Train LightGBM on Otodom/fixture asks; RCN used as comps only."""
+    chat_enabled: bool = True
+    """Show Explore Assistant popover and Chat tab."""
+    chat_system_prompt: str = ""
+    """Override Assistant system prompt; empty → built-in default."""
+    chat_temperature: float = 0.4
+    """LM Studio temperature for Assistant turns."""
+    chat_max_tokens: int = 900
+    """LM Studio maxTokens for Assistant turns."""
+    chat_history_max_messages: int = 24
+    """Max non-system history messages kept in the LMS context."""
+    chat_max_tool_rounds: int = 6
+    """Max LMS act prediction rounds (tool loops) per user turn."""
 
 
 def settings_path(processed: Path) -> Path:
@@ -432,6 +444,33 @@ def load_app_settings(path: Path) -> AppSettings:
                 "train_otodom_labels_only",
                 defaults.train_otodom_labels_only,
             )
+        ),
+        chat_enabled=bool(payload.get("chat_enabled", defaults.chat_enabled)),
+        chat_system_prompt=str(
+            payload.get("chat_system_prompt", defaults.chat_system_prompt) or ""
+        ),
+        chat_temperature=min(
+            1.5,
+            max(
+                0.0,
+                float(payload.get("chat_temperature", defaults.chat_temperature)),
+            ),
+        ),
+        chat_max_tokens=max(
+            64, int(payload.get("chat_max_tokens", defaults.chat_max_tokens))
+        ),
+        chat_history_max_messages=max(
+            4,
+            int(
+                payload.get(
+                    "chat_history_max_messages",
+                    defaults.chat_history_max_messages,
+                )
+            ),
+        ),
+        chat_max_tool_rounds=max(
+            1,
+            int(payload.get("chat_max_tool_rounds", defaults.chat_max_tool_rounds)),
         ),
     )
 

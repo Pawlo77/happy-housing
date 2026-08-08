@@ -74,6 +74,7 @@ def test_explore_sections_include_prefs() -> None:
     from happy_housing.app.explore_nav import EXPLORE_SECTIONS
 
     assert "Spatial" in EXPLORE_SECTIONS
+    assert "Chat" in EXPLORE_SECTIONS
     assert EXPLORE_SECTIONS[-1] == "Prefs"
     assert "News" in EXPLORE_SECTIONS
 

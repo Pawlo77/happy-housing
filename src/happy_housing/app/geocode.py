@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 
 import requests
@@ -22,10 +23,26 @@ _WARSAW_VIEWBOX = "20.85,52.40,21.30,52.10"
 MIN_LIVE_QUERY_CHARS = 2
 """Minimum trimmed query length before Nominatim live search."""
 
+_MIN_REQUEST_INTERVAL_S = 1.0
+"""Nominatim usage policy: max ~1 request/second."""
+
+_last_request_monotonic: float = 0.0
+"""Monotonic timestamp of the last Nominatim HTTP call."""
+
 
 def live_search_ready(query: str, *, min_chars: int = MIN_LIVE_QUERY_CHARS) -> bool:
     """True when ``query`` is long enough for a live place search."""
     return len(str(query or "").strip()) >= int(min_chars)
+
+
+def _throttle_nominatim() -> None:
+    """Sleep so consecutive Nominatim calls respect ``_MIN_REQUEST_INTERVAL_S``."""
+    global _last_request_monotonic
+    now = time.monotonic()
+    wait = _MIN_REQUEST_INTERVAL_S - (now - _last_request_monotonic)
+    if wait > 0:
+        time.sleep(wait)
+    _last_request_monotonic = time.monotonic()
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,6 +71,7 @@ def search_places(
     needle = str(query or "").strip()
     if not needle:
         return []
+    _throttle_nominatim()
     response = requests.get(
         _NOMINATIM_SEARCH,
         params={

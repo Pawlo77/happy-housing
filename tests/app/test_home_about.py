@@ -11,7 +11,8 @@ def test_about_sections_cover_business_basics() -> None:
     assert "Who it is for" in titles
     assert "What we model" in titles
     assert "What it is not" in titles
-    assert "Where to go next" in titles
+    assert "Where to go next" not in titles
+    assert "Assistant" in ABOUT_SECTIONS[-1].body
 
 
 def test_about_copy_stays_plain_and_nonempty() -> None:

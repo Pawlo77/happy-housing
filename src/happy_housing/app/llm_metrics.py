@@ -23,6 +23,9 @@ PURPOSE_PREF_PARSE: str = "pref_parse"
 PURPOSE_ATTR_EXTRACT: str = "attr_extract"
 """Short listing-description → CSV attribute extraction."""
 
+PURPOSE_CHAT: str = "chat"
+"""Explore Assistant multi-turn tool chat."""
+
 _MAX_STORED_CALLS: int = 5_000
 """Soft cap — oldest events drop when appending past this size."""
 
