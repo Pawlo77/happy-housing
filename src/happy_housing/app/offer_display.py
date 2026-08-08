@@ -251,6 +251,11 @@ def livability_rows(
         ("dist_park_m", "Nearest park / square", "m"),
         ("dist_bike_path_m", "Nearest bike path", "m"),
         ("bike_path_coverage_m", "Bike path coverage nearby", "m"),
+        ("dist_rail_area_m", "Nearest rail yard / corridor", "m"),
+        ("dist_military_m", "Nearest military area", "m"),
+        ("dist_airport_area_m", "Nearest airport footprint", "m"),
+        ("dist_traffic_road_m", "Nearest drive road (sample)", "m"),
+        ("traffic_weight_nearby", "Local traffic weight (proxy)", "aq"),
         ("dist_daszynskiego_m", f"Distance to {short}", "m"),
     )
     out: list[dict[str, Any]] = []

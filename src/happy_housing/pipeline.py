@@ -329,7 +329,7 @@ def run_pipeline(
         fixture_path=fixtures / "city_pois.geojson",
         force_refresh=force_gis_refresh,
     )
-    fetch_traffic_road_sample(
+    traffic_sample = fetch_traffic_road_sample(
         cache,
         bbox=config.bbox.as_tuple(),
         fixture_path=fixtures / "traffic_sample.json",
@@ -341,6 +341,16 @@ def run_pipeline(
         fixture_path=fixtures / "bike_paths.geojson",
         force_refresh=force_gis_refresh,
     )
+
+    def _zone_fixture(name: str) -> gpd.GeoDataFrame:
+        path = fixtures / name
+        if path.exists():
+            return gpd.read_file(path)
+        return gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
+
+    military = _zone_fixture("military_areas.geojson")
+    rail_areas = _zone_fixture("rail_areas.geojson")
+    airport_areas = _zone_fixture("airport_areas.geojson")
 
     if app_settings.snap_listings_out_of_parks:
         listings = snap_listings_out_of_parks(
@@ -373,6 +383,10 @@ def run_pipeline(
         city_pois=city_pois,
         bike_paths=bike_paths,
         bike_path_coverage_radius_m=float(app_settings.bike_path_coverage_radius_m),
+        rail_areas=rail_areas,
+        military=military,
+        airport_areas=airport_areas,
+        traffic_sample=traffic_sample,
         aircraft_lden_path=fixtures / "chopin_aircraft_lden.geojson",
         aircraft_lnight_path=fixtures / "chopin_aircraft_lnight.geojson",
         road_lden_path=road_lden_path if road_lden_path.exists() else None,

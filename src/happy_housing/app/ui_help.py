@@ -43,7 +43,8 @@ LAYER_HELP: dict[str, str] = {
     "traffic": (
         "Diurnal street-activity heatmap along densified OSM drive roads "
         "(motorway→residential), scaled by hour-of-day. Warm corridors ≈ "
-        "busier; not live vehicle counts. Prefer quieter streets for sleep."
+        "busier; not live vehicle counts. Model uses dist_traffic_road_m and "
+        "traffic_weight_nearby (local sample weight sum)."
     ),
     "bike_paths": (
         "OSM bicycle infrastructure (cycleways / designated bike routes) as "
@@ -98,15 +99,17 @@ LAYER_HELP: dict[str, str] = {
     ),
     "military": (
         "OSM landuse=military areas in olive. Restricted land — usually not "
-        "buildable housing; context for nearby offers."
+        "buildable housing; dist_military_m is a model feature."
     ),
     "rail_areas": (
         "OSM landuse=railway yards / corridor land (steel blue). Distinct from "
-        "GTFS rail line overlay. Nearby yards can mean noise/vibration."
+        "GTFS rail line overlay and rail_lden_db noise bands. Nearby yards can "
+        "mean noise/vibration; dist_rail_area_m feeds the model."
     ),
     "airport": (
         "OSM aerodrome footprints in violet. Footprint of Chopin / "
-        "Babice / military airfields — not the amber Lden noise contours."
+        "Babice / military airfields — not the amber Lden noise contours. "
+        "dist_airport_area_m is a model proximity feature."
     ),
     "commute_target": (
         "Commute destination pin (Admin → General; default Rondo Daszyńskiego). "

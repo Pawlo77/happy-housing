@@ -16,6 +16,7 @@ from happy_housing.gis.bike_paths import (
     BIKE_PATH_COVERAGE_RADIUS_M,
     attach_bike_path_features,
 )
+from happy_housing.gis.traffic import attach_traffic_features
 
 logger = logging.getLogger(__name__)
 
@@ -392,12 +393,16 @@ def enrich_listings(
     city_pois: gpd.GeoDataFrame | None = None,
     bike_paths: gpd.GeoDataFrame | None = None,
     bike_path_coverage_radius_m: float = BIKE_PATH_COVERAGE_RADIUS_M,
+    rail_areas: gpd.GeoDataFrame | None = None,
+    military: gpd.GeoDataFrame | None = None,
+    airport_areas: gpd.GeoDataFrame | None = None,
+    traffic_sample: pd.DataFrame | None = None,
     aircraft_lden_path: Path | None = None,
     aircraft_lnight_path: Path | None = None,
     road_lden_path: Path | None = None,
     rail_lden_path: Path | None = None,
 ) -> gpd.GeoDataFrame:
-    """Attach noise, amenities, parks, bike paths, transit, air, and GUNB."""
+    """Attach noise, amenities, zones, traffic, transit, air, and GUNB."""
     gdf = listings_to_gdf(listings)
     lden = (
         load_noise_contours(aircraft_lden_path, "lden_db")
@@ -462,6 +467,28 @@ def enrich_listings(
         projected_crs=projected_crs,
         coverage_radius_m=float(bike_path_coverage_radius_m),
     )
+
+    if rail_areas is not None and not rail_areas.empty:
+        gdf = nearest_distance_meters(
+            gdf, rail_areas, projected_crs, "dist_rail_area_m"
+        )
+    else:
+        gdf["dist_rail_area_m"] = float("nan")
+
+    if military is not None and not military.empty:
+        gdf = nearest_distance_meters(gdf, military, projected_crs, "dist_military_m")
+    else:
+        gdf["dist_military_m"] = float("nan")
+
+    if airport_areas is not None and not airport_areas.empty:
+        gdf = nearest_distance_meters(
+            gdf, airport_areas, projected_crs, "dist_airport_area_m"
+        )
+    else:
+        gdf["dist_airport_area_m"] = float("nan")
+
+    traffic = traffic_sample if traffic_sample is not None else pd.DataFrame()
+    gdf = attach_traffic_features(gdf, traffic, projected_crs=projected_crs)
 
     school_src: gpd.GeoDataFrame | None = None
     if schools is not None and not schools.empty:
