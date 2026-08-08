@@ -128,6 +128,19 @@ def active_feature_columns(*, use_neighborhood: bool = True) -> tuple[str, ...]:
     return CORE_FEATURE_COLUMNS
 
 
+def model_feature_columns(model: lgb.Booster | lgb.LGBMRegressor) -> tuple[str, ...]:
+    """Feature names the fitted model actually expects (order preserved)."""
+    if isinstance(model, lgb.Booster):
+        return tuple(model.feature_name())
+    booster = getattr(model, "booster_", None)
+    if booster is not None:
+        return tuple(booster.feature_name())
+    names = getattr(model, "feature_name_", None)
+    if names:
+        return tuple(str(n) for n in names)
+    return FEATURE_COLUMNS
+
+
 def build_feature_matrix(
     frame: pd.DataFrame,
     feature_columns: tuple[str, ...] | None = None,
@@ -342,9 +355,10 @@ def predict_price_per_m2(
     use_neighborhood: bool = True,
 ) -> np.ndarray:
     """Predict zł/m² for enriched listing rows."""
-    features = build_feature_matrix(
-        frame, active_feature_columns(use_neighborhood=use_neighborhood)
-    )
+    cols = model_feature_columns(model)
+    if not cols:
+        cols = active_feature_columns(use_neighborhood=use_neighborhood)
+    features = build_feature_matrix(frame, cols)
     return np.asarray(model.predict(features), dtype=float)
 
 
@@ -356,9 +370,10 @@ def shap_explanation_for_row(
     use_neighborhood: bool = True,
 ) -> shap.Explanation:
     """Compute a TreeExplainer explanation for one row."""
-    features = build_feature_matrix(
-        frame, active_feature_columns(use_neighborhood=use_neighborhood)
-    )
+    cols = model_feature_columns(model)
+    if not cols:
+        cols = active_feature_columns(use_neighborhood=use_neighborhood)
+    features = build_feature_matrix(frame, cols)
     explainer = shap.TreeExplainer(model)
     explanation = explainer(features)
     return explanation[row_index]

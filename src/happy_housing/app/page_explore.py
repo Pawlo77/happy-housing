@@ -122,7 +122,11 @@ from happy_housing.app.ui_help import (
     layer_help,
 )
 from happy_housing.ingest.otodom import fetch_listing_detail, otodom_session
-from happy_housing.models.train import build_feature_matrix
+from happy_housing.models.train import (
+    FEATURE_COLUMNS,
+    build_feature_matrix,
+    model_feature_columns,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -620,8 +624,9 @@ def _render_shap(row_frame: pd.DataFrame) -> None:
         st.info("Model file missing — retrain from Admin.")
         return
     try:
-        _booster, explainer = bundle
-        features = build_feature_matrix(row_frame)
+        booster, explainer = bundle
+        cols = model_feature_columns(booster)
+        features = build_feature_matrix(row_frame, cols)
         explanation = explainer(features)
         values = np.asarray(explanation.values[0], dtype=float)
         names = list(features.columns)
@@ -641,6 +646,12 @@ def _render_shap(row_frame: pd.DataFrame) -> None:
             color_range=[OVERPRICED, UNDERPRICED],
             x_title="SHAP contribution to predicted zł/m²",
         )
+        if len(cols) < len(FEATURE_COLUMNS):
+            st.caption(
+                f"Model trained on {len(cols)} features (current catalog has "
+                f"{len(FEATURE_COLUMNS)}). Retrain in Admin to include new "
+                "signals such as park distance."
+            )
         with st.expander("Classic waterfall", expanded=False):
             fig, _ax = plt.subplots(figsize=(9, 5.5))
             shap.plots.waterfall(explanation[0], show=False, max_display=12)
