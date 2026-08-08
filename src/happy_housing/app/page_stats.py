@@ -8,6 +8,7 @@ import pandas as pd
 import streamlit as st
 
 from happy_housing.app.app_settings import load_app_settings, settings_path
+from happy_housing.app.board_table import filter_dataframe_text
 from happy_housing.app.charts import (
     ASK_COLOR,
     INK_COLOR,
@@ -415,8 +416,15 @@ def _tab_value(frame: pd.DataFrame, *, min_offers: int, top_n: int) -> None:
     if hunt.empty:
         st.info("No underpriced offers in the current lens.")
     else:
+        hunt_q = st.text_input(
+            "Search hunt list",
+            key="stats_hunt_search",
+            placeholder="district, id, title…",
+        )
+        hunt_show = filter_dataframe_text(hunt, hunt_q)
+        st.caption(f"{len(hunt_show)} of {len(hunt)} rows")
         st.dataframe(
-            hunt,
+            hunt_show,
             hide_index=True,
             width="stretch",
             column_config={
@@ -443,7 +451,26 @@ def _tab_value(frame: pd.DataFrame, *, min_offers: int, top_n: int) -> None:
     if watch.empty:
         st.info("No overpriced offers in the current lens.")
     else:
-        st.dataframe(watch, hide_index=True, width="stretch")
+        watch_q = st.text_input(
+            "Search watch list",
+            key="stats_watch_search",
+            placeholder="district, id, title…",
+        )
+        watch_show = filter_dataframe_text(watch, watch_q)
+        st.caption(f"{len(watch_show)} of {len(watch)} rows")
+        st.dataframe(
+            watch_show,
+            hide_index=True,
+            width="stretch",
+            column_config={
+                "delta_price_per_m2": st.column_config.NumberColumn(
+                    "Delta", format="%+.0f"
+                ),
+                "price_per_m2": st.column_config.NumberColumn(
+                    "Listing zł/m²", format="%.0f"
+                ),
+            },
+        )
 
 
 def _tab_place(frame: pd.DataFrame) -> None:

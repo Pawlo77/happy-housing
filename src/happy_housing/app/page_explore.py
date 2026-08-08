@@ -27,6 +27,11 @@ from happy_housing.app.board_sort import (
     enrich_board_recommendations,
     sort_board,
 )
+from happy_housing.app.board_table import (
+    board_search_columns,
+    filter_dataframe_text,
+    prepare_board_display,
+)
 from happy_housing.app.charts import (
     OVERPRICED,
     UNDERPRICED,
@@ -877,15 +882,29 @@ def _tab_board(
         "starred",
         board["listing_id"].astype(str).map(lambda lid: star_marker(lid, starred)),
     )
-    if "confidence" in board.columns:
-        board["confidence"] = pd.to_numeric(board["confidence"], errors="coerce").round(
-            3
-        )
     cols = [c for c in _BOARD_COLUMNS if c in board.columns]
     board = board[cols]
+    search = st.text_input(
+        "Search board",
+        key="explore_board_search",
+        placeholder="id, district, title, price…",
+        help=(
+            "Case-insensitive substring across listing fields. "
+            "Clears when empty. Row click still opens Offer."
+        ),
+    )
+    before_n = len(board)
+    board = filter_dataframe_text(board, search, columns=board_search_columns(board))
+    board = prepare_board_display(board)
+    match_note = (
+        f"{len(board)} of {before_n} offers match search"
+        if str(search or "").strip()
+        else f"{len(board)} offers after filters"
+    )
     st.caption(
-        f"{len(board)} offers after filters · sort: **{sort_label}** · "
-        "click a row to open Offer · star offers on the Offer tab"
+        f"{match_note} · sort: **{sort_label}** · "
+        "click a row to open Offer · star on Offer · "
+        "● new / ○ opened · confidence bar · signed delta zł/m²"
     )
     event = st.dataframe(
         board,
@@ -895,8 +914,31 @@ def _tab_board(
         selection_mode="single-row",
         key="explore_board",
         column_config={
-            "confidence": st.column_config.NumberColumn("confidence", format="%.3f"),
-            "seen": st.column_config.TextColumn("seen"),
+            "confidence": st.column_config.ProgressColumn(
+                "confidence",
+                help="Recommender score (higher = stronger fit / bargain).",
+                min_value=0.0,
+                max_value=1.0,
+                format="%.3f",
+                color="primary",
+            ),
+            "seen": st.column_config.TextColumn(
+                "seen",
+                help="● new · ◌ impressed · ○ opened on Offer.",
+            ),
+            "delta_price_per_m2": st.column_config.NumberColumn(
+                "delta_price_per_m2",
+                help="Ask minus model zł/m² (negative = underpriced).",
+                format="%+.0f",
+            ),
+            "price_pln": st.column_config.NumberColumn("price_pln", format="%.0f"),
+            "price_per_m2": st.column_config.NumberColumn(
+                "price_per_m2", format="%.0f"
+            ),
+            "model_price_per_m2": st.column_config.NumberColumn(
+                "model_price_per_m2", format="%.0f"
+            ),
+            "url": st.column_config.LinkColumn("url", display_text="Open"),
         },
     )
     listing_id = listing_id_from_board_selection(board, event)
