@@ -600,7 +600,10 @@ def _tab_recommender(settings: AppSettings, settings_file: Path, proc: Path) -> 
 
 def _tab_stats(settings: AppSettings, settings_file: Path) -> None:
     """Stats page aggregation thresholds."""
-    st.caption("Controls district scoreboards and hunt/watch list length.")
+    st.caption(
+        "Controls district scoreboards and hunt/watch list length. "
+        "Recalculate clears Streamlit caches so Stats reloads scored listings."
+    )
     min_offers = st.number_input(
         "Min offers per district",
         min_value=1,
@@ -616,11 +619,29 @@ def _tab_stats(settings: AppSettings, settings_file: Path) -> None:
         value=int(settings.stats_top_n),
         key="settings_stats_top_n",
     )
-    if st.button("Save Stats settings", type="primary", key="save_stats_settings"):
-        settings.stats_min_district_offers = int(min_offers)
-        settings.stats_top_n = int(top_n)
-        save_app_settings(settings_file, settings)
-        st.success("Stats settings saved.")
+    s1, s2 = st.columns(2)
+    with s1:
+        if st.button("Save Stats settings", type="primary", key="save_stats_settings"):
+            settings.stats_min_district_offers = int(min_offers)
+            settings.stats_top_n = int(top_n)
+            save_app_settings(settings_file, settings)
+            st.success("Stats settings saved.")
+    with s2:
+        if st.button("Recalculate stats", key="recalc_stats"):
+            with st.spinner("Reloading scored listings…"):
+                clear_data_caches()
+                try:
+                    frame = load_scored()
+                except FileNotFoundError as exc:
+                    st.error(str(exc))
+                else:
+                    logger.info(
+                        "Admin stats recalculation: %s offers after cache clear",
+                        len(frame),
+                    )
+                    st.success(
+                        f"Stats refreshed · {len(frame):,} scored offers loaded."
+                    )
 
 
 def _tab_pipeline() -> None:
