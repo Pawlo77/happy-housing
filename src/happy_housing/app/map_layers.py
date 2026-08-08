@@ -47,8 +47,8 @@ class LayerFlags:
     """Scored listing pins."""
     oou: bool = False
     """Legacy Chopin aircraft Lden contour polygons (EEA END fixture)."""
-    noise_overlay: str = "total_lden"
-    """UM WMS noise heatmap key (``off`` / ``total_lden`` / ``road_lden`` / …)."""
+    noise_overlay: str = "off"
+    """UM WMS noise overlay key (``off`` / ``total_lden`` / ``road_lden`` / …)."""
     hospitals: bool = False
     """OSM hospitals."""
     fire_stations: bool = False
@@ -81,7 +81,7 @@ class LayerFlags:
     """UM Warszawa parks / squares (PLACE_SKWERY)."""
     city_poi_types: tuple[str, ...] = ()
     """Selected city / sports / civic object_type keys for map markers."""
-    city_boundary: bool = True
+    city_boundary: bool = False
     """Warsaw administrative boundary outline."""
     military: bool = True
     """OSM landuse=military polygons (olive)."""

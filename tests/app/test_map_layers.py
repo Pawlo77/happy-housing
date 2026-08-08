@@ -112,7 +112,8 @@ def test_layer_flags_default_offers_on() -> None:
     """Offers stay visible by default; dense overlays start off."""
     flags = LayerFlags()
     assert flags.offers is True
-    assert flags.city_boundary is True
+    assert flags.city_boundary is False
+    assert flags.noise_overlay == "off"
     assert flags.military is True
     assert flags.rail_areas is True
     assert flags.airport is True

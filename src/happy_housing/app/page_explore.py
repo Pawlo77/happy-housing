@@ -383,7 +383,7 @@ def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
         ),
         city_boundary=st.checkbox(
             "City boundary",
-            value=True,
+            value=False,
             help=layer_help("city_boundary"),
             key="explore_ly_city_boundary",
         ),
@@ -481,7 +481,7 @@ def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
     noise_labels = [label for label, _ in NOISE_MAP_OVERLAYS]
     noise_by_label = {label: key for label, key in NOISE_MAP_OVERLAYS}
     default_noise_label = next(
-        (label for label, key in NOISE_MAP_OVERLAYS if key == "total_lden"),
+        (label for label, key in NOISE_MAP_OVERLAYS if key == "off"),
         noise_labels[0],
     )
     noise_label = st.selectbox(
@@ -491,7 +491,7 @@ def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
         help=layer_help("noise_overlay"),
         key="explore_ly_noise_overlay",
     )
-    flags.noise_overlay = noise_by_label.get(str(noise_label), "total_lden")
+    flags.noise_overlay = noise_by_label.get(str(noise_label), "off")
     label_by_key = {t.key: f"{t.group}: {t.label}" for t in AMENITY_TYPES}
     default_keys = list(DEFAULT_MAP_OBJECT_TYPES)
     selected_labels = st.multiselect(
