@@ -108,17 +108,19 @@ def _tab_general(settings: AppSettings, settings_file: Path, proc: Path) -> None
         "HAPPY_HOUSING_LOG_LEVEL overrides when set at process start.",
         key="settings_log_level",
     )
-    if st.button("Save logging settings", key="save_logging_settings"):
-        settings.log_level = str(log_level)
-        save_app_settings(settings_file, settings)
-        configure_logging(settings.log_level, force=True)
-        logger.info("App log level set to %s", settings.log_level)
-        st.success(f"Log level saved: {settings.log_level}")
-
-    if st.button("Clear Streamlit data caches", key="admin_clear_caches"):
-        clear_data_caches()
-        logger.info("Cleared Streamlit data caches from Admin")
-        st.success("Caches cleared.")
+    g1, g2 = st.columns(2)
+    with g1:
+        if st.button("Save logging settings", key="save_logging_settings"):
+            settings.log_level = str(log_level)
+            save_app_settings(settings_file, settings)
+            configure_logging(settings.log_level, force=True)
+            logger.info("App log level set to %s", settings.log_level)
+            st.success(f"Log level saved: {settings.log_level}")
+    with g2:
+        if st.button("Clear Streamlit data caches", key="admin_clear_caches"):
+            clear_data_caches()
+            logger.info("Cleared Streamlit data caches from Admin")
+            st.success("Caches cleared.")
 
 
 def _tab_ai(settings: AppSettings, settings_file: Path, proc: Path) -> None:
@@ -382,16 +384,20 @@ def _tab_stars_news(settings: AppSettings, settings_file: Path, proc: Path) -> N
         value=int(settings.news_history_cap),
         key="settings_news_cap",
     )
-    if st.button("Save news settings", key="save_news_settings"):
-        settings.news_history_cap = int(cap)
-        save_app_settings(settings_file, settings)
-        st.success("News settings saved.")
-    if st.button("Clear starred offers", key="clear_stars"):
-        clear_stars(stars_file)
-        st.success("Starred offers cleared.")
-    if st.button("Clear starred news + snapshots", key="clear_star_news"):
-        clear_star_news_memory(proc)
-        st.success("Starred news memory cleared.")
+    a1, a2, a3 = st.columns(3)
+    with a1:
+        if st.button("Save news settings", key="save_news_settings"):
+            settings.news_history_cap = int(cap)
+            save_app_settings(settings_file, settings)
+            st.success("News settings saved.")
+    with a2:
+        if st.button("Clear starred offers", key="clear_stars"):
+            clear_stars(stars_file)
+            st.success("Starred offers cleared.")
+    with a3:
+        if st.button("Clear starred news + snapshots", key="clear_star_news"):
+            clear_star_news_memory(proc)
+            st.success("Starred news memory cleared.")
 
 
 def _tab_recommender(settings: AppSettings, settings_file: Path, proc: Path) -> None:
@@ -422,34 +428,38 @@ def _tab_recommender(settings: AppSettings, settings_file: Path, proc: Path) -> 
         key="settings_rec_alpha",
         help="Higher → already-seen offers rank lower (soft, not excluded).",
     )
-    if st.button("Save recommender settings", key="save_rec_settings"):
-        settings.recommender_top_n = int(top_n)
-        settings.recommender_demotion_alpha = float(alpha)
-        save_app_settings(settings_file, settings)
-        st.success("Recommender settings saved.")
-    if st.button("Retrain recommendation model", type="primary", key="retrain_rec"):
-        try:
-            frame = load_scored()
-        except FileNotFoundError as exc:
-            st.error(str(exc))
-        else:
-            with st.spinner("Rescoring offers…"):
-                out = retrain_recommender(
-                    frame,
-                    processed_dir=proc,
-                    top_n=int(settings.recommender_top_n),
-                    demotion_alpha=float(settings.recommender_demotion_alpha),
+    r1, r2, r3 = st.columns(3)
+    with r1:
+        if st.button("Save recommender settings", key="save_rec_settings"):
+            settings.recommender_top_n = int(top_n)
+            settings.recommender_demotion_alpha = float(alpha)
+            save_app_settings(settings_file, settings)
+            st.success("Recommender settings saved.")
+    with r2:
+        if st.button("Retrain recommendation model", type="primary", key="retrain_rec"):
+            try:
+                frame = load_scored()
+            except FileNotFoundError as exc:
+                st.error(str(exc))
+            else:
+                with st.spinner("Rescoring offers…"):
+                    out = retrain_recommender(
+                        frame,
+                        processed_dir=proc,
+                        top_n=int(settings.recommender_top_n),
+                        demotion_alpha=float(settings.recommender_demotion_alpha),
+                    )
+                st.success(
+                    f"Retrained · {int(out['n_recommended'])} of "
+                    f"{int(out['n_candidates'])} candidates · "
+                    f"mean confidence {out['mean_confidence']:.3f}"
                 )
-            st.success(
-                f"Retrained · {int(out['n_recommended'])} of "
-                f"{int(out['n_candidates'])} candidates · "
-                f"mean confidence {out['mean_confidence']:.3f}"
-            )
+                st.rerun()
+    with r3:
+        if st.button("Delete recommendation memory", key="clear_rec_memory"):
+            clear_recommendation_memory(proc)
+            st.success("Recommendation impressions + metrics deleted.")
             st.rerun()
-    if st.button("Delete recommendation memory", key="clear_rec_memory"):
-        clear_recommendation_memory(proc)
-        st.success("Recommendation impressions + metrics deleted.")
-        st.rerun()
 
 
 def _tab_stats(settings: AppSettings, settings_file: Path) -> None:
