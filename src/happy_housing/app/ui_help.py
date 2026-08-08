@@ -33,19 +33,27 @@ LAYER_HELP: dict[str, str] = {
         "line map."
     ),
     "transit_network": (
-        "GTFS route polylines plus stop pins from shapes.txt. "
-        "Line colours: metro red · tram dark red · bus blue · rail green. "
-        "Toggle modes below. Strong transit access raises livability; "
-        "dist_transit_stop_m enters the model."
+        "Turn on to draw GTFS route polylines + stops. Then pick modes below: "
+        "metro red · tram dark red · bus blue · rail green. "
+        "Strong transit access raises livability; dist_transit_stop_m enters "
+        "the model."
     ),
     "transit_show_metro": (
-        "Draw metro routes (red). Warsaw M1/M2 from GTFS route_type=1."
+        "Draw metro routes (red). Requires Transit lines & stops. "
+        "Warsaw M1/M2 from GTFS route_type=1."
     ),
-    "transit_show_tram": ("Draw tram routes (dark red). GTFS route_type=0."),
+    "transit_show_tram": (
+        "Draw tram routes (dark red). Requires Transit lines & stops. "
+        "GTFS route_type=0."
+    ),
     "transit_show_bus": (
-        "Draw bus routes (blue). Densest layer — simplify/sample for map size."
+        "Draw bus routes (blue). Requires Transit lines & stops. "
+        "Densest layer — simplify/sample for map size."
     ),
-    "transit_show_rail": ("Draw rail / SKM-style routes (green). GTFS route_type=2."),
+    "transit_show_rail": (
+        "Draw rail / SKM-style routes (green). Requires Transit lines & stops. "
+        "GTFS route_type=2."
+    ),
     "traffic": (
         "Diurnal street-activity heatmap along densified OSM drive roads "
         "(motorway→residential), scaled by hour-of-day. Warm corridors ≈ "

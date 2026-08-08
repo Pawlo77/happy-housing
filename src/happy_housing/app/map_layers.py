@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 import geopandas as gpd
@@ -457,6 +458,31 @@ def prepare_transit_for_hour(
     return slim_map_frame(merged.reset_index(drop=True))
 
 
+def coerce_path_coordinates(path: object) -> list[list[float]]:
+    """Normalize a polyline to plain ``[[lon, lat], …]`` for pydeck PathLayer.
+
+    Parquet round-trips often yield ``numpy.ndarray`` of coordinate pairs.
+    ``json.dumps(..., default=str)`` then emits a non-JSON string and deck.gl
+    draws nothing.
+    """
+    if path is None or isinstance(path, (str, bytes)):
+        return []
+    if not isinstance(path, Iterable):
+        return []
+    out: list[list[float]] = []
+    for point in path:
+        if isinstance(point, (str, bytes)):
+            continue
+        try:
+            lon_lat = np.asarray(point, dtype=float).reshape(-1)
+            if lon_lat.size < 2:
+                continue
+            out.append([float(lon_lat[0]), float(lon_lat[1])])
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
 def prepare_transit_paths(
     frame: pd.DataFrame,
     *,
@@ -468,6 +494,12 @@ def prepare_transit_paths(
     work = frame.copy()
     if modes is not None:
         work = work.loc[work["mode"].astype(str).isin(modes)]
+    if work.empty:
+        return work.reset_index(drop=True)
+    if "path" in work.columns:
+        work = work.copy()
+        work["path"] = [coerce_path_coordinates(p) for p in work["path"]]
+        work = work.loc[work["path"].map(len) >= 2]
     if work.empty:
         return work.reset_index(drop=True)
     keep = [

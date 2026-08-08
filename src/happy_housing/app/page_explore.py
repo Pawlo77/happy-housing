@@ -320,6 +320,43 @@ def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
             key="explore_hour",
         )
     )
+    transit_network = st.checkbox(
+        "Transit lines & stops",
+        value=False,
+        help=layer_help("transit_network"),
+        key="explore_ly_transit_network",
+    )
+    # Mode filters only render when the network master is on (avoids silent no-ops).
+    if transit_network:
+        transit_show_metro = st.checkbox(
+            "  Metro lines",
+            value=True,
+            help=layer_help("transit_show_metro"),
+            key="explore_ly_transit_metro",
+        )
+        transit_show_tram = st.checkbox(
+            "  Tram lines",
+            value=True,
+            help=layer_help("transit_show_tram"),
+            key="explore_ly_transit_tram",
+        )
+        transit_show_bus = st.checkbox(
+            "  Bus lines",
+            value=True,
+            help=layer_help("transit_show_bus"),
+            key="explore_ly_transit_bus",
+        )
+        transit_show_rail = st.checkbox(
+            "  Train / rail lines",
+            value=True,
+            help=layer_help("transit_show_rail"),
+            key="explore_ly_transit_rail",
+        )
+    else:
+        transit_show_metro = False
+        transit_show_tram = False
+        transit_show_bus = False
+        transit_show_rail = False
     flags = LayerFlags(
         offers=st.checkbox(
             "Offers (Δ price)",
@@ -363,36 +400,11 @@ def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
             help=layer_help("transit_intensity"),
             key="explore_ly_transit_intensity",
         ),
-        transit_network=st.checkbox(
-            "Transit lines & stops",
-            value=False,
-            help=layer_help("transit_network"),
-            key="explore_ly_transit_network",
-        ),
-        transit_show_metro=st.checkbox(
-            "  Metro lines",
-            value=True,
-            help=layer_help("transit_show_metro"),
-            key="explore_ly_transit_metro",
-        ),
-        transit_show_tram=st.checkbox(
-            "  Tram lines",
-            value=True,
-            help=layer_help("transit_show_tram"),
-            key="explore_ly_transit_tram",
-        ),
-        transit_show_bus=st.checkbox(
-            "  Bus lines",
-            value=True,
-            help=layer_help("transit_show_bus"),
-            key="explore_ly_transit_bus",
-        ),
-        transit_show_rail=st.checkbox(
-            "  Train / rail lines",
-            value=True,
-            help=layer_help("transit_show_rail"),
-            key="explore_ly_transit_rail",
-        ),
+        transit_network=transit_network,
+        transit_show_metro=transit_show_metro,
+        transit_show_tram=transit_show_tram,
+        transit_show_bus=transit_show_bus,
+        transit_show_rail=transit_show_rail,
         traffic=st.checkbox(
             "Traffic intensity proxy",
             value=False,

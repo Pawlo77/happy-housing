@@ -10,6 +10,41 @@ from happy_housing.app.map_layers import (
 from happy_housing.app.maps import transit_network_layers
 
 
+def test_prepare_transit_paths_coerces_numpy_paths_to_plain_lists() -> None:
+    """Parquet may store path as ndarray-of-ndarrays; pydeck needs list[list]."""
+    import numpy as np
+
+    frame = pd.DataFrame({
+        "mode": ["metro"],
+        "path": [np.array([np.array([21.0, 52.2]), np.array([21.1, 52.3])])],
+        "route_short_name": ["M1"],
+        "color_r": [196],
+        "color_g": [30],
+        "color_b": [58],
+        "color_a": [230],
+        "tooltip_name": ["Metro M1"],
+        "tooltip_detail": ["GTFS"],
+    })
+    out = prepare_transit_paths(frame, modes={"metro"})
+    assert len(out) == 1
+    path = out.iloc[0]["path"]
+    assert isinstance(path, list)
+    assert path == [[21.0, 52.2], [21.1, 52.3]]
+    assert all(isinstance(pt, list) for pt in path)
+
+    layers = transit_network_layers(out, pd.DataFrame(), modes={"metro"})
+    path_layers = [layer for layer in layers if layer.type == "PathLayer"]
+    assert path_layers
+    import json
+
+    import pydeck as pdk
+
+    payload = json.loads(pdk.Deck(layers=path_layers).to_json())
+    row_path = payload["layers"][0]["data"][0]["path"]
+    assert isinstance(row_path, list)
+    assert row_path[0] == [21.0, 52.2]
+
+
 def test_prepare_transit_paths_filters_modes() -> None:
     frame = pd.DataFrame({
         "mode": ["metro", "bus", "tram"],
