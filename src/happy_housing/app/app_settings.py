@@ -104,6 +104,16 @@ class AppSettings:
     """Attach RCN neighborhood comps and log IDW baseline in MLflow."""
     model_nbhd_radius_m: float = 800.0
     """Search radius (metres) for local RCN comparable sales."""
+    commute_target_lon: float | None = None
+    """Admin override longitude; None → experiment.yaml."""
+    commute_target_lat: float | None = None
+    """Admin override latitude; None → experiment.yaml."""
+    commute_target_label: str = ""
+    """Human label for the commute destination (OSM place name)."""
+    commute_features_lon: float | None = None
+    """Lon last baked into scored dist/commute features."""
+    commute_features_lat: float | None = None
+    """Lat last baked into scored dist/commute features."""
 
 
 def settings_path(processed: Path) -> Path:
@@ -317,7 +327,27 @@ def load_app_settings(path: Path) -> AppSettings:
             100.0,
             float(payload.get("model_nbhd_radius_m", defaults.model_nbhd_radius_m)),
         ),
+        commute_target_lon=_opt_lon_lat(payload.get("commute_target_lon")),
+        commute_target_lat=_opt_lon_lat(payload.get("commute_target_lat")),
+        commute_target_label=str(
+            payload.get("commute_target_label", defaults.commute_target_label) or ""
+        ).strip(),
+        commute_features_lon=_opt_lon_lat(payload.get("commute_features_lon")),
+        commute_features_lat=_opt_lon_lat(payload.get("commute_features_lat")),
     )
+
+
+def _opt_lon_lat(value: object) -> float | None:
+    """Parse optional longitude/latitude; blank → None."""
+    if value is None or value == "":
+        return None
+    try:
+        number = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    if number != number:
+        return None
+    return number
 
 
 def _coerce_log_level(value: object, fallback: str) -> str:

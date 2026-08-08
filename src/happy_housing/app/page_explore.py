@@ -38,6 +38,7 @@ from happy_housing.app.charts import (
     bar_chart,
     diverging_bar_chart,
 )
+from happy_housing.app.commute_target import resolve_commute_target
 from happy_housing.app.data import (
     load_aircraft_lden,
     load_amenities,
@@ -377,6 +378,7 @@ def _tab_map(
     basemap: str,
     commute_lon: float,
     commute_lat: float,
+    commute_label: str = "Commute target",
 ) -> None:
     """Market map with toggleable livability overlays."""
     st.caption(
@@ -405,6 +407,7 @@ def _tab_map(
         commute_lon=commute_lon,
         commute_lat=commute_lat,
         hour=hour,
+        commute_label=commute_label,
     )
     if not layers:
         st.info("Enable at least one map layer in the sidebar.")
@@ -694,6 +697,7 @@ def _tab_offer(
     basemap: str,
     commute_lon: float,
     commute_lat: float,
+    commute_label: str = "Commute target",
 ) -> None:
     """Single-offer deep dive with Overview / Context / Map / SHAP / AI subtabs."""
     if filtered.empty:
@@ -773,7 +777,11 @@ def _tab_offer(
             "Distances rounded to whole metres. "
             "Aircraft Lden/Lnight from EEA END contour bands (dB lower edge)."
         )
-        st.dataframe(livability_rows(row), hide_index=True, width="stretch")
+        st.dataframe(
+            livability_rows(row, commute_label=commute_label),
+            hide_index=True,
+            width="stretch",
+        )
         _price_metrics(row)
 
     with local_map:
@@ -794,6 +802,7 @@ def _tab_offer(
             commute_lon=commute_lon,
             commute_lat=commute_lat,
             hour=hour,
+            commute_label=commute_label,
         )
         layers.append(focus_marker_layer(lat, lon))
         render_deck(
@@ -1449,6 +1458,7 @@ def render_explore() -> None:
 
     if "explore_section" not in st.session_state:
         st.session_state["explore_section"] = "Map"
+    commute = resolve_commute_target(app_settings, config)
     map_kwargs = {
         "oou": oou,
         "amenities": amenities,
@@ -1462,8 +1472,9 @@ def render_explore() -> None:
         "flags": flags,
         "hour": hour,
         "basemap": basemap,
-        "commute_lon": float(config.commute_target_lon),
-        "commute_lat": float(config.commute_target_lat),
+        "commute_lon": float(commute.lon),
+        "commute_lat": float(commute.lat),
+        "commute_label": commute.label,
     }
     tab_map, tab_spatial, tab_offer, tab_board, tab_news, tab_prefs = st.tabs(
         list(EXPLORE_SECTIONS),
@@ -1494,8 +1505,8 @@ def render_explore() -> None:
                 traffic_sample=traffic_sample,
                 hour=hour,
                 basemap=basemap,
-                commute_lon=float(config.commute_target_lon),
-                commute_lat=float(config.commute_target_lat),
+                commute_lon=float(commute.lon),
+                commute_lat=float(commute.lat),
             )
     with tab_offer:
         if tab_offer.open:

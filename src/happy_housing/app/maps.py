@@ -405,13 +405,15 @@ def gunb_layer(points: pd.DataFrame) -> pdk.Layer | None:
     )
 
 
-def commute_target_layer(lon: float, lat: float) -> pdk.Layer:
-    """Single commute-target pin (Rondo Daszyńskiego)."""
+def commute_target_layer(
+    lon: float, lat: float, *, label: str = "Commute target"
+) -> pdk.Layer:
+    """Single commute-target pin."""
     data = pd.DataFrame([
         {
             "lon": lon,
             "lat": lat,
-            "tooltip_name": "Rondo Daszyńskiego",
+            "tooltip_name": label,
             "tooltip_detail": "Commute target used by the model",
         }
     ])
@@ -545,6 +547,7 @@ def build_explore_layers(
     commute_lon: float,
     commute_lat: float,
     hour: int,
+    commute_label: str = "Commute target",
 ) -> list[pdk.Layer]:
     """Assemble enabled Explore map layers in draw order."""
     layers: list[pdk.Layer] = []
@@ -581,7 +584,9 @@ def build_explore_layers(
         if gunb_pts is not None:
             layers.append(gunb_pts)
     if flags.commute_target:
-        layers.append(commute_target_layer(commute_lon, commute_lat))
+        layers.append(
+            commute_target_layer(commute_lon, commute_lat, label=commute_label)
+        )
     if flags.offers:
         offers = listings_scatter_layer(listings)
         if offers is not None:

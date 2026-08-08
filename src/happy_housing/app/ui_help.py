@@ -62,7 +62,7 @@ LAYER_HELP: dict[str, str] = {
         "price; dist_park_m is a model feature and Prefs can cap max distance."
     ),
     "commute_target": (
-        "Fixed commute destination (Rondo Daszyńskiego). "
+        "Commute destination pin (Admin → General; default Rondo Daszyńskiego). "
         "Reference for commute minutes / dist_daszynskiego_m — shorter trips "
         "raise job-access livability and strongly affect price attractiveness "
         "in the model."

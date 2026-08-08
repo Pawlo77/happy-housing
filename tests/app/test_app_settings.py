@@ -66,3 +66,22 @@ def test_round_trip_settings(tmp_path: Path) -> None:
     assert loaded.model_hpo_trials == 8
     assert loaded.model_use_neighborhood is False
     assert loaded.model_nbhd_radius_m == 600.0
+
+
+def test_commute_target_settings_round_trip(tmp_path: Path) -> None:
+    path = settings_path(tmp_path)
+    save_app_settings(
+        path,
+        AppSettings(
+            commute_target_lon=21.01,
+            commute_target_lat=52.25,
+            commute_target_label="Plac Bankowy",
+            commute_features_lon=20.983,
+            commute_features_lat=52.23,
+        ),
+    )
+    loaded = load_app_settings(path)
+    assert loaded.commute_target_lon == 21.01
+    assert loaded.commute_target_lat == 52.25
+    assert loaded.commute_target_label == "Plac Bankowy"
+    assert loaded.commute_features_lon == 20.983

@@ -9,7 +9,15 @@ from pathlib import Path
 
 import pandas as pd
 
-from happy_housing.app.app_settings import load_app_settings, settings_path
+from happy_housing.app.app_settings import (
+    load_app_settings,
+    save_app_settings,
+    settings_path,
+)
+from happy_housing.app.commute_target import (
+    mark_commute_features_applied,
+    resolve_commute_target,
+)
 from happy_housing.app.metadata import (
     DEFAULT_METHODOLOGY,
     DEFAULT_SOURCES,
@@ -244,14 +252,20 @@ def run_pipeline(
         fixture_path=fixtures / "parks.geojson",
     )
 
+    app_settings = load_app_settings(settings_path(processed))
+    commute = resolve_commute_target(app_settings, config)
+    logger.info(
+        "Commute target %s (%.5f, %.5f)", commute.label, commute.lon, commute.lat
+    )
+
     enriched = enrich_listings(
         listings,
         projected_crs=config.bbox.projected_crs,
         amenities=amenities,
         gios_stations=gios_stations,
         gtfs_stops=gtfs_stops,
-        commute_lon=config.commute_target_lon,
-        commute_lat=config.commute_target_lat,
+        commute_lon=commute.lon,
+        commute_lat=commute.lat,
         gunb_points=gunb,
         parks=parks,
         aircraft_lden_path=fixtures / "chopin_aircraft_lden.geojson",
@@ -260,15 +274,15 @@ def run_pipeline(
     train_frame = pd.DataFrame(enriched.drop(columns=["geometry"], errors="ignore"))
     train_frame = attach_commute_minutes(
         train_frame,
-        dest_lon=config.commute_target_lon,
-        dest_lat=config.commute_target_lat,
+        dest_lon=commute.lon,
+        dest_lat=commute.lat,
         osrm_url=config.routing.osrm_url,
     )
     if config.routing.use_otp_transit:
         train_frame = attach_transit_commute_minutes(
             train_frame,
-            dest_lon=config.commute_target_lon,
-            dest_lat=config.commute_target_lat,
+            dest_lon=commute.lon,
+            dest_lat=commute.lat,
             otp_url=config.routing.otp_url,
         )
 
@@ -283,7 +297,6 @@ def run_pipeline(
 
     _write_enriched_geoparquet(train_frame)
 
-    app_settings = load_app_settings(settings_path(processed))
     rcn_for_model = (
         pd.read_parquet(rcn_parquet) if rcn_parquet.exists() else pd.DataFrame()
     )
@@ -321,6 +334,13 @@ def run_pipeline(
     )
     scored_path = processed / "listings_scored.parquet"
     train_frame.to_parquet(scored_path, index=False)
+
+    mark_commute_features_applied(app_settings, commute)
+    if app_settings.commute_target_lon is None:
+        app_settings.commute_target_lon = float(commute.lon)
+        app_settings.commute_target_lat = float(commute.lat)
+        app_settings.commute_target_label = commute.label
+    save_app_settings(settings_path(processed), app_settings)
 
     duration_s = time.perf_counter() - started
     n_by_source = (

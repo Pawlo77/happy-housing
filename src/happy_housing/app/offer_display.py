@@ -61,13 +61,18 @@ def delta_hex(delta: float) -> str:
     }[delta_band(delta)]
 
 
-def livability_rows(row: pd.Series) -> pd.DataFrame:
+def livability_rows(
+    row: pd.Series,
+    *,
+    commute_label: str = "commute target",
+) -> pd.DataFrame:
     """Livability signals with distances rounded to whole metres."""
+    short = commute_label if len(commute_label) <= 40 else commute_label[:37] + "..."
     specs: tuple[tuple[str, str, str], ...] = (
         ("aircraft_lden_db", "Aircraft Lden (dB)", "db"),
         ("aircraft_lnight_db", "Aircraft Lnight (dB)", "db"),
         ("in_oou", "Lden ≥ 55 dB", "flag"),
-        ("commute_min", "Commute to Daszyńskiego", "min"),
+        ("commute_min", f"Commute to {short}", "min"),
         ("dist_transit_stop_m", "Nearest transit stop", "m"),
         ("dist_metro_m", "Nearest metro", "m"),
         ("dist_hospital_m", "Nearest hospital", "m"),
@@ -76,7 +81,7 @@ def livability_rows(row: pd.Series) -> pd.DataFrame:
         ("dist_air_station_m", "Nearest air station", "m"),
         ("dist_gunb_m", "Nearest GUNB permit", "m"),
         ("dist_park_m", "Nearest park / square", "m"),
-        ("dist_daszynskiego_m", "Distance to Daszyńskiego", "m"),
+        ("dist_daszynskiego_m", f"Distance to {short}", "m"),
     )
     out: list[dict[str, Any]] = []
     for col, label, kind in specs:

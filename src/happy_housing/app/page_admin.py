@@ -21,6 +21,11 @@ from happy_housing.app.app_settings import (
     save_app_settings,
     settings_path,
 )
+from happy_housing.app.commute_target import (
+    commute_target_stale,
+    recompute_commute_features,
+    resolve_commute_target,
+)
 from happy_housing.app.data import (
     clear_data_caches,
     load_config,
@@ -28,6 +33,7 @@ from happy_housing.app.data import (
     load_scored,
     processed_dir,
 )
+from happy_housing.app.geocode import search_places
 from happy_housing.app.llm_metrics import (
     clear_llm_metrics,
     llm_metrics_path,
@@ -69,7 +75,7 @@ def _run_command(command: list[str], timeout_s: int) -> tuple[int, str]:
 
 
 def _tab_general(settings: AppSettings, settings_file: Path, proc: Path) -> None:
-    """Paths, ingest caps (read-only summary), cache clear, and log level."""
+    """Paths, commute target, cache clear, and log level."""
     config = load_config()
     meta = load_metadata()
     st.caption("Experiment paths and last pipeline refresh (edit YAML for caps).")
@@ -93,9 +99,129 @@ def _tab_general(settings: AppSettings, settings_file: Path, proc: Path) -> None
         "Config file: `configs/experiment.yaml` · fixtures: "
         f"`{config.data.fixtures_path()}`"
     )
-    lon = config.commute_target_lon
-    lat = config.commute_target_lat
-    st.caption(f"Commute target: {lon:.4f}, {lat:.4f}")
+
+    target = resolve_commute_target(settings, config)
+    st.subheader("Commute target")
+    st.caption(
+        "Destination for dist_daszynskiego_m / commute_min / OTP transit. "
+        "Search uses OpenStreetMap Nominatim (open geocoder). "
+        "After changing the place, recompute features (or run the full pipeline)."
+    )
+    if "admin_commute_lon" not in st.session_state:
+        st.session_state["admin_commute_lon"] = float(target.lon)
+        st.session_state["admin_commute_lat"] = float(target.lat)
+        st.session_state["admin_commute_label"] = str(target.label)
+
+    search_q = st.text_input(
+        "Search place",
+        value="",
+        placeholder="e.g. Plac Bankowy, Warszawa",
+        key="admin_commute_search_q",
+        help="OpenStreetMap Nominatim suggestions (Poland / Warsaw-biased).",
+    )
+    if st.button("Suggest places", key="admin_commute_search_btn"):
+        try:
+            with st.spinner("Querying Nominatim…"):
+                hits = search_places(search_q)
+            st.session_state["admin_commute_suggestions"] = [
+                {"label": h.label, "lon": h.lon, "lat": h.lat} for h in hits
+            ]
+            if not hits:
+                st.info("No Nominatim hits — try a more specific query.")
+        except Exception as exc:
+            st.error(f"Nominatim search failed: {exc}")
+    suggestions = st.session_state.get("admin_commute_suggestions") or []
+    if suggestions:
+        labels = [str(row["label"]) for row in suggestions]
+        pick = st.selectbox(
+            "Suggestions",
+            options=labels,
+            key="admin_commute_suggestion_pick",
+        )
+        chosen = suggestions[labels.index(str(pick))]
+        if st.button("Use selected suggestion", key="admin_commute_use_suggestion"):
+            st.session_state["admin_commute_lon"] = float(chosen["lon"])
+            st.session_state["admin_commute_lat"] = float(chosen["lat"])
+            st.session_state["admin_commute_label"] = str(chosen["label"])[:120]
+            st.rerun()
+
+    lon_in = st.number_input(
+        "Longitude",
+        format="%.6f",
+        key="admin_commute_lon",
+    )
+    lat_in = st.number_input(
+        "Latitude",
+        format="%.6f",
+        key="admin_commute_lat",
+    )
+    label_in = st.text_input(
+        "Label",
+        key="admin_commute_label",
+    )
+    st.caption(f"Active: **{target.label}** · {target.lon:.5f}, {target.lat:.5f}")
+    if commute_target_stale(settings):
+        st.warning(
+            "Scored listings still use the previous commute target. "
+            "Recompute commute features (fast) or run the full pipeline."
+        )
+    b1, b2, b3 = st.columns(3)
+    with b1:
+        if st.button("Save commute target", type="primary", key="save_commute_target"):
+            prev = resolve_commute_target(settings, config)
+            if settings.commute_features_lon is None:
+                settings.commute_features_lon = float(prev.lon)
+                settings.commute_features_lat = float(prev.lat)
+            settings.commute_target_lon = float(lon_in)
+            settings.commute_target_lat = float(lat_in)
+            settings.commute_target_label = str(label_in).strip() or prev.label
+            save_app_settings(settings_file, settings)
+            st.success(
+                f"Saved commute target: {settings.commute_target_label} "
+                f"({lon_in:.5f}, {lat_in:.5f})"
+            )
+            if commute_target_stale(settings):
+                st.info("Next: click Recompute commute + rescore.")
+            st.rerun()
+    with b2:
+        if st.button("Recompute commute + rescore", key="recompute_commute"):
+            dest_label = str(label_in).strip() or target.label
+            with st.spinner("Updating distances, commute minutes, and scores…"):
+                try:
+                    result = recompute_commute_features(
+                        proc,
+                        dest_lon=float(lon_in),
+                        dest_lat=float(lat_in),
+                        label=dest_label,
+                        config=config,
+                        projected_crs=config.bbox.projected_crs,
+                        osrm_url=config.routing.osrm_url,
+                        use_otp_transit=bool(config.routing.use_otp_transit),
+                        otp_url=config.routing.otp_url,
+                    )
+                    clear_data_caches()
+                    st.success(
+                        f"Updated {result['n_offers']} offers for "
+                        f"{result['label']} "
+                        f"({result['lon']:.5f}, {result['lat']:.5f}). "
+                        "Full model retrain still recommended after big "
+                        "target moves."
+                    )
+                    st.rerun()
+                except Exception as exc:
+                    logger.exception("Commute recompute failed")
+                    st.error(str(exc))
+    with b3:
+        if st.button("Reset to YAML default", key="reset_commute_yaml"):
+            settings.commute_target_lon = float(config.commute_target_lon)
+            settings.commute_target_lat = float(config.commute_target_lat)
+            settings.commute_target_label = "Rondo Daszyńskiego"
+            save_app_settings(settings_file, settings)
+            st.session_state["admin_commute_lon"] = settings.commute_target_lon
+            st.session_state["admin_commute_lat"] = settings.commute_target_lat
+            st.session_state["admin_commute_label"] = settings.commute_target_label
+            st.success("Reset override to experiment.yaml coordinates.")
+            st.rerun()
 
     st.subheader("Logging")
     log_level = st.selectbox(
