@@ -88,6 +88,155 @@ class MLflowTrackingConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class DataPathsConfig:
+    """Local data directory layout for raw, processed, and fixture files."""
+
+    root: str = "data"
+    """Project-relative data root."""
+    fixtures: str = "data/fixtures"
+    """Committed small samples for offline tests."""
+    raw: str = "data/raw"
+    """Downloaded source dumps (gitignored)."""
+    processed: str = "data/processed"
+    """Enriched parquet / model outputs (gitignored)."""
+    cache: str = "data/cache"
+    """OSMnx and HTTP caches (gitignored)."""
+
+    def root_path(self) -> Path:
+        """Return the data root path."""
+        return Path(self.root)
+
+    def fixtures_path(self) -> Path:
+        """Return the fixtures directory path."""
+        return Path(self.fixtures)
+
+    def raw_path(self) -> Path:
+        """Return the raw downloads directory path."""
+        return Path(self.raw)
+
+    def processed_path(self) -> Path:
+        """Return the processed outputs directory path."""
+        return Path(self.processed)
+
+    def cache_path(self) -> Path:
+        """Return the cache directory path."""
+        return Path(self.cache)
+
+    def __post_init__(self) -> None:
+        for name in ("root", "fixtures", "raw", "processed", "cache"):
+            _require_str(name, str(getattr(self, name)))
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-serializable representation of the data paths."""
+        return cast(dict[str, Any], _serialize(self))
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> Self:
+        """Build data paths from a mapping."""
+        mapping = _extract_mapping(data, name="DataPathsConfig")
+        return cls(**dict(mapping))
+
+
+@dataclass(frozen=True, slots=True)
+class WarsawBBoxConfig:
+    """Geographic bounding box for Warsaw queries (WGS84)."""
+
+    west: float = 20.85
+    """Minimum longitude."""
+    south: float = 52.10
+    """Minimum latitude."""
+    east: float = 21.28
+    """Maximum longitude."""
+    north: float = 52.37
+    """Maximum latitude."""
+    crs: str = "EPSG:4326"
+    """Coordinate reference system."""
+    projected_crs: str = "EPSG:2180"
+    """Projected CRS for meter distances (PL-1992)."""
+
+    def as_tuple(self) -> tuple[float, float, float, float]:
+        """Return ``(west, south, east, north)``."""
+        return (self.west, self.south, self.east, self.north)
+
+    def __post_init__(self) -> None:
+        _require(self.west < self.east, "bbox west must be < east.")
+        _require(self.south < self.north, "bbox south must be < north.")
+        _require_str("crs", self.crs)
+        _require_str("projected_crs", self.projected_crs)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-serializable representation of the bbox."""
+        return cast(dict[str, Any], _serialize(self))
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> Self:
+        """Build a Warsaw bbox from a mapping."""
+        mapping = _extract_mapping(data, name="WarsawBBoxConfig")
+        return cls(**dict(mapping))
+
+
+@dataclass(frozen=True, slots=True)
+class ModelConfig:
+    """LightGBM training hyperparameters for price-per-m² regression."""
+
+    target: str = "price_per_m2"
+    """Regression target column."""
+    test_size: float = 0.2
+    """Hold-out fraction for evaluation."""
+    random_state: int = 42
+    """RNG seed for splits."""
+    n_estimators: int = 200
+    """Number of boosting rounds."""
+    learning_rate: float = 0.05
+    """Boosting learning rate."""
+    num_leaves: int = 31
+    """LightGBM max leaves per tree."""
+
+    def __post_init__(self) -> None:
+        _require_str("target", self.target)
+        _require(0.0 < self.test_size < 1.0, "test_size must be in (0, 1).")
+        _require(self.n_estimators > 0, "n_estimators must be positive.")
+        _require(self.learning_rate > 0.0, "learning_rate must be positive.")
+        _require(self.num_leaves > 1, "num_leaves must be > 1.")
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-serializable representation of the model config."""
+        return cast(dict[str, Any], _serialize(self))
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> Self:
+        """Build a model config from a mapping."""
+        mapping = _extract_mapping(data, name="ModelConfig")
+        return cls(**dict(mapping))
+
+
+@dataclass(frozen=True, slots=True)
+class IngestUrlsConfig:
+    """Remote free-data endpoints used by download helpers."""
+
+    gtfs_zip: str = "https://mkuran.pl/gtfs/warsaw.zip"
+    """Warsaw GTFS static feed (mkuran / Transitland)."""
+    gios_stations: str = "https://api.gios.gov.pl/pjp-api/v1/rest/station/findAll"
+    """GIOŚ air-quality stations list (v1)."""
+    rcn_zip: str = "https://mapa.um.warszawa.pl/rcn_gml/rcn20260622.zip"
+    """UM Warszawa RCN GML bulk zip."""
+
+    def __post_init__(self) -> None:
+        for name in ("gtfs_zip", "gios_stations", "rcn_zip"):
+            _require_str(name, str(getattr(self, name)))
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-serializable representation of ingest URLs."""
+        return cast(dict[str, Any], _serialize(self))
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> Self:
+        """Build ingest URLs from a mapping."""
+        mapping = _extract_mapping(data, name="IngestUrlsConfig")
+        return cls(**dict(mapping))
+
+
+@dataclass(frozen=True, slots=True)
 class ExperimentConfig:
     """Top-level experiment configuration."""
 
@@ -95,6 +244,18 @@ class ExperimentConfig:
     """Human-readable experiment name."""
     mlflow: MLflowTrackingConfig = field(default_factory=MLflowTrackingConfig)
     """MLflow tracking settings for this experiment."""
+    data: DataPathsConfig = field(default_factory=DataPathsConfig)
+    """Local data path layout."""
+    bbox: WarsawBBoxConfig = field(default_factory=WarsawBBoxConfig)
+    """Warsaw query bounding box."""
+    model: ModelConfig = field(default_factory=ModelConfig)
+    """Price model hyperparameters."""
+    ingest_urls: IngestUrlsConfig = field(default_factory=IngestUrlsConfig)
+    """Remote download endpoints."""
+    commute_target_lon: float = 20.9830
+    """Rondo Daszyńskiego longitude (commute destination)."""
+    commute_target_lat: float = 52.2300
+    """Rondo Daszyńskiego latitude (commute destination)."""
 
     def __post_init__(self) -> None:
         _require_str("name", self.name)
@@ -107,14 +268,42 @@ class ExperimentConfig:
     def from_dict(cls, data: Mapping[str, Any]) -> Self:
         """Build an experiment config from a mapping."""
         mapping = _extract_mapping(data, name="ExperimentConfig")
-        mlflow_data = mapping.get("mlflow", {})
         mlflow_config = (
-            MLflowTrackingConfig.from_dict(mlflow_data)
-            if mlflow_data
+            MLflowTrackingConfig.from_dict(mapping["mlflow"])
+            if mapping.get("mlflow")
             else MLflowTrackingConfig()
         )
+        data_config = (
+            DataPathsConfig.from_dict(mapping["data"])
+            if mapping.get("data")
+            else DataPathsConfig()
+        )
+        bbox_config = (
+            WarsawBBoxConfig.from_dict(mapping["bbox"])
+            if mapping.get("bbox")
+            else WarsawBBoxConfig()
+        )
+        model_config = (
+            ModelConfig.from_dict(mapping["model"])
+            if mapping.get("model")
+            else ModelConfig()
+        )
+        urls_config = (
+            IngestUrlsConfig.from_dict(mapping["ingest_urls"])
+            if mapping.get("ingest_urls")
+            else IngestUrlsConfig()
+        )
         name = str(mapping.get("name", "happy-housing"))
-        return cls(name=name, mlflow=mlflow_config)
+        return cls(
+            name=name,
+            mlflow=mlflow_config,
+            data=data_config,
+            bbox=bbox_config,
+            model=model_config,
+            ingest_urls=urls_config,
+            commute_target_lon=float(mapping.get("commute_target_lon", 20.9830)),
+            commute_target_lat=float(mapping.get("commute_target_lat", 52.2300)),
+        )
 
 
 def load_experiment_config(path: Path | str) -> ExperimentConfig:
@@ -140,6 +329,10 @@ def load_experiment_config(path: Path | str) -> ExperimentConfig:
         "experiment section must be a mapping.",
     )
     merged: dict[str, Any] = dict(experiment_section)
-    if "mlflow" in raw:
-        merged["mlflow"] = raw["mlflow"]
+    for key in ("mlflow", "data", "bbox", "model", "ingest_urls"):
+        if key in raw:
+            merged[key] = raw[key]
+    for key in ("commute_target_lon", "commute_target_lat"):
+        if key in raw:
+            merged[key] = raw[key]
     return ExperimentConfig.from_dict(merged)

@@ -1,4 +1,4 @@
-"""Tests for YAML experiment configuration."""
+"""Config loader tests including new data/model sections."""
 
 from pathlib import Path
 
@@ -12,11 +12,14 @@ from happy_housing.config import (
 
 
 def test_load_default_experiment_yaml() -> None:
-    """Default config file parses with expected experiment name."""
+    """Default config file parses with expected experiment name and paths."""
     config = load_experiment_config(Path("configs/experiment.yaml"))
     assert config.name == "happy-housing"
     assert config.mlflow.experiment_name == "happy-housing"
     assert config.mlflow.enabled is True
+    assert config.data.fixtures == "data/fixtures"
+    assert config.model.target == "price_per_m2"
+    assert config.bbox.west < config.bbox.east
 
 
 def test_experiment_config_requires_name() -> None:

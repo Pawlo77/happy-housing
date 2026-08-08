@@ -1,6 +1,8 @@
-# Minimal experiment config — extend with dataset, model, and training sections.
+# happy-housing experiment configuration
 experiment:
   name: happy-housing
+  commute_target_lon: 20.9830
+  commute_target_lat: 52.2300
 
 mlflow:
   enabled: true
@@ -11,3 +13,31 @@ mlflow:
   log_metrics: true
   log_artifacts: true
   retain_local_checkpoints: false
+
+data:
+  root: data
+  fixtures: data/fixtures
+  raw: data/raw
+  processed: data/processed
+  cache: data/cache
+
+bbox:
+  west: 20.85
+  south: 52.10
+  east: 21.28
+  north: 52.37
+  crs: EPSG:4326
+  projected_crs: EPSG:2180
+
+model:
+  target: price_per_m2
+  test_size: 0.2
+  random_state: 42
+  n_estimators: 200
+  learning_rate: 0.05
+  num_leaves: 31
+
+ingest_urls:
+  gtfs_zip: https://mkuran.pl/gtfs/warsaw.zip
+  gios_stations: https://api.gios.gov.pl/pjp-api/v1/rest/station/findAll
+  rcn_zip: https://mapa.um.warszawa.pl/rcn_gml/rcn20260622.zip
