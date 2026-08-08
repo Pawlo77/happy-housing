@@ -69,6 +69,8 @@ _AMENITY_RGBA: dict[str, list[int]] = {
     "hospital": [185, 28, 28, 210],
     "fire_station": [194, 65, 12, 210],
     "police": [29, 78, 216, 210],
+    "charging_station": [16, 185, 129, 210],
+    "fuel": [120, 53, 15, 210],
 }
 """RGBA fills for amenity scatters."""
 
@@ -202,9 +204,11 @@ def amenity_layers(
     show_hospital: bool = True,
     show_fire: bool = True,
     show_police: bool = True,
+    show_charging: bool = False,
+    show_fuel: bool = False,
 ) -> list[pdk.Layer]:
     """Toggleable OSM amenity markers with distinct silhouettes per type."""
-    if not (show_hospital or show_fire or show_police):
+    if not (show_hospital or show_fire or show_police or show_charging or show_fuel):
         return []
     if amenities.empty or "amenity" not in amenities.columns:
         return []
@@ -215,6 +219,8 @@ def amenity_layers(
         "hospital": show_hospital,
         "fire_station": show_fire,
         "police": show_police,
+        "charging_station": show_charging,
+        "fuel": show_fuel,
     }
     layers: list[pdk.Layer] = []
     for kind, rgba in _AMENITY_RGBA.items():
@@ -1017,6 +1023,8 @@ def build_explore_layers(
             show_hospital=flags.hospitals,
             show_fire=flags.fire_stations,
             show_police=flags.police,
+            show_charging=flags.charging_stations,
+            show_fuel=flags.gas_stations,
         )
     )
     if flags.air:

@@ -253,6 +253,8 @@ def livability_rows(
         ("dist_hospital_m", "Nearest hospital", "m"),
         ("dist_fire_station_m", "Nearest fire station", "m"),
         ("dist_police_m", "Nearest police", "m"),
+        ("dist_charging_station_m", "Nearest EV charger", "m"),
+        ("dist_fuel_m", "Nearest gas station", "m"),
         ("dist_air_station_m", "Nearest air station", "m"),
         ("air_aq_index", "Air AQI (IDW)", "aq"),
         ("air_pm10_ug_m3", "PM10 µg/m³ (IDW)", "ug"),

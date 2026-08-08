@@ -47,6 +47,21 @@ def test_explore_datasets_needed_includes_warsaw_noise() -> None:
     assert "warsaw_noise" in needed
 
 
+def test_explore_datasets_needed_includes_gas_and_charging() -> None:
+    flags = LayerFlags(
+        gas_stations=True,
+        charging_stations=True,
+        city_boundary=False,
+        military=False,
+        rail_areas=False,
+        airport=False,
+        oou=False,
+        noise_overlay="off",
+    )
+    needed = explore_datasets_needed(section="Map", flags=flags)
+    assert "amenities" in needed
+
+
 def test_explore_datasets_needed_includes_gios_aq() -> None:
     flags = LayerFlags(
         aq_overlay="aq_index",

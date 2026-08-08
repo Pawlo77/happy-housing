@@ -163,7 +163,7 @@ from happy_housing.app.ui_help import (
 from happy_housing.gis.amenity_catalog import (
     AMENITY_TYPES,
     DEFAULT_MAP_OBJECT_TYPES,
-    amenity_keys,
+    city_map_object_keys,
     coerce_amenity_weights,
 )
 from happy_housing.gis.gios_aq_field import AQ_MAP_OVERLAYS, AqMapOverlay
@@ -461,6 +461,18 @@ def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
             help=layer_help("police"),
             key="explore_ly_police",
         ),
+        charging_stations=st.checkbox(
+            "EV charging",
+            value=False,
+            help=layer_help("charging_stations"),
+            key="explore_ly_charging",
+        ),
+        gas_stations=st.checkbox(
+            "Gas stations",
+            value=False,
+            help=layer_help("gas_stations"),
+            key="explore_ly_gas",
+        ),
         air=st.checkbox(
             "Air-quality stations",
             value=False,
@@ -516,15 +528,17 @@ def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
     )
     flags.aq_overlay = aq_by_label.get(str(aq_label), "off")
     label_by_key = {t.key: f"{t.group}: {t.label}" for t in AMENITY_TYPES}
-    default_keys = list(DEFAULT_MAP_OBJECT_TYPES)
+    map_keys = city_map_object_keys()
+    default_keys = [k for k in DEFAULT_MAP_OBJECT_TYPES if k in map_keys]
     selected_labels = st.multiselect(
-        "City map objects (UM + OSM gyms)",
-        options=[label_by_key[k] for k in amenity_keys() if k in label_by_key],
+        "City map objects (UM sports + civic)",
+        options=[label_by_key[k] for k in map_keys if k in label_by_key],
         default=[label_by_key[k] for k in default_keys if k in label_by_key],
         help=(
             "UM sports (mapa.um.warszawa.pl/obiekty-sportowe) + civic WFS, plus "
-            "OSM commercial fitness clubs (leisure=fitness_centre) under Gym. "
-            "Default: gyms, fitness studios, swimming pools."
+            "OSM commercial fitness clubs under Gym. OSM hospitals / police / "
+            "fire / shops / EV / gas stations use the checkboxes above — not "
+            "listed here. Default: gyms, fitness studios, swimming pools."
         ),
         key="explore_ly_city_pois",
     )

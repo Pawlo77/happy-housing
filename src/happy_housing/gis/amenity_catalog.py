@@ -177,11 +177,25 @@ AMENITY_TYPES: tuple[AmenityType, ...] = (
         False,
         0.0,
     ),
+    AmenityType("fuel", "Gas station (OSM)", "OSM", "osm", False, 0.0),
 )
 """All amenity categories exposed in Admin + Explore filters."""
 
 _AMENITY_BY_KEY: dict[str, AmenityType] = {t.key: t for t in AMENITY_TYPES}
 """Lookup by catalog key."""
+
+# OSM keys that have dedicated Explore checkboxes (or are OSM-only map layers).
+CITY_MAP_OBJECT_EXCLUDE_KEYS: frozenset[str] = frozenset({
+    "hospital",
+    "fire_station",
+    "police",
+    "shop",
+    "metro",
+    "charging_station",
+    "fuel",
+    "park",  # dedicated Parks & squares layer
+})
+"""Catalog keys omitted from the City map objects multiselect (avoid duplicates)."""
 
 DEFAULT_MAP_OBJECT_TYPES: tuple[str, ...] = tuple(
     t.key for t in AMENITY_TYPES if t.default_map_visible
@@ -202,6 +216,11 @@ LEGACY_DIST_KEYS: frozenset[str] = frozenset({
     "shop",
 })
 """Amenity keys that map to pre-existing ``dist_*_m`` enrich columns."""
+
+
+def city_map_object_keys() -> tuple[str, ...]:
+    """Catalog keys shown in Explore City map objects (UM sports/civic + gym)."""
+    return tuple(k for k in amenity_keys() if k not in CITY_MAP_OBJECT_EXCLUDE_KEYS)
 
 
 def model_distance_feature_columns() -> tuple[str, ...]:

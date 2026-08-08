@@ -93,6 +93,15 @@ LAYER_HELP: dict[str, str] = {
         "OSM police stations. Nearby stations can feel safer (mixed amenity); "
         "dist_police_m is a model feature and Prefs can require a max distance."
     ),
+    "charging_stations": (
+        "OSM EV charging stations (amenity=charging_station). "
+        "dist_charging_station_m enters the model; use Admin weights to prefer "
+        "or avoid proximity."
+    ),
+    "gas_stations": (
+        "OSM fuel / petrol stations (amenity=fuel). Convenience for drivers; "
+        "dist_fuel_m is a model feature. Not the same as EV charging."
+    ),
     "air": (
         "GIOŚ monitoring stations (sensors for the IDW field). Prefer the "
         "Air quality field overlay for city-wide AQI/PM; model uses "
@@ -114,9 +123,11 @@ LAYER_HELP: dict[str, str] = {
     "city_poi_types": (
         "UM sports objects (mapa.um.warszawa.pl/obiekty-sportowe) plus civic "
         "WFS POIs (libraries, pharmacies, bike-share, …) and OSM commercial "
-        "fitness clubs under Gym. Multiselect filters which types draw; "
-        "default gyms, fitness studios, swimming pools. Admin -> Recommendations "
-        "sets +/- weights that nudge the bargain recommender by proximity."
+        "fitness clubs under Gym. OSM hospitals / police / fire / shops / EV / "
+        "gas stations are separate checkboxes (not duplicated here). "
+        "Multiselect filters which types draw; default gyms, fitness studios, "
+        "swimming pools. Admin -> Recommendations sets +/- weights that nudge "
+        "the bargain recommender by proximity."
     ),
     "city_boundary": (
         "Warsaw city administrative outline (OSM). Context only — shows where "

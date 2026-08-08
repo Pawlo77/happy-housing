@@ -58,6 +58,8 @@ _SLIM_KEYS: tuple[str, ...] = (
     "in_poor_air",
     "air_aq_index",
     "air_pm25_ug_m3",
+    "dist_fuel_m",
+    "dist_charging_station_m",
     "has_balcony",
     "has_garage",
     "has_lift",

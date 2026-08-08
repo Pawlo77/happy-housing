@@ -57,6 +57,10 @@ class LayerFlags:
     """OSM fire stations."""
     police: bool = False
     """OSM police stations."""
+    charging_stations: bool = False
+    """OSM EV charging stations."""
+    gas_stations: bool = False
+    """OSM fuel / petrol stations."""
     shops: bool = False
     """OSM retail / supermarket points."""
     transit_intensity: bool = False
@@ -138,6 +142,8 @@ def explore_datasets_needed(
     if flags.city_poi_types:
         needed.add("city_pois")
     if flags.hospitals or flags.fire_stations or flags.police:
+        needed.add("amenities")
+    if flags.charging_stations or flags.gas_stations:
         needed.add("amenities")
     if flags.shops:
         needed.add("shops")

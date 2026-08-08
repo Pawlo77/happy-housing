@@ -587,6 +587,7 @@ def enrich_listings(
         ("police", "dist_police_m"),
         ("subway", "dist_metro_m"),
         ("charging_station", "dist_charging_station_m"),
+        ("fuel", "dist_fuel_m"),
     )
     for amenity_value, col in amenity_cols:
         if not amenities.empty and "amenity" in amenities.columns:

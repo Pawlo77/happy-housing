@@ -60,6 +60,7 @@ _SEMANTIC_SHAPES: dict[str, str] = {
     "metro": "oval",
     "metro_entrance": "oval",
     "charging_station": "chevron",
+    "fuel": "teardrop",
     "park": "hexagon",
     "default": "circle",
 }
