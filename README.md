@@ -2,15 +2,67 @@
 
 **See what a Warsaw flat is really worth — and why.**
 
-`happy-housing` turns open market and city data into a local decision aid for buyers, renters, and investors: fair asking-price estimates, location risk/opportunity signals, and an interactive map of how prices and livability shift over time.
+`happy-housing` turns open market and city data into a local decision aid for buyers, renters, and investors: fair asking-price estimates, location risk/opportunity signals, and an interactive map of how prices and livability shift across the city.
 
 Asking prices alone mislead. Two similar flats can differ by metro access, aircraft noise, nearby construction, air quality, or commute time to the centre. This project joins those signals with transaction history and listings so you can judge whether an offer is expensive, fair, or a bargain — with an explanation, not a black box.
+
+![Home — market pulse](docs/screenshots/01-home.png)
 
 ## Who it is for
 
 - **Buyers & renters** — compare listing price to a model “fair” price and inspect what drives the gap (metro vs sirens vs pollution).
-- **Investors** — spot districts where planned infrastructure (e.g. new metro) may lift value, or where multi-year construction may hurt comfort.
+- **Investors** — spot districts where planned infrastructure may lift value, or where multi-year construction may hurt comfort.
 - **Analysts & researchers** — reproducible Warsaw housing pipeline on free public data, no paid map or valuation APIs.
+
+## App tour
+
+Streamlit multipage UI: **Home · Explore · Stats · Admin**.
+
+### Home
+
+Brand strip, scored-offer KPIs, market pulse charts, model hold-out metrics, and open-data source inventory (row counts + last fetch).
+
+![Home — Model](docs/screenshots/02-home-model.png)
+
+![Home — Data sources](docs/screenshots/03-home-sources.png)
+
+### Explore
+
+Sidebar filters + map overlays. **Map / Offer / Board / News**:
+
+- **Map** — underpriced (green) vs overpriced (red) pins, OOU/noise, transit, amenities
+- **Offer** — deep dive (Overview · Context · Map · Explain · AI review), star watching
+- **Board** — filterable table; row click opens Offer
+- **News** — field changes on starred offers
+
+![Explore — Map](docs/screenshots/04-explore-map.png)
+
+![Explore — Board](docs/screenshots/05-explore-board.png)
+
+![Explore — Offer overview](docs/screenshots/06-explore-offer.png)
+
+![Explore — Offer context](docs/screenshots/06-explore-offer-context.png)
+
+### Stats
+
+Unconventional market cuts (“bargain dens”, ask vs ink, place/shape/time games) — not a generic KPI wall.
+
+![Stats — market oddities](docs/screenshots/08-stats.png)
+
+### Admin
+
+Tabbed settings (General · AI / LM Studio · Stars & News · Recommendations · Pipeline) — scrape, retrain, clear caches/memory. No raw JSON dump.
+
+![Admin — General](docs/screenshots/09-admin.png)
+
+![Admin — AI / LM Studio](docs/screenshots/10-admin-settings.png)
+
+Refresh screenshots after UI changes (app must be running):
+
+```bash
+make app
+uv run python scripts/capture_readme_screenshots.py
+```
 
 ## What you get
 
@@ -18,10 +70,10 @@ Asking prices alone mislead. Two similar flats can differ by metro access, aircr
 |------------|----------------|
 | Live / recent listings + official transaction prices | Market asking vs what people actually paid nearby |
 | Spatial livability layers | Noise (emergency services, airport OOU), air quality, construction, planned transit |
-| Commute & transit context | Realistic access to the city core and ZTM frequency, not just “distance to stop” |
-| Fair-price model | Estimated zł/m² from location and property features |
-| Explainable AI (SHAP) | Waterfall of “+metro / −fire station / −OOU” in zł terms |
-| Time-aware map | Replay how prices and acoustic / investment pressure evolve with infrastructure |
+| Commute & transit context | Access to the city core and ZTM frequency, not just “distance to stop” |
+| Fair-price model | Estimated zł/m² from location and property features (LightGBM + SHAP) |
+| Preference recommender | Learn from starred offers; retrain from Admin |
+| Time-aware map overlays | Transit at a chosen hour, traffic proxy, amenity layers |
 
 ## Motivation
 
@@ -31,25 +83,27 @@ Warsaw’s housing market moves fast, and public portals show asking prices with
 
 ## Methodology (high level)
 
-1. **Ingest** — Collect listings and official transaction / transit / environmental feeds into local files.
-2. **Enrich** — Attach vectorized GIS features (distances, zone flags, air stations, permits, routing) to every property.
-3. **Store** — Columnar GeoParquet + in-process DuckDB for fast filters (no external database server).
-4. **Model** — Train a tabular regressor on zł/m²; explain each prediction with SHAP.
-5. **Present** — Streamlit app: offer card (listing vs model), SHAP waterfall, and interactive heatmap with time playback.
+1. **Ingest** — Listings and official transaction / transit / environmental feeds into local files.
+2. **Enrich** — Vectorized GIS features (distances, zone flags, air stations, permits, routing) on every property.
+3. **Store** — Columnar GeoParquet + in-process DuckDB (no external database server).
+4. **Model** — Tabular regressor on zł/m²; explain predictions with SHAP; optional preference recommender.
+5. **Present** — Streamlit: Home pulse, Explore map/offer/board, Stats oddities, Admin controls.
 
-Principles: **free/open sources only**, **spatial vectorization** (no naive coordinate loops), **local compute** for cost and privacy.
+Principles: **free/open sources only**, **spatial vectorization**, **local compute** for cost and privacy.
 
 Roadmap and technical phases: [docs/plan.md](docs/plan.md).
 
 ## Status
 
-Early scaffold (Phase 0). Pipeline phases (ingest → GIS → storage → ML → GUI) are planned and landing incrementally. Expect fixtures and offline-friendly tests before live scrapers and full city extracts.
+Working local app: ingest → GIS enrich → LightGBM score → Streamlit GUI (Home / Explore / Stats / Admin). Fixtures keep tests offline; live Otodom / RCN / GTFS / GIOŚ pulls available via Admin or `make pipeline`.
 
 ## Quick start
 
 ```bash
 make install
 make check
+make pipeline   # or Admin → Pipeline / Otodom scrape
+make app        # http://127.0.0.1:8501
 ```
 
 Edit `configs/experiment.yaml` for run metadata and MLflow settings.
@@ -74,6 +128,8 @@ config = load_experiment_config(Path("configs/experiment.yaml"))
 | `configs/` | Experiment YAML |
 | `data/fixtures/` | Small committed samples (raw dumps stay local / gitignored) |
 | `docs/plan.md` | Phased plan |
+| `docs/screenshots/` | README UI captures |
+| `scripts/capture_readme_screenshots.py` | Refresh screenshots (app running) |
 | `tests/` | Pytest |
 
 ## License
