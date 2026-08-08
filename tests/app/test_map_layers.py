@@ -92,7 +92,7 @@ def test_prepare_listings_drops_missing_coordinates() -> None:
             "area_m2": [50.0, 55.0],
         })
     )
-    assert list(listings["listing_id"]) == ["ok"]
+    assert list(listings["tooltip_name"]) == ["ok"]
 
 
 def test_layer_flags_default_offers_on() -> None:

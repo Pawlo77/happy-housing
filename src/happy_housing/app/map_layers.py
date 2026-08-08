@@ -67,6 +67,89 @@ class LayerFlags:
     """Rondo Daszyńskiego commute target."""
 
 
+MAX_GUNB_MAP_POINTS = 3000
+"""Hard cap for GUNB IconLayer rows sent to the browser."""
+
+MAX_SHOP_MAP_POINTS = 5000
+"""Hard cap for OSM shop markers on the map."""
+
+_MAP_PAYLOAD_COLUMNS: tuple[str, ...] = (
+    "lon",
+    "lat",
+    "tooltip_name",
+    "tooltip_detail",
+    "icon_size",
+    "radius",
+    "color_r",
+    "color_g",
+    "color_b",
+    "color_a",
+    "weight",
+    "n_departures",
+    "stop_id",
+    "stop_name",
+)
+"""Columns safe to serialize into pydeck / Streamlit messages."""
+
+
+def slim_map_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    """Drop attribute-heavy columns before sending points to the browser."""
+    if frame.empty:
+        return frame.reset_index(drop=True)
+    cols = [c for c in _MAP_PAYLOAD_COLUMNS if c in frame.columns]
+    return frame.loc[:, cols].reset_index(drop=True)
+
+
+def limit_map_points(
+    frame: pd.DataFrame,
+    max_points: int,
+    *,
+    seed: int = 42,
+) -> pd.DataFrame:
+    """Sample down dense POI tables so Streamlit stays under message limits."""
+    if max_points <= 0 or frame.empty or len(frame) <= max_points:
+        return frame.reset_index(drop=True)
+    return frame.sample(n=int(max_points), random_state=seed).reset_index(drop=True)
+
+
+def prepare_gunb_for_map(
+    frame: pd.DataFrame,
+    *,
+    max_points: int = MAX_GUNB_MAP_POINTS,
+) -> pd.DataFrame:
+    """Warsaw-preferring, capped, tooltip-only GUNB points for the map."""
+    if frame.empty:
+        return pd.DataFrame()
+    work = frame.copy()
+    work["lat"] = pd.to_numeric(work.get("lat"), errors="coerce")
+    work["lon"] = pd.to_numeric(work.get("lon"), errors="coerce")
+    work = work.dropna(subset=["lat", "lon"])
+    if work.empty:
+        return work
+    if "miasto" in work.columns:
+        city = work["miasto"].astype(str)
+        warsaw = work.loc[city.str.contains("Warszawa", case=False, na=False)]
+        if not warsaw.empty:
+            work = warsaw
+    else:
+        # Rough Warsaw bbox when city labels are missing.
+        work = work.loc[
+            work["lon"].between(20.85, 21.30) & work["lat"].between(52.10, 52.40)
+        ]
+    if work.empty:
+        return work.reset_index(drop=True)
+    work = limit_map_points(work, max_points)
+    if "adres" in work.columns:
+        name = work["adres"].fillna("GUNB").astype(str)
+    elif "numer_decyzji" in work.columns:
+        name = work["numer_decyzji"].fillna("GUNB").astype(str)
+    else:
+        name = pd.Series("GUNB", index=work.index)
+    work["tooltip_name"] = name.str.slice(0, 80)
+    work["tooltip_detail"] = "GUNB · construction / permit proxy"
+    return slim_map_frame(work)
+
+
 def diurnal_traffic_weight(hour: int) -> float:
     """Return typical traffic-intensity multiplier for ``hour`` in ``0..23``."""
     return float(_TRAFFIC_DIURNAL[int(hour) % 24])
@@ -101,7 +184,7 @@ def prepare_listings_for_map(frame: pd.DataFrame) -> pd.DataFrame:
         + ppm.map(lambda v: f"{v:,.0f}" if v == v else "—")
         + " zł/m²"
     )
-    return out
+    return slim_map_frame(out)
 
 
 def prepare_point_layer(
@@ -122,10 +205,10 @@ def prepare_point_layer(
     out = out.dropna(subset=["lat", "lon"])
     if out.empty:
         return out
-    out["tooltip_name"] = out[name_col].astype(str)
+    out["tooltip_name"] = out[name_col].astype(str).str.slice(0, 80)
     out["tooltip_detail"] = f"{layer_label} · {detail}"
     out["layer_label"] = layer_label
-    return out
+    return slim_map_frame(out)
 
 
 def prepare_shops_for_map(frame: pd.DataFrame) -> pd.DataFrame:
@@ -139,12 +222,19 @@ def prepare_shops_for_map(frame: pd.DataFrame) -> pd.DataFrame:
     out["lat"] = pd.to_numeric(out["lat"], errors="coerce")
     out["lon"] = pd.to_numeric(out["lon"], errors="coerce")
     out = out.dropna(subset=["lat", "lon"])
-    shop = out["shop"].astype(str) if "shop" in out.columns else "shop"
-    name = out["name"].fillna("Shop").astype(str) if "name" in out.columns else "Shop"
-    out["tooltip_name"] = name
+    out = limit_map_points(out, MAX_SHOP_MAP_POINTS)
+    if "shop" in out.columns:
+        shop = out["shop"].astype(str)
+    else:
+        shop = pd.Series("shop", index=out.index)
+    if "name" in out.columns:
+        name = out["name"].fillna("Shop").astype(str)
+    else:
+        name = pd.Series("Shop", index=out.index)
+    out["tooltip_name"] = name.str.slice(0, 80)
     out["tooltip_detail"] = "Shop · " + shop
     out["layer_label"] = "Shop"
-    return out
+    return slim_map_frame(out)
 
 
 def prepare_transit_for_hour(
@@ -178,7 +268,7 @@ def prepare_transit_for_hour(
     )
     merged["layer_label"] = "Transit"
     merged["weight"] = merged["n_departures"].astype(float)
-    return merged.reset_index(drop=True)
+    return slim_map_frame(merged.reset_index(drop=True))
 
 
 def traffic_weights_for_hour(sample: pd.DataFrame, *, hour: int) -> pd.DataFrame:

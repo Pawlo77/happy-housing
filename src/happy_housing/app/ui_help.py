@@ -52,9 +52,9 @@ LAYER_HELP: dict[str, str] = {
         "dist_air_station_m is a model feature; Prefs can cap distance."
     ),
     "gunb": (
-        "GUNB / GUGiK building-permit points. Nearby active permits hint at "
-        "construction disruption now or future supply — can hurt short-term "
-        "livability; dist_gunb_m is a model feature."
+        "GUNB / GUGiK building-permit points (Warsaw sample on the map — full "
+        "Mazowieckie dump is too large for the browser). Nearby permits hint at "
+        "construction disruption now or future supply; dist_gunb_m is a model feature."
     ),
     "parks": (
         "UM Warszawa PLACE_SKWERY parks & squares (same layer as testmapa). "

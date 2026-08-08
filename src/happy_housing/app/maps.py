@@ -12,10 +12,12 @@ import streamlit as st
 
 from happy_housing.app.map_layers import (
     LayerFlags,
+    prepare_gunb_for_map,
     prepare_listings_for_map,
     prepare_point_layer,
     prepare_shops_for_map,
     prepare_transit_for_hour,
+    slim_map_frame,
     traffic_weights_for_hour,
 )
 from happy_housing.app.map_marker_shapes import marker_icon
@@ -85,7 +87,7 @@ def _scatter(
         return None
     return pdk.Layer(
         "ScatterplotLayer",
-        data=data,
+        data=slim_map_frame(data),
         get_position="[lon, lat]",
         get_radius=radius,
         radius_min_pixels=radius_min_pixels,
@@ -109,12 +111,12 @@ def _icon(
     size_min_pixels: int = 14,
     size_max_pixels: int = 36,
 ) -> pdk.Layer | None:
-    """IconLayer with a fixed silhouette for ``kind`` (shops, police, …)."""
+    """IconLayer with one shared SVG atlas (not per-row data URLs)."""
     if data.empty:
         return None
-    work = data.copy()
+    work = slim_map_frame(data).copy()
     icon = marker_icon(kind, fill_color)
-    work["icon"] = [icon] * len(work)
+    work["icon"] = "marker"
     return pdk.Layer(
         "IconLayer",
         data=work,
@@ -124,6 +126,16 @@ def _icon(
         size_units="pixels",
         size_min_pixels=size_min_pixels,
         size_max_pixels=size_max_pixels,
+        icon_atlas=icon["url"],
+        icon_mapping={
+            "marker": {
+                "x": 0,
+                "y": 0,
+                "width": int(icon["width"]),
+                "height": int(icon["height"]),
+                "anchorY": int(icon["anchorY"]),
+            }
+        },
         pickable=True,
         id=layer_id,
     )
@@ -176,7 +188,7 @@ def amenity_layers(
         )
         subset["tooltip_detail"] = f"Amenity · {kind.replace('_', ' ')}"
         layer = _icon(
-            subset,
+            slim_map_frame(subset),
             layer_id=f"amenity-{kind}",
             kind=kind,
             fill_color=rgba,
@@ -380,24 +392,8 @@ def air_stations_layer(stations: pd.DataFrame) -> pdk.Layer | None:
 
 
 def gunb_layer(points: pd.DataFrame) -> pdk.Layer | None:
-    """GUNB construction / permit markers (star)."""
-    name_col = (
-        "adres"
-        if "adres" in points.columns
-        else ("numer_decyzji" if "numer_decyzji" in points.columns else "lon")
-    )
-    work = points.copy()
-    if name_col not in work.columns:
-        work["label"] = "GUNB"
-        name_col = "label"
-    prepared = prepare_point_layer(
-        work,
-        lat_col="lat",
-        lon_col="lon",
-        name_col=name_col,
-        detail="construction / permit proxy",
-        layer_label="GUNB",
-    )
+    """GUNB construction / permit markers (star); capped for message size."""
+    prepared = prepare_gunb_for_map(points)
     return _icon(
         prepared,
         layer_id="gunb",
