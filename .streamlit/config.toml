@@ -1,16 +1,34 @@
-# Streamlit app configuration — visual theme only via TOML.
+# Streamlit app configuration (project-level).
+# Theme + local-dev server behaviour live here — prefer TOML over CLI flags.
 # Calm urban analytics: cool slate surfaces, ink accent, geometric sans
 # (not Fraunces/editorial, not Inter/purple SaaS).
 
 [browser]
 gatherUsageStats = false
+serverAddress = "127.0.0.1"
+serverPort = 8501
 
 [client]
 toolbarMode = "minimal"
 showErrorDetails = "full"
+showSidebarNavigation = true
 
 [runner]
 fastReruns = true
+
+[server]
+# Rerun on script / dependency save (local iteration).
+runOnSave = true
+# Match `make app` defaults; CLI flags still override when passed.
+headless = true
+address = "127.0.0.1"
+port = 8501
+fileWatcherType = "auto"
+enableStaticServing = false
+# Local-only bind — CORS/XSRF defaults are fine for loopback.
+
+[logger]
+level = "info"
 
 [theme]
 base = "light"

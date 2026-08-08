@@ -103,10 +103,10 @@ Working local app: ingest → GIS enrich → LightGBM score → Streamlit GUI (H
 make install
 make check
 make pipeline   # or Admin → Pipeline / Otodom scrape
-make app        # http://127.0.0.1:8501
+make app        # http://127.0.0.1:8501 — theme/server in `.streamlit/config.toml`
 ```
 
-Edit `configs/experiment.yaml` for run metadata and MLflow settings.
+Edit `configs/experiment.yaml` for run metadata and MLflow settings. App UX / `runOnSave` / bind address live in `.streamlit/config.toml`.
 
 ```bash
 make mlflow          # optional local tracking UI
@@ -126,6 +126,7 @@ config = load_experiment_config(Path("configs/experiment.yaml"))
 |------|---------|
 | `src/happy_housing/` | Ingest, GIS, storage, models, app |
 | `configs/` | Experiment YAML |
+| `.streamlit/config.toml` | Streamlit theme + local server (`runOnSave`, port, …) |
 | `data/fixtures/` | Small committed samples (raw dumps stay local / gitignored) |
 | `docs/plan.md` | Phased plan |
 | `docs/screenshots/` | README UI captures |

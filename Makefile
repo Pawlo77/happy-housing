@@ -80,8 +80,8 @@ osrm-prepare: ## Download Mazowieckie PBF and build OSRM MLD graph into docker/d
 pipeline: ## Full ingest → GIS → score → MLflow train
 	uv run python -m happy_housing.pipeline
 
-app: ## Launch Streamlit GUI (requires pipeline outputs)
-	uv run streamlit run src/happy_housing/app/streamlit_app.py --server.port 8501 --server.address 127.0.0.1 --server.headless true
+app: ## Launch Streamlit GUI (requires pipeline outputs; settings in .streamlit/config.toml)
+	uv run streamlit run src/happy_housing/app/streamlit_app.py
 
 mlflow: ## Launch MLflow UI for local runs
 	@PORT="$(MLFLOW_PORT)"; \
