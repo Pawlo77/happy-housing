@@ -414,23 +414,44 @@ def generate_review_text(
     *,
     model: str = DEFAULT_AI_MODEL,
     settings: AppSettings | None = None,
+    metrics_path: Path | None = None,
 ) -> str:
     """Call LM Studio and return the assistant review text."""
     import lmstudio as lms
 
-    cfg = settings or AppSettings()
-    chat = lms.Chat(resolve_system_prompt(cfg))
-    chat.add_user_message(build_review_prompt(row, settings=cfg))
-    llm = lms.llm(model)
-    result = llm.respond(
-        chat,
-        config={
-            "temperature": float(cfg.ai_review_temperature),
-            "maxTokens": int(cfg.ai_review_max_tokens),
-        },
+    from happy_housing.app.llm_metrics import (
+        PURPOSE_OFFER_REVIEW,
+        record_timed_llm_call,
     )
-    text = getattr(result, "content", None) or str(result)
-    return str(text).strip()
+
+    cfg = settings or AppSettings()
+    system = resolve_system_prompt(cfg)
+    user = build_review_prompt(row, settings=cfg)
+    input_chars = len(system) + len(user)
+
+    def _run() -> str:
+        chat = lms.Chat(system)
+        chat.add_user_message(user)
+        llm = lms.llm(model)
+        result = llm.respond(
+            chat,
+            config={
+                "temperature": float(cfg.ai_review_temperature),
+                "maxTokens": int(cfg.ai_review_max_tokens),
+            },
+        )
+        text = getattr(result, "content", None) or str(result)
+        return str(text).strip()
+
+    if metrics_path is None:
+        return _run()
+    return record_timed_llm_call(
+        metrics_path,
+        purpose=PURPOSE_OFFER_REVIEW,
+        model=model,
+        input_chars=input_chars,
+        runner=_run,
+    )
 
 
 def get_or_create_review(
@@ -440,6 +461,7 @@ def get_or_create_review(
     model: str = DEFAULT_AI_MODEL,
     force: bool = False,
     settings: AppSettings | None = None,
+    metrics_path: Path | None = None,
 ) -> OfferAiReview:
     """Load a cached review or generate + persist a new one."""
     cfg = settings or AppSettings()
@@ -451,7 +473,12 @@ def get_or_create_review(
         cached = load_review(path, listing_id, model=model, context_hash=ctx)
         if cached is not None:
             return cached
-    text = generate_review_text(row, model=model, settings=cfg)
+    text = generate_review_text(
+        row,
+        model=model,
+        settings=cfg,
+        metrics_path=metrics_path,
+    )
     review = OfferAiReview(
         listing_id=listing_id,
         model=model,

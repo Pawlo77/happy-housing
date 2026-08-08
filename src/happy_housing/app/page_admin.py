@@ -27,6 +27,12 @@ from happy_housing.app.data import (
     load_scored,
     processed_dir,
 )
+from happy_housing.app.llm_metrics import (
+    clear_llm_metrics,
+    llm_metrics_path,
+    purpose_stats_frame,
+    summarize_llm_calls,
+)
 from happy_housing.app.recommender import (
     clear_recommendation_memory,
     impressions_path,
@@ -334,6 +340,31 @@ def _tab_ai(settings: AppSettings, settings_file: Path, proc: Path) -> None:
     if st.button("Clear AI review cache", key="clear_ai_reviews"):
         clear_ai_reviews(db)
         st.success("AI review cache cleared.")
+
+    st.subheader("LM Studio call metrics")
+    st.caption(
+        "Per-purpose totals from real LMS calls (duration, prompt/response size, "
+        "errors). Cached reviews do not count."
+    )
+    metrics_file = llm_metrics_path(proc)
+    stats_rows = purpose_stats_frame(summarize_llm_calls(metrics_file))
+    if stats_rows:
+        st.dataframe(stats_rows, hide_index=True, width="stretch")
+        total_calls = sum(int(r["calls"]) for r in stats_rows)
+        total_errors = sum(int(r["errors"]) for r in stats_rows)
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Total LMS calls", f"{total_calls:,}")
+        m2.metric("Total errors", f"{total_errors:,}")
+        m3.metric(
+            "Overall error ratio",
+            f"{(total_errors / total_calls):.1%}" if total_calls else "—",
+        )
+    else:
+        st.info("No LMS calls recorded yet.")
+    if st.button("Clear LMS call metrics", key="clear_llm_metrics"):
+        clear_llm_metrics(metrics_file)
+        st.success("LMS call metrics cleared.")
+        st.rerun()
 
 
 def _tab_stars_news(settings: AppSettings, settings_file: Path, proc: Path) -> None:

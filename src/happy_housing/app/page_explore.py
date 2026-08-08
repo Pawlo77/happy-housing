@@ -47,6 +47,7 @@ from happy_housing.app.explore_nav import (
     listing_id_from_board_selection,
 )
 from happy_housing.app.filters import FilterState, apply_filters, apply_starred_only
+from happy_housing.app.llm_metrics import llm_metrics_path
 from happy_housing.app.map_layers import LayerFlags
 from happy_housing.app.maps import (
     basemap_style,
@@ -349,7 +350,8 @@ def _trigger_ai_review(
     """Load or generate AI review when the AI review tab is open; cache in DuckDB."""
     if not enabled:
         return
-    db = reviews_db_path(processed_dir())
+    proc = processed_dir()
+    db = reviews_db_path(proc)
     listing_id = str(row.get("listing_id") or "")
     ctx = review_context_hash(settings)
     cached = load_review(db, listing_id, model=model, context_hash=ctx)
@@ -358,7 +360,13 @@ def _trigger_ai_review(
         return
     with st.spinner(f"Asking {model} for an offer review…"):
         try:
-            review = get_or_create_review(db, row, model=model, settings=settings)
+            review = get_or_create_review(
+                db,
+                row,
+                model=model,
+                settings=settings,
+                metrics_path=llm_metrics_path(proc),
+            )
             st.session_state[f"ai_review_{listing_id}"] = review.review_text
         except Exception as exc:
             logger.warning("AI review failed for %s: %s", listing_id, exc)
@@ -570,6 +578,7 @@ def _tab_offer(
                         model=lm_model,
                         force=True,
                         settings=app_settings,
+                        metrics_path=llm_metrics_path(processed_dir()),
                     )
                     st.session_state[f"ai_review_{listing_id}"] = review.review_text
                     st.session_state.pop(f"ai_review_error_{listing_id}", None)
