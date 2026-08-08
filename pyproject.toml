@@ -143,6 +143,8 @@ module = [
   "matplotlib.*",
   "altair",
   "altair.*",
+  "catboost",
+  "catboost.*",
   "lmstudio",
   "lmstudio.*",
   "pyproj",
