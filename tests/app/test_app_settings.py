@@ -35,6 +35,10 @@ def test_round_trip_settings(tmp_path: Path) -> None:
             stats_min_district_offers=8,
             stats_top_n=20,
             log_level="DEBUG",
+            model_opt_metric="rmse",
+            model_hpo_trials=8,
+            model_use_neighborhood=False,
+            model_nbhd_radius_m=600.0,
         ),
     )
     loaded = load_app_settings(path)
@@ -46,3 +50,7 @@ def test_round_trip_settings(tmp_path: Path) -> None:
     assert loaded.stats_min_district_offers == 8
     assert loaded.stats_top_n == 20
     assert loaded.log_level == "DEBUG"
+    assert loaded.model_opt_metric == "rmse"
+    assert loaded.model_hpo_trials == 8
+    assert loaded.model_use_neighborhood is False
+    assert loaded.model_nbhd_radius_m == 600.0

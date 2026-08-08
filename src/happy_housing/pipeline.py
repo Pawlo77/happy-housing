@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from happy_housing.app.app_settings import load_app_settings, settings_path
 from happy_housing.app.metadata import (
     DEFAULT_METHODOLOGY,
     DEFAULT_SOURCES,
@@ -33,8 +34,10 @@ from happy_housing.ingest import (
 from happy_housing.ingest.gunb import download_gunb_mazowieckie, gunb_points_gdf
 from happy_housing.ingest.otodom import scrape_otodom_warsaw
 from happy_housing.ingest.rcn import extract_rcn_transactions
+from happy_housing.models.metrics import coerce_opt_metric
+from happy_housing.models.neighborhood import attach_neighborhood_rcn_features
 from happy_housing.models.train import (
-    FEATURE_COLUMNS,
+    TrainSettings,
     predict_price_per_m2,
     run_training_with_mlflow,
 )
@@ -254,9 +257,39 @@ def run_pipeline(
     # Persist commute column onto enriched parquet companion table.
     train_frame.to_parquet(enriched_path, index=False)
 
+    app_settings = load_app_settings(settings_path(processed))
+    rcn_for_model = (
+        pd.read_parquet(rcn_parquet) if rcn_parquet.exists() else pd.DataFrame()
+    )
+    if app_settings.model_use_neighborhood and not rcn_for_model.empty:
+        train_frame = attach_neighborhood_rcn_features(
+            train_frame,
+            rcn_for_model,
+            radius_m=float(app_settings.model_nbhd_radius_m),
+        )
+        train_frame.to_parquet(enriched_path, index=False)
+
+    train_settings = TrainSettings(
+        opt_metric=coerce_opt_metric(app_settings.model_opt_metric),
+        val_size=float(app_settings.model_val_size),
+        test_size=float(config.model.test_size),
+        hpo_trials=int(app_settings.model_hpo_trials),
+        use_neighborhood=bool(app_settings.model_use_neighborhood),
+        random_state=int(config.model.random_state),
+    )
     model_path = processed / "lightgbm_price_per_m2.txt"
-    result = run_training_with_mlflow(train_frame, config, model_path)
-    train_frame["model_price_per_m2"] = predict_price_per_m2(result.model, train_frame)
+    result = run_training_with_mlflow(
+        train_frame,
+        config,
+        model_path,
+        train_settings=train_settings,
+        rcn=rcn_for_model if app_settings.model_use_neighborhood else None,
+    )
+    train_frame["model_price_per_m2"] = predict_price_per_m2(
+        result.model,
+        train_frame,
+        use_neighborhood=bool(app_settings.model_use_neighborhood),
+    )
     train_frame["delta_price_per_m2"] = (
         train_frame["price_per_m2"] - train_frame["model_price_per_m2"]
     )
@@ -278,7 +311,7 @@ def run_pipeline(
             n_by_source={str(k): int(v) for k, v in n_by_source.items()},
             model_metrics=dict(result.metrics),
             model_path=str(model_path),
-            feature_columns=list(FEATURE_COLUMNS),
+            feature_columns=list(result.feature_names),
             sources=list(DEFAULT_SOURCES),
             methodology=DEFAULT_METHODOLOGY,
         ),

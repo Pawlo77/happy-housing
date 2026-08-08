@@ -7,6 +7,8 @@ import logging
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from happy_housing.models.metrics import coerce_opt_metric
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_LM_MODEL = "gemma-4-31b-it-mlx"
@@ -33,6 +35,16 @@ class AppSettings:
     """How many hunt / watch offers to list on Stats → Value."""
     log_level: str = "INFO"
     """Package log level for the Streamlit app (DEBUG/INFO/WARNING/ERROR)."""
+    model_opt_metric: str = "mae"
+    """Validation metric for LightGBM HPO (mae/rmse/MAPE/medae/r2)."""
+    model_val_size: float = 0.15
+    """Fraction of data used as HPO validation (test held out separately)."""
+    model_hpo_trials: int = 12
+    """Random hyperparameter trials (1 disables search)."""
+    model_use_neighborhood: bool = True
+    """Attach RCN neighborhood comps and log IDW baseline in MLflow."""
+    model_nbhd_radius_m: float = 800.0
+    """Search radius (metres) for local RCN comparable sales."""
 
 
 def settings_path(processed: Path) -> Path:
@@ -85,6 +97,24 @@ def load_app_settings(path: Path) -> AppSettings:
         stats_top_n=max(1, int(payload.get("stats_top_n", defaults.stats_top_n))),
         log_level=_coerce_log_level(
             payload.get("log_level", defaults.log_level), defaults.log_level
+        ),
+        model_opt_metric=coerce_opt_metric(
+            payload.get("model_opt_metric", defaults.model_opt_metric),
+            defaults.model_opt_metric,
+        ),
+        model_val_size=min(
+            0.35,
+            max(0.05, float(payload.get("model_val_size", defaults.model_val_size))),
+        ),
+        model_hpo_trials=max(
+            1, int(payload.get("model_hpo_trials", defaults.model_hpo_trials))
+        ),
+        model_use_neighborhood=bool(
+            payload.get("model_use_neighborhood", defaults.model_use_neighborhood)
+        ),
+        model_nbhd_radius_m=max(
+            100.0,
+            float(payload.get("model_nbhd_radius_m", defaults.model_nbhd_radius_m)),
         ),
     )
 

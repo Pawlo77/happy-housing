@@ -33,6 +33,11 @@ from happy_housing.app.recommender import (
 from happy_housing.app.star_news import clear_star_news_memory, load_news, news_path
 from happy_housing.app.stars import clear_stars, load_stars, stars_path
 from happy_housing.logging_config import configure_logging
+from happy_housing.models.metrics import (
+    OPT_METRICS,
+    coerce_opt_metric,
+    metric_direction,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -352,6 +357,71 @@ def _tab_pipeline() -> None:
     )
 
 
+def _tab_model(settings: AppSettings, settings_file: Path) -> None:
+    """Price-model HPO metric, validation split, neighborhood comps."""
+    st.caption(
+        "Fair-price LightGBM: train / validation / test splits. "
+        "HPO picks hyperparameters on validation using the metric below; "
+        "test is held out for final report. Default objective is MAE (zł/m²)."
+    )
+    metric = st.selectbox(
+        "Optimization metric (validation)",
+        options=list(OPT_METRICS),
+        index=list(OPT_METRICS).index(coerce_opt_metric(settings.model_opt_metric)),
+        help=(
+            "mae/rmse/MAPE/medae → minimize · r2 → maximize. "
+            f"Direction: "
+            f"{metric_direction(coerce_opt_metric(settings.model_opt_metric))}."
+        ),
+        key="settings_model_opt_metric",
+    )
+    val_size = st.slider(
+        "Validation fraction",
+        min_value=0.05,
+        max_value=0.35,
+        value=float(settings.model_val_size),
+        step=0.01,
+        key="settings_model_val_size",
+    )
+    trials = st.number_input(
+        "HPO trials",
+        min_value=1,
+        max_value=64,
+        value=int(settings.model_hpo_trials),
+        help="1 = use YAML defaults only (no search).",
+        key="settings_model_hpo_trials",
+    )
+    use_nbhd = st.checkbox(
+        "Use RCN neighborhood historical prices",
+        value=bool(settings.model_use_neighborhood),
+        help=(
+            "Adds local comparable-sale features (median/mean/IDW zł/m²) and "
+            "logs an IDW baseline model in MLflow for comparison."
+        ),
+        key="settings_model_use_nbhd",
+    )
+    radius = st.number_input(
+        "Neighborhood radius (m)",
+        min_value=100.0,
+        max_value=3000.0,
+        value=float(settings.model_nbhd_radius_m),
+        step=50.0,
+        key="settings_model_nbhd_radius",
+    )
+    if st.button("Save Model settings", type="primary", key="save_model_settings"):
+        settings.model_opt_metric = coerce_opt_metric(metric)
+        settings.model_val_size = float(val_size)
+        settings.model_hpo_trials = int(trials)
+        settings.model_use_neighborhood = bool(use_nbhd)
+        settings.model_nbhd_radius_m = float(radius)
+        save_app_settings(settings_file, settings)
+        st.success(
+            f"Model settings saved · optimize {settings.model_opt_metric} "
+            f"({metric_direction(coerce_opt_metric(settings.model_opt_metric))}) "
+            f"· {settings.model_hpo_trials} trials."
+        )
+
+
 def render_admin() -> None:
     """Render Admin with tabbed settings (no raw JSON dump)."""
     logger.info("Rendering Admin")
@@ -362,12 +432,13 @@ def render_admin() -> None:
     settings_file = settings_path(proc)
     settings = load_app_settings(settings_file)
 
-    general, ai_tab, stars_tab, rec_tab, stats_tab, pipeline_tab = st.tabs([
+    general, ai_tab, stars_tab, rec_tab, stats_tab, model_tab, pipeline_tab = st.tabs([
         "General",
         "AI / LM Studio",
         "Stars & News",
         "Recommendations",
         "Stats",
+        "Model",
         "Pipeline",
     ])
     with general:
@@ -380,5 +451,7 @@ def render_admin() -> None:
         _tab_recommender(settings, settings_file, proc)
     with stats_tab:
         _tab_stats(settings, settings_file)
+    with model_tab:
+        _tab_model(settings, settings_file)
     with pipeline_tab:
         _tab_pipeline()

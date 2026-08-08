@@ -91,7 +91,7 @@ repos:
     hooks:
       - id: codespell
         args:
-          - --ignore-words-list=pyproject,toml,venv,prek,autosummary,intersphinx,napoleon,myst,pydata,sdist,wheel,readonly,kwargs,args,init,utils,backend,frontend,untracked,workflow,workflows,pytest,cov,adres,lokal
+          - --ignore-words-list=pyproject,toml,venv,prek,autosummary,intersphinx,napoleon,myst,pydata,sdist,wheel,readonly,kwargs,args,init,utils,backend,frontend,untracked,workflow,workflows,pytest,cov,adres,lokal,mape
         exclude: |
           (?x)^(
             uv\.lock|

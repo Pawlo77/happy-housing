@@ -9,7 +9,7 @@ from happy_housing.config import ModelConfig
 from happy_housing.gis import enrich_listings
 from happy_housing.ingest import load_listings_json
 from happy_housing.models.train import (
-    FEATURE_COLUMNS,
+    TrainSettings,
     shap_explanation_for_row,
     train_price_model,
 )
@@ -52,8 +52,21 @@ def test_train_and_shap(tmp_path: Path) -> None:
     result = train_price_model(
         frame,
         ModelConfig(n_estimators=50, num_leaves=15, test_size=0.3),
+        TrainSettings(
+            opt_metric="mae",
+            val_size=0.2,
+            test_size=0.3,
+            hpo_trials=2,
+            use_neighborhood=False,
+            random_state=0,
+        ),
     )
     assert result.metrics["n_train"] > 0
     assert result.metrics["mae"] >= 0.0
-    explanation = shap_explanation_for_row(result.model, frame, row_index=0)
-    assert len(explanation.values) == len(FEATURE_COLUMNS)
+    assert "test_mae" in result.metrics
+    assert "val_mae" in result.metrics
+    assert result.best_params
+    explanation = shap_explanation_for_row(
+        result.model, frame, row_index=0, use_neighborhood=False
+    )
+    assert len(explanation.values) == len(result.feature_names)
