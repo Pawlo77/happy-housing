@@ -47,13 +47,13 @@ from happy_housing.app.maps import (
     render_deck,
 )
 from happy_housing.app.offer_display import (
-    delta_hex,
+    delta_band,
     livability_rows,
     offer_fact_rows,
 )
 from happy_housing.app.star_news import (
     StarNewsItem,
-    format_change_html,
+    format_change_markdown,
     load_news,
     save_news,
     sync_starred_news,
@@ -281,24 +281,29 @@ def _ensure_description(row: pd.Series) -> str:
 
 
 def _price_metrics(row: pd.Series) -> None:
-    """Listing / model / coloured delta metrics."""
+    """Listing / model / delta metrics via Streamlit widgets only."""
     listing = float(row["price_per_m2"])
     model = float(row["model_price_per_m2"])
     delta = float(row["delta_price_per_m2"])
-    color = delta_hex(delta)
+    band = delta_band(delta)
+    if band == "green":
+        delta_label, delta_color = "underpriced", "normal"
+    elif band == "red":
+        delta_label, delta_color = "overpriced", "inverse"
+    else:
+        delta_label, delta_color = "fair", "off"
     c1, c2, c3 = st.columns(3)
     with c1.container(border=True):
         st.metric("Listing zł/m²", f"{listing:,.0f}")
     with c2.container(border=True):
         st.metric("Model zł/m²", f"{model:,.0f}")
     with c3.container(border=True):
-        st.markdown("**Delta (listing - model)**")
-        st.markdown(
-            f"<p style='color:{color};font-size:1.75rem;font-weight:700;"
-            f"margin:0'>{delta:+,.0f}</p>"
-            f"<p style='color:#6B7280;font-size:0.85rem;margin:0'>"
-            "green underpriced · yellow fair · red overpriced</p>",
-            unsafe_allow_html=True,
+        st.metric(
+            "Delta (listing - model)",
+            f"{delta:+,.0f}",
+            delta=delta_label,
+            delta_color=delta_color,
+            help="Negative = underpriced · near zero = fair · positive = overpriced",
         )
 
 
@@ -597,7 +602,13 @@ def _tab_news(
                 )
             else:
                 for change in item.changes:
-                    st.html(format_change_html(change.field, change.old, change.new))
+                    st.markdown(
+                        format_change_markdown(
+                            change.field,
+                            change.old,
+                            change.new,
+                        )
+                    )
 
 
 def render_explore() -> None:

@@ -7,7 +7,6 @@ import logging
 import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
-from html import escape
 from pathlib import Path
 from typing import Any
 
@@ -254,18 +253,12 @@ def format_value(field: str, value: Any) -> str:
     return str(value)
 
 
-def format_change_html(field: str, old: Any, new: Any) -> str:
-    """HTML line with strikethrough old value and emphasized new value."""
-    label = escape(_FIELD_LABELS.get(field, field))
-    old_s = escape(format_value(field, old))
-    new_s = escape(format_value(field, new))
-    return (
-        f'<div class="hh-news-change">'
-        f"<strong>{label}</strong>: "
-        f'<span style="text-decoration: line-through; opacity: 0.65">{old_s}</span>'
-        f' → <span style="font-weight: 650">{new_s}</span>'
-        f"</div>"
-    )
+def format_change_markdown(field: str, old: Any, new: Any) -> str:
+    """Markdown line with strikethrough old value and bold new value."""
+    label = _FIELD_LABELS.get(field, field)
+    old_s = format_value(field, old)
+    new_s = format_value(field, new)
+    return f"**{label}:** ~~{old_s}~~ → **{new_s}**"
 
 
 def sync_starred_news(

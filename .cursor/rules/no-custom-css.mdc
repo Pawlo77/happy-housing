@@ -1,0 +1,34 @@
+---
+description: No custom CSS in Streamlit UI — theme TOML + stock widgets only
+alwaysApply: true
+---
+
+# No custom CSS
+
+Streamlit UI must use stock widgets + theme TOML only. No injected CSS/HTML chrome.
+
+## Forbidden in `src/happy_housing/app/`
+
+- `<style>` blocks
+- Inline `style="..."` attributes
+- `unsafe_allow_html=True` for styling
+- `st.html(...)` / raw HTML markup used only for look-and-feel
+- Custom CSS files, class-based skinning (`hh-*` layout classes, etc.)
+
+## Allowed
+
+- Theme tokens in `.streamlit/config.toml` (`[theme]`, fonts, chart colours)
+- Streamlit widgets: `st.title`, `st.metric`, `st.tabs`, `st.markdown` (GFM only — bold, strikethrough, links)
+- Map/deck.gl layer colours and Altair/plot encodings (data viz, not page CSS)
+
+## Prefer
+
+| Need | Use |
+|---|---|
+| Brand / page title | `st.title` / `st.header` |
+| KPIs | `st.metric` (+ `delta` / `delta_color`) |
+| Emphasis / strike | Markdown (`**bold**`, `~~strike~~`) |
+| Layout | `st.columns`, `st.container`, `st.tabs` |
+| Look & feel | `.streamlit/config.toml` only |
+
+If a design seems to need custom CSS, change the design to fit Streamlit — do not inject CSS.

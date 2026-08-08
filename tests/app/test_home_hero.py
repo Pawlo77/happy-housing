@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from happy_housing.app.home_hero import format_hero_stats, hero_html
+from happy_housing.app.home_hero import format_hero_stats
 
 
 def test_format_hero_stats_formats_counts_and_r2() -> None:
@@ -21,12 +21,3 @@ def test_format_hero_stats_handles_missing() -> None:
     assert stats.offers_label == "0"
     assert stats.r2_label == "—"
     assert stats.refreshed_label == "—"
-
-
-def test_hero_html_includes_brand_and_stats() -> None:
-    stats = format_hero_stats(refreshed=None, n_offers=12, r2=0.5)
-    html = hero_html(stats)
-    assert "happy-housing" in html
-    assert "12" in html
-    assert "0.500" in html
-    assert "badge" not in html.lower()

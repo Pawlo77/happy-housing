@@ -7,7 +7,7 @@ from pathlib import Path
 import pandas as pd
 
 from happy_housing.app.star_news import (
-    format_change_html,
+    format_change_markdown,
     load_news,
     load_snapshots,
     sync_starred_news,
@@ -118,9 +118,10 @@ def test_sync_reports_removed_starred_offer(tmp_path: Path) -> None:
     assert items[0].kind == "removed"
 
 
-def test_format_change_html_strikes_old_value() -> None:
-    html = format_change_html("price_pln", 900_000.0, 850_000.0)
-    assert "line-through" in html
-    assert "900,000" in html
-    assert "850,000" in html
-    assert "Price (PLN)" in html
+def test_format_change_markdown_strikes_old_value() -> None:
+    text = format_change_markdown("price_pln", 900_000.0, 850_000.0)
+    assert "~~900,000~~" in text
+    assert "**850,000**" in text
+    assert "Price (PLN)" in text
+    assert "style=" not in text
+    assert "<" not in text

@@ -17,7 +17,7 @@ from happy_housing.app.data import (
     processed_dir,
     scored_path,
 )
-from happy_housing.app.home_hero import format_hero_stats, hero_html
+from happy_housing.app.home_hero import format_hero_stats
 from happy_housing.app.home_stats import counts_frame, market_summary
 from happy_housing.app.metadata import (
     DEFAULT_METHODOLOGY,
@@ -34,8 +34,14 @@ logger = logging.getLogger(__name__)
 
 
 def _hero(refreshed: str | None, n_offers: int, r2: float | None) -> None:
-    """Top brand strip — wordmark + quiet metrics, no card chrome."""
-    st.html(hero_html(format_hero_stats(refreshed, n_offers, r2)))
+    """Top brand strip — title, tagline, and Streamlit metrics only."""
+    stats = format_hero_stats(refreshed, n_offers, r2)
+    st.title("happy-housing")
+    st.caption("Warsaw fair-price intelligence from open data")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Scored offers", stats.offers_label)
+    c2.metric("Hold-out R²", stats.r2_label)
+    c3.metric("Last refresh (UTC)", stats.refreshed_label)
 
 
 def _kpi_strip(summary: dict[str, Any], duration_s: float | None) -> None:
