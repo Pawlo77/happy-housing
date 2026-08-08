@@ -19,10 +19,12 @@ from happy_housing.config import load_experiment_config
 from happy_housing.gis import (
     enrich_listings,
     fetch_osm_amenities,
+    fetch_osm_shops,
     load_amenity_points,
 )
 from happy_housing.gis.routing import attach_commute_minutes
 from happy_housing.ingest import (
+    build_gtfs_stop_hourly,
     download_file,
     download_gtfs_stops,
     fetch_gios_stations,
@@ -176,6 +178,10 @@ def run_pipeline(
     )
 
     gtfs_stops = pd.read_parquet(gtfs_parquet)
+    hourly_path = processed / "gtfs_stop_hourly.parquet"
+    gtfs_zip = raw / "gtfs_warsaw.zip"
+    if not hourly_path.exists() and gtfs_zip.exists():
+        build_gtfs_stop_hourly(gtfs_zip, hourly_path)
     gios_stations = pd.read_parquet(gios_parquet)
     gunb = gunb_points_gdf(pd.read_parquet(gunb_parquet))
 
@@ -184,6 +190,11 @@ def run_pipeline(
             config.bbox.as_tuple(),
             cache,
             fixture_path=fixtures / "amenities.json",
+        )
+        fetch_osm_shops(
+            config.bbox.as_tuple(),
+            cache,
+            fixture_path=fixtures / "shops.json",
         )
     else:
         amenities = load_amenity_points(fixtures / "amenities.json")

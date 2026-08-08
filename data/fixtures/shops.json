@@ -1,0 +1,12 @@
+[
+  {"name": "Biedronka Wola", "shop": "supermarket", "lon": 20.975, "lat": 52.232},
+  {"name": "Carrefour Mokotów", "shop": "supermarket", "lon": 21.018, "lat": 52.198},
+  {"name": "Lidl Śródmieście", "shop": "supermarket", "lon": 21.008, "lat": 52.228},
+  {"name": "Żabka Centrum", "shop": "convenience", "lon": 21.012, "lat": 52.235},
+  {"name": "Żabka Powiśle", "shop": "convenience", "lon": 21.035, "lat": 52.232},
+  {"name": "Auchan Piaseczno edge", "shop": "mall", "lon": 21.040, "lat": 52.160},
+  {"name": "Arkadia", "shop": "mall", "lon": 20.983, "lat": 52.256},
+  {"name": "Złote Tarasy", "shop": "mall", "lon": 21.003, "lat": 52.230},
+  {"name": "Piekarnia Rzemieślnicza", "shop": "bakery", "lon": 20.995, "lat": 52.220},
+  {"name": "Apteka Dbam o Zdrowie", "shop": "chemist", "lon": 21.000, "lat": 52.215}
+]

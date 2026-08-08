@@ -107,7 +107,46 @@ def download_gtfs_stops(
     output_parquet.parent.mkdir(parents=True, exist_ok=True)
     stops.to_parquet(output_parquet, index=False)
     logger.info("Wrote %s GTFS stops to %s", len(stops), output_parquet)
+    hourly_path = output_parquet.with_name("gtfs_stop_hourly.parquet")
+    build_gtfs_stop_hourly(zip_path, hourly_path)
     return stops
+
+
+def build_gtfs_stop_hourly(gtfs_zip: Path, output_parquet: Path) -> pd.DataFrame:
+    """Aggregate GTFS ``stop_times`` departures by stop and hour-of-day.
+
+    Args:
+        gtfs_zip: Path to the Warsaw GTFS archive.
+        output_parquet: Destination parquet with stop_id, hour, n_departures.
+
+    Returns:
+        Hourly departure counts per stop.
+    """
+    with zipfile.ZipFile(gtfs_zip) as archive:
+        stop_times_name = next(
+            name for name in archive.namelist() if Path(name).name == "stop_times.txt"
+        )
+        with archive.open(stop_times_name) as handle:
+            times = pd.read_csv(handle, usecols=["stop_id", "departure_time"])
+    hours = (
+        times["departure_time"]
+        .astype(str)
+        .str.split(":", n=1)
+        .str[0]
+        .astype(int)
+        .mod(24)
+    )
+    hourly = (
+        times
+        .assign(hour=hours)
+        .groupby(["stop_id", "hour"], sort=False)
+        .size()
+        .reset_index(name="n_departures")
+    )
+    output_parquet.parent.mkdir(parents=True, exist_ok=True)
+    hourly.to_parquet(output_parquet, index=False)
+    logger.info("Wrote %s GTFS stop-hour rows to %s", len(hourly), output_parquet)
+    return hourly
 
 
 def _parse_gios_station_row(row: dict[str, Any]) -> dict[str, Any] | None:

@@ -140,6 +140,62 @@ def fetch_osm_amenities(
     return frame
 
 
+def fetch_osm_shops(
+    bbox: tuple[float, float, float, float],
+    cache_dir: Path,
+    fixture_path: Path | None = None,
+) -> gpd.GeoDataFrame:
+    """Download retail POIs via OSMnx; fall back to fixture if Overpass fails."""
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_path = cache_dir / "osm_shops.geojson"
+    if cache_path.exists():
+        return gpd.read_file(cache_path)
+
+    west, south, east, north = bbox
+    frame = gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
+    try:
+        import osmnx as ox
+
+        ox.settings.use_cache = True
+        ox.settings.cache_folder = str(cache_dir / "osmnx")
+        ox.settings.timeout = 90
+        features = ox.features_from_bbox(
+            bbox=(west, south, east, north),
+            tags={
+                "shop": [
+                    "supermarket",
+                    "convenience",
+                    "mall",
+                    "bakery",
+                    "chemist",
+                ]
+            },
+        )
+        if not features.empty:
+            frame = features.reset_index(drop=False)
+            projected = frame.to_crs("EPSG:2180")
+            frame["geometry"] = projected.geometry.centroid.to_crs("EPSG:4326")
+            frame = gpd.GeoDataFrame(frame, geometry="geometry", crs="EPSG:4326")
+            keep = [c for c in ("shop", "name", "geometry") if c in frame.columns]
+            frame = frame[keep]
+    except Exception as exc:
+        logger.warning("OSMnx shop fetch failed: %s", exc)
+
+    if frame.empty and fixture_path is not None and fixture_path.exists():
+        logger.warning("Using shop fixture %s", fixture_path)
+        raw = pd.read_json(fixture_path)
+        frame = gpd.GeoDataFrame(
+            raw,
+            geometry=gpd.points_from_xy(raw["lon"], raw["lat"]),
+            crs="EPSG:4326",
+        )
+
+    if not frame.empty:
+        frame.to_file(cache_path, driver="GeoJSON")
+        logger.info("Cached %s shops to %s", len(frame), cache_path)
+    return frame
+
+
 def enrich_listings(
     listings: pd.DataFrame,
     *,
