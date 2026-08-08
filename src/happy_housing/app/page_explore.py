@@ -51,6 +51,19 @@ from happy_housing.app.offer_display import (
     livability_rows,
     offer_fact_rows,
 )
+from happy_housing.app.star_news import (
+    StarNewsItem,
+    format_change_html,
+    load_news,
+    save_news,
+    sync_starred_news,
+)
+from happy_housing.app.star_news import (
+    news_path as starred_news_path,
+)
+from happy_housing.app.star_news import (
+    snapshots_path as starred_snapshots_path,
+)
 from happy_housing.app.stars import (
     is_starred,
     load_stars,
@@ -540,8 +553,63 @@ def _tab_board(filtered: pd.DataFrame, *, starred: frozenset[str]) -> None:
     st.rerun()
 
 
+def _format_news_time(iso: str) -> str:
+    if not iso:
+        return "—"
+    return iso[:19].replace("T", " ") + " UTC"
+
+
+def _tab_news(
+    *,
+    starred: frozenset[str],
+    items: list[StarNewsItem],
+    news_file: Path,
+) -> None:
+    """News feed of changes to starred offers since last Explore sync."""
+    st.caption(
+        "Tracks price and listing field changes on starred offers. "
+        "Old values are struck through; new values are emphasized. "
+        "Baselines when you first star; updates when Explore reloads."
+    )
+    if not starred:
+        st.info("Star offers on the Offer tab to start watching them here.")
+        return
+    st.caption(f"Watching {len(starred)} starred offer(s)")
+    if not items:
+        st.info("No changes detected yet for your starred offers.")
+        return
+    top, _ = st.columns([1, 3])
+    with top:
+        if st.button("Clear news", key="clear_star_news"):
+            save_news(news_file, [])
+            st.rerun()
+    for item in reversed(items):
+        with st.container(border=True):
+            head, action = st.columns([3.5, 1], vertical_alignment="center")
+            with head:
+                st.markdown(f"**{item.title}**")
+                st.caption(f"{item.listing_id} · {_format_news_time(item.detected_at)}")
+            with action:
+                if st.button(
+                    "Open offer",
+                    key=f"news_open_{item.id}",
+                    width="stretch",
+                ):
+                    st.session_state["explore_offer_id"] = item.listing_id
+                    st.session_state["explore_section"] = "Offer"
+                    st.rerun()
+            if item.kind == "removed":
+                st.warning(
+                    "Removed from the scored universe "
+                    "(delisted or dropped by the latest pipeline)."
+                )
+            else:
+                for change in item.changes:
+                    st.html(format_change_html(change.field, change.old, change.new))
+
+
 def render_explore() -> None:
-    """Render Explore with sidebar filters and Map / Offer / Board sections."""
+    """Render Explore with sidebar filters and Map / Offer / Board / News."""
     st.title("Explore")
     try:
         frame = load_scored()
@@ -552,8 +620,19 @@ def render_explore() -> None:
     state, starred_only = _sidebar_filters(frame)
     flags, hour, basemap = _sidebar_map_controls()
     filtered = apply_filters(frame, state)
-    stars_file = stars_path(processed_dir())
+    proc = processed_dir()
+    stars_file = stars_path(proc)
     starred = load_stars(stars_file)
+    snaps_file = starred_snapshots_path(proc)
+    news_file = starred_news_path(proc)
+    # Sync against the full scored universe so sidebar filters never fake removals.
+    sync_starred_news(
+        starred,
+        frame,
+        snapshots_path=snaps_file,
+        news_path=news_file,
+    )
+    news_items = load_news(news_file)
     map_board = apply_starred_only(filtered, starred) if starred_only else filtered
     config = load_config()
 
@@ -602,7 +681,9 @@ def render_explore() -> None:
             stars_file=stars_file,
             **map_kwargs,
         )
-    else:
+    elif section == "Board":
         if starred_only:
             st.caption(f"Starred only · {len(map_board)} offers")
         _tab_board(map_board, starred=starred)
+    else:
+        _tab_news(starred=starred, items=news_items, news_file=news_file)

@@ -6,7 +6,7 @@ from typing import Any
 
 import pandas as pd
 
-EXPLORE_SECTIONS: tuple[str, ...] = ("Map", "Offer", "Board")
+EXPLORE_SECTIONS: tuple[str, ...] = ("Map", "Offer", "Board", "News")
 """Top-level Explore section labels."""
 
 
