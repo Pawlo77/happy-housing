@@ -16,7 +16,6 @@ from happy_housing.app.charts import (
     PRIMARY,
     SECONDARY,
     UNDERPRICED,
-    WARNING,
     bar_chart,
     grouped_bar_chart,
     line_chart,
@@ -212,7 +211,6 @@ def _tab_overview(frame: pd.DataFrame) -> None:
             x="median_delta",
             y="price_band",
             title="Median delta by zł/m² band",
-            color=SECONDARY,
             x_title="Median delta zł/m²",
         )
 
@@ -237,7 +235,6 @@ def _tab_overview(frame: pd.DataFrame) -> None:
                 x="median_ppm",
                 y="source",
                 title="Median zł/m² by source",
-                color=WARNING,
                 x_title="zł/m²",
             )
             show = src.copy()
@@ -273,7 +270,6 @@ def _tab_overview(frame: pd.DataFrame) -> None:
             x="n",
             y="segment",
             title="Offers by market segment",
-            color=SECONDARY,
             x_title="Offers",
         )
 
@@ -314,7 +310,6 @@ def _tab_trends(frame: pd.DataFrame) -> None:
                 x="listed_month",
                 y="median_delta",
                 title="Median delta (listing - model)",
-                color=SECONDARY,
                 y_title="Delta zł/m²",
             )
         with right:
@@ -532,7 +527,6 @@ def _tab_place(frame: pd.DataFrame) -> None:
             x="transit_band",
             y="median_price_per_m2",
             title="Median zł/m² by transit-stop distance",
-            color=SECONDARY,
             y_title="zł/m²",
         )
 
@@ -552,7 +546,6 @@ def _tab_place(frame: pd.DataFrame) -> None:
             x="lden_band",
             y="median_price_per_m2",
             title="Median zł/m² by aircraft Lden band",
-            color=WARNING,
             y_title="zł/m²",
         )
 
@@ -561,7 +554,6 @@ def _tab_place(frame: pd.DataFrame) -> None:
         x="fire_band",
         y="median_price_per_m2",
         title="Median zł/m² by fire-station distance",
-        color=SECONDARY,
         y_title="zł/m²",
     )
 
@@ -595,7 +587,6 @@ def _tab_stock(frame: pd.DataFrame) -> None:
             x="median_delta",
             y="area_bin",
             title="Median delta by area bucket",
-            color=SECONDARY,
             x_title="Median delta zł/m²",
         )
     with right:
@@ -642,7 +633,6 @@ def _tab_afford(frame: pd.DataFrame) -> None:
             x="median_area_m2",
             y="price_band",
             title="Median area by budget",
-            color=SECONDARY,
             x_title="m²",
         )
     line_chart(
@@ -650,7 +640,6 @@ def _tab_afford(frame: pd.DataFrame) -> None:
         x="price_band",
         y="median_ppm",
         title="Median zł/m² by budget band",
-        color=WARNING,
         y_title="zł/m²",
     )
     show = afford.copy()
