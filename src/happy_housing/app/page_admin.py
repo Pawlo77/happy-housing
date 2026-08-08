@@ -16,7 +16,6 @@ from happy_housing.app.app_settings import (
     save_app_settings,
     settings_path,
 )
-from happy_housing.app.attribution import render_attribution_footer
 from happy_housing.app.data import (
     clear_data_caches,
     load_config,
@@ -383,5 +382,3 @@ def render_admin() -> None:
         _tab_stats(settings, settings_file)
     with pipeline_tab:
         _tab_pipeline()
-
-    render_attribution_footer()

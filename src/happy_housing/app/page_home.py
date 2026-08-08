@@ -9,7 +9,6 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
-from happy_housing.app.attribution import render_attribution_footer
 from happy_housing.app.charts import PRIMARY, SECONDARY, bar_chart, histogram
 from happy_housing.app.data import (
     load_config,
@@ -256,4 +255,3 @@ def render_home() -> None:
             fixtures_dir=config.data.fixtures_path(),
         )
         _tab_sources(inventory)
-    render_attribution_footer()

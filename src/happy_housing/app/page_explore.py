@@ -19,7 +19,6 @@ from happy_housing.app.ai_review import (
     reviews_db_path,
 )
 from happy_housing.app.app_settings import load_app_settings, settings_path
-from happy_housing.app.attribution import render_attribution_footer
 from happy_housing.app.charts import OVERPRICED, UNDERPRICED, diverging_bar_chart
 from happy_housing.app.data import (
     load_amenities,
@@ -694,4 +693,3 @@ def render_explore() -> None:
         _tab_board(map_board, starred=starred)
     else:
         _tab_news(starred=starred, items=news_items, news_file=news_file)
-    render_attribution_footer()

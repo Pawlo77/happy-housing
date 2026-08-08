@@ -8,7 +8,6 @@ import pandas as pd
 import streamlit as st
 
 from happy_housing.app.app_settings import load_app_settings, settings_path
-from happy_housing.app.attribution import render_attribution_footer
 from happy_housing.app.charts import (
     ASK_COLOR,
     INK_COLOR,
@@ -480,7 +479,6 @@ def render_stats() -> None:
     )
     if filtered.empty:
         st.warning("No offers match the current filters — widen the lens.")
-        render_attribution_footer()
         st.stop()
 
     _kpi_row(market_kpis(filtered))
@@ -507,5 +505,3 @@ def render_stats() -> None:
         _tab_place(filtered)
     with tab_stock:
         _tab_stock(filtered)
-
-    render_attribution_footer()
