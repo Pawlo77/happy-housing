@@ -289,6 +289,30 @@ def livability_rows(
     return pd.DataFrame(out)
 
 
+def format_fact_value(value: object) -> str:
+    """Render a fact cell as text so ``st.dataframe`` Arrow serialization succeeds."""
+    if value is None:
+        return "—"
+    try:
+        if pd.isna(value):
+            return "—"
+    except (TypeError, ValueError):
+        pass
+    if isinstance(value, bool):
+        return "Yes" if value else "No"
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        number = float(value)
+        if number != number:
+            return "—"
+        if number.is_integer():
+            return f"{int(number)}"
+        return f"{number:g}"
+    text = str(value).strip()
+    if not text or text.lower() in {"nan", "none", "<na>"}:
+        return "—"
+    return text
+
+
 def offer_fact_rows(row: pd.Series) -> pd.DataFrame:
     """Core offer facts for the Overview subtab."""
     facts: list[tuple[str, object]] = [
@@ -333,4 +357,7 @@ def offer_fact_rows(row: pd.Series) -> pd.DataFrame:
         ("Latitude", row.get("lat")),
         ("Longitude", row.get("lon")),
     ]
-    return pd.DataFrame(facts, columns=["field", "value"])
+    return pd.DataFrame(
+        [(field, format_fact_value(value)) for field, value in facts],
+        columns=["field", "value"],
+    )

@@ -71,3 +71,25 @@ def test_offer_fact_rows_survive_nan_flags() -> None:
     assert not frame.empty
     balcony = frame.loc[frame["field"] == "Balcony", "value"].iloc[0]
     assert balcony == "No"
+
+
+def test_offer_fact_rows_value_column_is_arrow_safe_strings() -> None:
+    """Mixed numpy ints / floats / None must not stay as object for st.dataframe."""
+    import pyarrow as pa
+
+    row = pd.Series({
+        "listing_id": "OTO-1",
+        "title": "Flat",
+        "rooms": pd.Series([2], dtype="int64").iloc[0],
+        "floor_no": pd.Series([3], dtype="int64").iloc[0],
+        "area_m2": 39.0,
+        "price_pln": 884_500.0,
+        "lat": 52.24,
+        "lon": 21.01,
+        "market": None,
+        "has_lift": 1,
+    })
+    frame = offer_fact_rows(row)
+    assert frame["value"].map(type).eq(str).all()
+    # Round-trip through Arrow — the failure mode reported by Streamlit.
+    pa.Table.from_pandas(frame)
