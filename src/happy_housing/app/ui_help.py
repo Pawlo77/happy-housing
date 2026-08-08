@@ -18,14 +18,16 @@ LAYER_HELP: dict[str, str] = {
     ),
     "oou": (
         "Legacy EEA END Chopin aircraft Lden contour polygons. Prefer the "
-        "UM 2022 Strategic noise heatmap (all sources) for city-wide coverage; "
-        "model uses aircraft_lden_db / in_oou from UM WMS when cached."
+        "UM 2022 Strategic noise overlay (continuous GetMap raster) for "
+        "city-wide coverage; model uses aircraft_lden_db / in_oou from UM "
+        "WMS when cached."
     ),
     "noise_overlay": (
-        "UM Warszawa 2022 strategic noise GetMap heatmap: total energy-sum "
+        "UM Warszawa 2022 strategic noise GetMap as a continuous city-wide "
+        "raster overlay (same bands as mapa.um.warszawa.pl): total energy-sum "
         "or road / rail / tram / aircraft / industry x Lden or Lnight. "
-        "Warmer = louder band. Model features include each source + "
-        "noise_total_lden_db; Explore can filter by total Lden."
+        "Roads/corridors stay loud; quiet parks stay transparent. "
+        "Model features include each source + noise_total_lden_db."
     ),
     "transit_intensity": (
         "Real GTFS stop-hour departure heatmap + busy stops at the sidebar "

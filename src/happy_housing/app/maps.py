@@ -33,6 +33,7 @@ from happy_housing.app.zone_overlays import (
     prepare_zone_records,
 )
 from happy_housing.gis.bike_paths import prepare_bike_paths_for_map
+from happy_housing.gis.warsaw_noise import NoiseMapOverlay
 
 logger = logging.getLogger(__name__)
 
@@ -543,7 +544,7 @@ def traffic_heatmap_layer(sample: pd.DataFrame, *, hour: int) -> pdk.Layer | Non
 
 
 def warsaw_noise_heatmap_layer(points: pd.DataFrame) -> pdk.Layer | None:
-    """UM strategic noise densified points as a HeatmapLayer."""
+    """Legacy point HeatmapLayer; prefer ``warsaw_noise_bitmap_layer``."""
     if points is None or getattr(points, "empty", True):
         return None
     work = points.copy()
@@ -567,6 +568,27 @@ def warsaw_noise_heatmap_layer(points: pd.DataFrame) -> pdk.Layer | None:
         opacity=0.55,
         pickable=False,
         id="warsaw-noise-heat",
+    )
+
+
+def warsaw_noise_bitmap_layer(
+    overlay: NoiseMapOverlay | None,
+    *,
+    opacity: float = 0.72,
+) -> pdk.Layer | None:
+    """Continuous UM strategic noise GetMap as a georeferenced BitmapLayer."""
+    if overlay is None:
+        return None
+    west, south, east, north = overlay.bounds
+    # Quote data URI so pydeck does not wrap ``data:`` as a ``@@=`` expression.
+    image = f'"{overlay.image_data_uri}"'
+    return pdk.Layer(
+        "BitmapLayer",
+        image=image,
+        bounds=[float(west), float(south), float(east), float(north)],
+        opacity=float(opacity),
+        pickable=False,
+        id="warsaw-noise-bitmap",
     )
 
 
@@ -912,7 +934,7 @@ def build_explore_layers(
     airport: gpd.GeoDataFrame | None = None,
     city_pois: gpd.GeoDataFrame | None = None,
     bike_paths: gpd.GeoDataFrame | None = None,
-    noise_points: pd.DataFrame | None = None,
+    noise_overlay: NoiseMapOverlay | None = None,
 ) -> list[pdk.Layer]:
     """Assemble enabled Explore map layers in draw order."""
     layers: list[pdk.Layer] = []
@@ -926,9 +948,7 @@ def build_explore_layers(
         )
     )
     if flags.noise_overlay and flags.noise_overlay != "off":
-        noise = warsaw_noise_heatmap_layer(
-            noise_points if noise_points is not None else pd.DataFrame()
-        )
+        noise = warsaw_noise_bitmap_layer(noise_overlay)
         if noise is not None:
             layers.append(noise)
     if flags.oou:

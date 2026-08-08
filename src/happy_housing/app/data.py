@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from happy_housing.app.io_cache import clear_io_caches, file_mtime, read_geojson
 from happy_housing.app.listing_attrs import promote_listing_flags
 from happy_housing.app.metadata import RunMetadata, load_run_metadata
 from happy_housing.config import ExperimentConfig, load_experiment_config
+from happy_housing.gis.warsaw_noise import NoiseMapOverlay
 from happy_housing.ingest import build_gtfs_stop_hourly
 from happy_housing.ingest.market import backfill_market_primary
 
@@ -222,39 +224,73 @@ def load_aircraft_lnight() -> gpd.GeoDataFrame | None:
 
 
 @st.cache_data(show_spinner=False)  # type: ignore[misc]
-def _load_warsaw_noise_heatmap(
+def _load_warsaw_noise_overlay(
     cache_root: str, mtime: float, overlay_key: str
-) -> pd.DataFrame:
-    """Cached densified UM noise heatmap points for Explore."""
+) -> dict[str, object] | None:
+    """Cached continuous UM noise BitmapLayer payload (dict for Streamlit cache)."""
     del mtime
     from happy_housing.gis.warsaw_noise import (
         load_warsaw_noise_rasters,
-        prepare_noise_map_points,
-        prepare_total_noise_map_points,
+        prepare_noise_overlay_for_key,
     )
 
-    rasters = load_warsaw_noise_rasters(Path(cache_root))
+    cache = Path(cache_root)
+    rasters = load_warsaw_noise_rasters(cache)
     if not rasters:
-        return pd.DataFrame(columns=["lon", "lat", "db", "weight"])
-    key = str(overlay_key)
-    if key == "total_lden":
-        return prepare_total_noise_map_points(rasters, indicator="lden")
-    if key == "total_lnight":
-        return prepare_total_noise_map_points(rasters, indicator="lnight")
-    return prepare_noise_map_points(rasters, layer_key=key)
+        return None
+    bbox: tuple[float, float, float, float] | None = None
+    meta_path = cache / "warsaw_noise" / "meta.json"
+    if meta_path.exists():
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        raw = meta.get("bbox_wgs84")
+        if isinstance(raw, list) and len(raw) == 4:
+            bbox = (float(raw[0]), float(raw[1]), float(raw[2]), float(raw[3]))
+    overlay = prepare_noise_overlay_for_key(rasters, overlay_key, bbox_wgs84=bbox)
+    if overlay is None:
+        return None
+    return {
+        "layer_key": overlay.layer_key,
+        "image_data_uri": overlay.image_data_uri,
+        "bounds": list(overlay.bounds),
+        "width": overlay.width,
+        "height": overlay.height,
+    }
 
 
-def load_warsaw_noise_heatmap(overlay_key: str) -> pd.DataFrame:
-    """Load densified Warsaw UM noise points for the selected overlay key."""
+def load_warsaw_noise_overlay(overlay_key: str) -> NoiseMapOverlay | None:
+    """Load a continuous Warsaw UM noise overlay for the selected key."""
     if not overlay_key or overlay_key == "off":
-        return pd.DataFrame(columns=["lon", "lat", "db", "weight"])
+        return None
     cache = load_config().data.cache_path()
     meta = cache / "warsaw_noise" / "meta.json"
     if not meta.exists():
-        return pd.DataFrame(columns=["lon", "lat", "db", "weight"])
-    return _load_warsaw_noise_heatmap(
+        return None
+    payload = _load_warsaw_noise_overlay(
         str(cache.resolve()), file_mtime(meta), str(overlay_key)
     )
+    if not payload:
+        return None
+    bounds_raw = payload["bounds"]
+    if not isinstance(bounds_raw, list) or len(bounds_raw) != 4:
+        return None
+    return NoiseMapOverlay(
+        layer_key=str(payload["layer_key"]),
+        image_data_uri=str(payload["image_data_uri"]),
+        bounds=(
+            float(bounds_raw[0]),
+            float(bounds_raw[1]),
+            float(bounds_raw[2]),
+            float(bounds_raw[3]),
+        ),
+        width=int(payload["width"]),
+        height=int(payload["height"]),
+    )
+
+
+def load_warsaw_noise_heatmap(overlay_key: str) -> pd.DataFrame:
+    """Deprecated densified points; prefer :func:`load_warsaw_noise_overlay`."""
+    del overlay_key
+    return pd.DataFrame(columns=["lon", "lat", "db", "weight"])
 
 
 @st.cache_resource(show_spinner=False)  # type: ignore[misc]

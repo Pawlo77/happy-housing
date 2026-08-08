@@ -60,7 +60,7 @@ from happy_housing.app.data import (
     load_shap_bundle,
     load_shops,
     load_traffic_sample,
-    load_warsaw_noise_heatmap,
+    load_warsaw_noise_overlay,
     processed_dir,
 )
 from happy_housing.app.explore_nav import (
@@ -165,7 +165,7 @@ from happy_housing.gis.amenity_catalog import (
     amenity_keys,
     coerce_amenity_weights,
 )
-from happy_housing.gis.warsaw_noise import NOISE_MAP_OVERLAYS
+from happy_housing.gis.warsaw_noise import NOISE_MAP_OVERLAYS, NoiseMapOverlay
 from happy_housing.ingest.otodom import fetch_listing_detail, otodom_session
 from happy_housing.models.train import (
     FEATURE_COLUMNS,
@@ -661,7 +661,7 @@ def _tab_map(
     rail_areas: gpd.GeoDataFrame,
     airport: gpd.GeoDataFrame,
     city_pois: gpd.GeoDataFrame,
-    noise_points: pd.DataFrame,
+    noise_overlay_data: NoiseMapOverlay | None,
     flags: LayerFlags,
     hour: int,
     basemap: str,
@@ -692,7 +692,7 @@ def _tab_map(
         rail_areas=rail_areas,
         airport=airport,
         city_pois=city_pois,
-        noise_points=noise_points,
+        noise_overlay=noise_overlay_data,
         commute_lon=commute_lon,
         commute_lat=commute_lat,
         hour=hour,
@@ -1087,7 +1087,7 @@ def _tab_offer(
     rail_areas: gpd.GeoDataFrame,
     airport: gpd.GeoDataFrame,
     city_pois: gpd.GeoDataFrame,
-    noise_points: pd.DataFrame,
+    noise_overlay_data: NoiseMapOverlay | None,
     flags: LayerFlags,
     hour: int,
     basemap: str,
@@ -1207,7 +1207,7 @@ def _tab_offer(
                 rail_areas=rail_areas,
                 airport=airport,
                 city_pois=city_pois,
-                noise_points=noise_points,
+                noise_overlay=noise_overlay_data,
                 commute_lon=commute_lon,
                 commute_lat=commute_lat,
                 hour=hour,
@@ -1901,10 +1901,10 @@ def render_explore() -> None:
     military = load_military_areas() if "military" in needed else empty_gdf
     rail_areas = load_rail_areas() if "rail_areas" in needed else empty_gdf
     airport = load_airport_areas() if "airport" in needed else empty_gdf
-    noise_points = (
-        load_warsaw_noise_heatmap(flags.noise_overlay)
+    noise_overlay_data = (
+        load_warsaw_noise_overlay(flags.noise_overlay)
         if "warsaw_noise" in needed
-        else empty_df
+        else None
     )
 
     commute = resolve_commute_target(app_settings, config)
@@ -1931,7 +1931,7 @@ def render_explore() -> None:
         "military": military,
         "rail_areas": rail_areas,
         "airport": airport,
-        "noise_points": noise_points,
+        "noise_overlay_data": noise_overlay_data,
         "flags": flags,
         "hour": hour,
         "basemap": basemap,
