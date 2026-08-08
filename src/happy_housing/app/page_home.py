@@ -144,33 +144,7 @@ def _tab_overview(
                 color="#2F6F7E",
             )
 
-    if not filtered.empty:
-        preview_cols = [
-            c
-            for c in (
-                "listing_id",
-                "district",
-                "source",
-                "price_per_m2",
-                "model_price_per_m2",
-                "delta_price_per_m2",
-            )
-            if c in filtered.columns
-        ]
-        st.dataframe(
-            filtered[preview_cols].head(40),
-            hide_index=True,
-            width="stretch",
-            column_config={
-                "price_per_m2": st.column_config.NumberColumn("zł/m²", format="%.0f"),
-                "model_price_per_m2": st.column_config.NumberColumn(
-                    "Model zł/m²", format="%.0f"
-                ),
-                "delta_price_per_m2": st.column_config.NumberColumn(
-                    "Delta", format="%+.0f"
-                ),
-            },
-        )
+    # Offer board lives on Explore → Board (row opens Offer).
 
 
 def _tab_model(meta_metrics: dict[str, float], feature_columns: list[str]) -> None:

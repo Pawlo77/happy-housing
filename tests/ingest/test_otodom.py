@@ -92,6 +92,7 @@ def test_fetch_listing_detail_reads_coordinates() -> None:
                         }
                     },
                     "dateCreated": "2026-03-01T10:00:00Z",
+                    "description": "Sunny corner flat with balcony.",
                     "characteristics": [
                         {"key": "buildYear", "value": "2015"},
                     ],
@@ -105,3 +106,4 @@ def test_fetch_listing_detail_reads_coordinates() -> None:
     assert detail["lon"] == pytest.approx(21.01)
     assert detail["year_built"] == 2015
     assert detail["listed_at"] == "2026-03-01T10:00:00Z"
+    assert detail["description"] == "Sunny corner flat with balcony."

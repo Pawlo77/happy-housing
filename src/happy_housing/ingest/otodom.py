@@ -38,6 +38,11 @@ def _session() -> requests.Session:
     return session
 
 
+def otodom_session() -> requests.Session:
+    """Public browser-like session for Otodom HTML fetches."""
+    return _session()
+
+
 def _extract_next_data(html: str) -> dict[str, Any]:
     """Parse the ``__NEXT_DATA__`` JSON blob from an Otodom HTML page."""
     marker = 'id="__NEXT_DATA__"'
@@ -164,7 +169,30 @@ def fetch_listing_detail(
         "lon": float(lon) if lon is not None else None,
         "year_built": year_built,
         "listed_at": listed_at,
+        "description": _ad_description(ad),
     }
+
+
+def _ad_description(ad: dict[str, Any]) -> str | None:
+    """Extract a free-text listing description from an Otodom ad payload."""
+    for key in (
+        "description",
+        "adDescription",
+        "description_text",
+        "longDescription",
+    ):
+        value = ad.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    # Nested localizations sometimes carry translated bodies.
+    for key in ("description", "adDescription"):
+        nested = ad.get(key)
+        if isinstance(nested, dict):
+            for lang in ("pl", "en", "default"):
+                text = nested.get(lang)
+                if isinstance(text, str) and text.strip():
+                    return text.strip()
+    return None
 
 
 def scrape_otodom_warsaw(

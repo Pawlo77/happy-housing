@@ -1,13 +1,24 @@
-"""Explore page: sidebar filters + Map / Offer / Board tabs."""
+"""Explore page: sidebar filters + Map / Offer / Board sections."""
 
 from __future__ import annotations
 
+import logging
+
+import altair as alt
 import geopandas as gpd
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
+import requests
 import shap
 import streamlit as st
 
+from happy_housing.app.ai_review import (
+    DEFAULT_AI_MODEL,
+    get_or_create_review,
+    load_review,
+    reviews_db_path,
+)
 from happy_housing.app.data import (
     load_amenities,
     load_config,
@@ -20,19 +31,29 @@ from happy_housing.app.data import (
     load_shap_bundle,
     load_shops,
     load_traffic_sample,
+    processed_dir,
+)
+from happy_housing.app.explore_nav import (
+    EXPLORE_SECTIONS,
+    listing_id_from_board_selection,
 )
 from happy_housing.app.filters import FilterState, apply_filters
 from happy_housing.app.map_layers import LayerFlags
 from happy_housing.app.maps import (
-    amenity_layers,
     basemap_style,
     build_explore_layers,
     focus_marker_layer,
-    listings_scatter_layer,
-    oou_polygon_layer,
     render_deck,
 )
+from happy_housing.app.offer_display import (
+    delta_hex,
+    livability_rows,
+    offer_fact_rows,
+)
+from happy_housing.ingest.otodom import fetch_listing_detail, otodom_session
 from happy_housing.models.train import build_feature_matrix
+
+logger = logging.getLogger(__name__)
 
 _BOARD_COLUMNS: tuple[str, ...] = (
     "listing_id",
@@ -51,19 +72,6 @@ _BOARD_COLUMNS: tuple[str, ...] = (
     "url",
 )
 """Column order for the Explore board table when present."""
-
-_LIVABILITY_FIELDS: tuple[tuple[str, str], ...] = (
-    ("in_oou", "OOU / aircraft zone"),
-    ("commute_min", "Commute to Daszyńskiego (min)"),
-    ("dist_transit_stop_m", "Nearest transit stop (m)"),
-    ("dist_hospital_m", "Nearest hospital (m)"),
-    ("dist_fire_station_m", "Nearest fire station (m)"),
-    ("dist_police_m", "Nearest police (m)"),
-    ("dist_air_station_m", "Nearest air station (m)"),
-    ("dist_gunb_m", "Nearest GUNB permit (m)"),
-    ("dist_daszynskiego_m", "Distance to Daszyńskiego (m)"),
-)
-"""Offer livability rows: (column, label)."""
 
 
 def _sidebar_filters(frame: pd.DataFrame) -> FilterState:
@@ -147,29 +155,18 @@ def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
         )
     )
     st.sidebar.caption("Toggle overlays. Hover any pin for details.")
-    offers = st.sidebar.checkbox("Offers (Δ price)", value=True)
-    oou = st.sidebar.checkbox("OOU / noise proxy zone", value=True)
-    transit = st.sidebar.checkbox("Public transport (GTFS)", value=False)
-    traffic = st.sidebar.checkbox("Traffic intensity proxy", value=False)
-    shops = st.sidebar.checkbox("Shops", value=False)
-    hospitals = st.sidebar.checkbox("Hospitals", value=False)
-    fire_stations = st.sidebar.checkbox("Fire stations", value=False)
-    police = st.sidebar.checkbox("Police", value=False)
-    air = st.sidebar.checkbox("Air-quality stations", value=False)
-    gunb = st.sidebar.checkbox("GUNB permits", value=False)
-    commute_target = st.sidebar.checkbox("Commute target", value=False)
     flags = LayerFlags(
-        offers=offers,
-        oou=oou,
-        hospitals=hospitals,
-        fire_stations=fire_stations,
-        police=police,
-        shops=shops,
-        transit=transit,
-        traffic=traffic,
-        air=air,
-        gunb=gunb,
-        commute_target=commute_target,
+        offers=st.sidebar.checkbox("Offers (Δ price)", value=True),
+        oou=st.sidebar.checkbox("OOU / noise proxy zone", value=True),
+        transit=st.sidebar.checkbox("Public transport (GTFS)", value=False),
+        traffic=st.sidebar.checkbox("Traffic intensity proxy", value=False),
+        shops=st.sidebar.checkbox("Shops", value=False),
+        hospitals=st.sidebar.checkbox("Hospitals", value=False),
+        fire_stations=st.sidebar.checkbox("Fire stations", value=False),
+        police=st.sidebar.checkbox("Police", value=False),
+        air=st.sidebar.checkbox("Air-quality stations", value=False),
+        gunb=st.sidebar.checkbox("GUNB permits", value=False),
+        commute_target=st.sidebar.checkbox("Commute target", value=False),
     )
     return flags, hour, basemap
 
@@ -232,27 +229,133 @@ def _tab_map(
     )
 
 
-def _livability_table(row: pd.Series) -> pd.DataFrame:
-    """Human-readable livability / amenity distances for one offer."""
-    rows: list[tuple[str, object]] = []
-    for col, label in _LIVABILITY_FIELDS:
-        if col == "in_oou":
-            rows.append((label, "Yes" if int(row.get(col) or 0) == 1 else "No"))
-        else:
-            rows.append((label, row.get(col)))
-    return pd.DataFrame(rows, columns=["signal", "value"])
+def _ensure_description(row: pd.Series) -> str:
+    """Return cached description or fetch from Otodom when a slug exists."""
+    existing = row.get("description")
+    if isinstance(existing, str) and existing.strip():
+        return existing.strip()
+    slug = row.get("slug")
+    if not isinstance(slug, str) or not slug.strip():
+        return ""
+    try:
+        detail = fetch_listing_detail(otodom_session(), slug.strip())
+    except (requests.RequestException, ValueError, TypeError, KeyError) as exc:
+        logger.warning("Description fetch failed for %s: %s", slug, exc)
+        return ""
+    text = detail.get("description")
+    return text.strip() if isinstance(text, str) else ""
+
+
+def _price_metrics(row: pd.Series) -> None:
+    """Listing / model / coloured delta metrics."""
+    listing = float(row["price_per_m2"])
+    model = float(row["model_price_per_m2"])
+    delta = float(row["delta_price_per_m2"])
+    color = delta_hex(delta)
+    c1, c2, c3 = st.columns(3)
+    with c1.container(border=True):
+        st.metric("Listing zł/m²", f"{listing:,.0f}")
+    with c2.container(border=True):
+        st.metric("Model zł/m²", f"{model:,.0f}")
+    with c3.container(border=True):
+        st.markdown("**Delta (listing - model)**")
+        st.markdown(
+            f"<p style='color:{color};font-size:1.75rem;font-weight:700;"
+            f"margin:0'>{delta:+,.0f}</p>"
+            f"<p style='color:#6B7280;font-size:0.85rem;margin:0'>"
+            "green underpriced · yellow fair · red overpriced</p>",
+            unsafe_allow_html=True,
+        )
+
+
+def _trigger_ai_review(row: pd.Series) -> None:
+    """Load or generate AI review when Overview opens; cache in DuckDB."""
+    db = reviews_db_path(processed_dir())
+    listing_id = str(row.get("listing_id") or "")
+    cached = load_review(db, listing_id, model=DEFAULT_AI_MODEL)
+    if cached is not None:
+        st.session_state[f"ai_review_{listing_id}"] = cached.review_text
+        return
+    with st.spinner(f"Asking {DEFAULT_AI_MODEL} for an offer review…"):
+        try:
+            review = get_or_create_review(db, row, model=DEFAULT_AI_MODEL)
+            st.session_state[f"ai_review_{listing_id}"] = review.review_text
+        except Exception as exc:
+            logger.warning("AI review failed for %s: %s", listing_id, exc)
+            st.session_state[f"ai_review_{listing_id}"] = ""
+            st.session_state[f"ai_review_error_{listing_id}"] = str(exc)
+
+
+def _render_shap(row_frame: pd.DataFrame) -> None:
+    """Readable SHAP contribution chart (horizontal bars)."""
+    bundle = load_shap_bundle()
+    if bundle is None:
+        st.info("Model file missing — retrain from Admin.")
+        return
+    try:
+        _booster, explainer = bundle
+        features = build_feature_matrix(row_frame)
+        explanation = explainer(features)
+        values = np.asarray(explanation.values[0], dtype=float)
+        names = list(features.columns)
+        order = np.argsort(np.abs(values))[::-1]
+        chart_df = pd.DataFrame({
+            "feature": [names[i] for i in order],
+            "shap": values[order],
+            "side": ["raises ask" if values[i] >= 0 else "lowers ask" for i in order],
+        })
+        chart = (
+            alt
+            .Chart(chart_df)
+            .mark_bar(cornerRadiusEnd=3)
+            .encode(
+                x=alt.X("shap:Q", title="SHAP contribution to predicted zł/m²"),
+                y=alt.Y("feature:N", sort="-x", title=None),
+                color=alt.Color(
+                    "side:N",
+                    scale=alt.Scale(
+                        domain=["raises ask", "lowers ask"],
+                        range=["#B91C1C", "#15803D"],
+                    ),
+                    legend=alt.Legend(title=None),
+                ),
+                tooltip=["feature", "shap", "side"],
+            )
+            .properties(height=max(280, 28 * len(chart_df)))
+        )
+        st.altair_chart(chart, width="stretch")
+        with st.expander("Classic waterfall", expanded=False):
+            fig, _ax = plt.subplots(figsize=(9, 5.5))
+            shap.plots.waterfall(explanation[0], show=False, max_display=12)
+            st.pyplot(fig, clear_figure=True)
+            plt.close(fig)
+    except Exception as exc:
+        st.warning(f"SHAP unavailable: {exc}")
 
 
 def _tab_offer(
     filtered: pd.DataFrame,
+    *,
     oou: gpd.GeoDataFrame | None,
     amenities: gpd.GeoDataFrame,
+    shops: pd.DataFrame,
+    stops: pd.DataFrame,
+    hourly: pd.DataFrame,
+    traffic_sample: pd.DataFrame,
+    air_stations: pd.DataFrame,
+    gunb: pd.DataFrame,
+    flags: LayerFlags,
+    hour: int,
+    basemap: str,
+    commute_lon: float,
+    commute_lat: float,
 ) -> None:
-    """Single-offer deep dive: facts, link, SHAP, local map context."""
+    """Single-offer deep dive with Overview / Context / Map / SHAP / AI subtabs."""
     if filtered.empty:
         st.warning("No offers match filters.")
         return
     labels = filtered["listing_id"].astype(str).tolist()
+    preferred = st.session_state.get("explore_offer_id")
     if "title" in filtered.columns:
         options = {
             f"{lid} — {title}" if isinstance(title, str) and title else lid: lid
@@ -262,85 +365,143 @@ def _tab_offer(
                 strict=True,
             )
         }
-        choice = st.selectbox("Offer", list(options.keys()))
+        keys = list(options.keys())
+        index = 0
+        if preferred in labels:
+            for i, key in enumerate(keys):
+                if options[key] == preferred:
+                    index = i
+                    break
+        choice = st.selectbox("Offer", keys, index=index)
         selected_id = options[choice]
     else:
-        selected_id = st.selectbox("Offer", labels)
+        index = labels.index(preferred) if preferred in labels else 0
+        selected_id = st.selectbox("Offer", labels, index=index)
+    st.session_state["explore_offer_id"] = selected_id
 
-    row = filtered.loc[filtered["listing_id"] == selected_id].iloc[0]
-    left, right = st.columns([1, 2])
-    with left:
-        if isinstance(row.get("image_url"), str) and row["image_url"]:
-            st.image(row["image_url"], use_container_width=True)
-        if isinstance(row.get("url"), str) and row["url"]:
-            st.link_button("Open source listing", str(row["url"]))
-        st.write({
-            "listing_id": row.get("listing_id"),
-            "title": row.get("title"),
-            "district": row.get("district"),
-            "source": row.get("source"),
-            "listed_at": row.get("listed_at"),
-            "rooms": row.get("rooms"),
-            "area_m2": row.get("area_m2"),
-            "year_built": row.get("year_built"),
-            "lat": row.get("lat"),
-            "lon": row.get("lon"),
-        })
-    with right:
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Listing zł/m²", f"{float(row['price_per_m2']):.0f}")
-        m2.metric("Model zł/m²", f"{float(row['model_price_per_m2']):.0f}")
-        m3.metric(
-            "Delta (listing - model)",
-            f"{float(row['delta_price_per_m2']):.0f}",
-        )
-        st.subheader("Livability & amenity context")
+    row = filtered.loc[filtered["listing_id"] == selected_id].iloc[0].copy()
+    description = _ensure_description(row)
+    if description:
+        row["description"] = description
+
+    overview, context, local_map, explain, ai_tab = st.tabs([
+        "Overview",
+        "Context",
+        "Map",
+        "Explain",
+        "AI review",
+    ])
+
+    with overview:
+        _trigger_ai_review(row)
+        left, right = st.columns([1.1, 1.6])
+        with left:
+            if isinstance(row.get("image_url"), str) and row["image_url"]:
+                st.image(row["image_url"], use_container_width=True)
+            if isinstance(row.get("url"), str) and row["url"]:
+                st.link_button("Open source listing", str(row["url"]), width="stretch")
+        with right:
+            title = row.get("title") or row.get("listing_id")
+            st.subheader(str(title))
+            _price_metrics(row)
+            st.dataframe(offer_fact_rows(row), hide_index=True, width="stretch")
+        st.markdown("#### Source description")
+        if description:
+            st.write(description)
+        else:
+            st.info("No listing description available for this offer.")
+
+    with context:
         st.caption(
-            "Distances are metres to nearest known point. "
-            "OOU is a zone flag (sound/aircraft risk proxy), not a dB meter."
+            "Distances rounded to whole metres. "
+            "OOU is a zone flag (aircraft/noise proxy), not measured dB."
         )
-        st.dataframe(_livability_table(row), hide_index=True, width="stretch")
+        st.dataframe(livability_rows(row), hide_index=True, width="stretch")
+        _price_metrics(row)
 
-    st.subheader("Local map")
-    lat, lon = float(row["lat"]), float(row["lon"])
-    nearby = filtered.head(200)
-    layers = [
-        *oou_polygon_layer(oou),
-        *amenity_layers(amenities),
-    ]
-    offers = listings_scatter_layer(nearby)
-    if offers is not None:
-        layers.append(offers)
-    layers.append(focus_marker_layer(lat, lon))
-    render_deck(layers, latitude=lat, longitude=lon, zoom=13.5)
+    with local_map:
+        st.caption("Same layer stack as the main Explore map (sidebar toggles apply).")
+        lat, lon = float(row["lat"]), float(row["lon"])
+        layers = build_explore_layers(
+            listings=filtered,
+            flags=flags,
+            oou=oou,
+            amenities=amenities,
+            shops=shops,
+            stops=stops,
+            hourly=hourly,
+            traffic_sample=traffic_sample,
+            air_stations=air_stations,
+            gunb=gunb,
+            commute_lon=commute_lon,
+            commute_lat=commute_lat,
+            hour=hour,
+        )
+        layers.append(focus_marker_layer(lat, lon))
+        render_deck(
+            layers,
+            latitude=lat,
+            longitude=lon,
+            zoom=13.5,
+            map_style=basemap_style(basemap),
+        )
 
-    st.subheader("Why this price? (SHAP)")
-    bundle = load_shap_bundle()
-    if bundle is not None:
-        try:
-            _booster, explainer = bundle
-            one = filtered.loc[filtered["listing_id"] == selected_id]
-            features = build_feature_matrix(one)
-            explanation = explainer(features)
-            fig, _ax = plt.subplots(figsize=(8, 4.5))
-            shap.plots.waterfall(explanation[0], show=False)
-            st.pyplot(fig, clear_figure=True)
-            plt.close(fig)
-        except Exception as exc:
-            st.warning(f"SHAP unavailable: {exc}")
-    else:
-        st.info("Model file missing — retrain from Admin.")
+    with explain:
+        st.caption(
+            "Feature contributions to the model zł/m². "
+            "Green lowers the fair price; red raises it."
+        )
+        one = filtered.loc[filtered["listing_id"] == selected_id]
+        _render_shap(one)
+
+    with ai_tab:
+        listing_id = str(row.get("listing_id") or "")
+        db = reviews_db_path(processed_dir())
+        text = st.session_state.get(f"ai_review_{listing_id}", "")
+        err = st.session_state.get(f"ai_review_error_{listing_id}", "")
+        st.caption(f"Model: `{DEFAULT_AI_MODEL}` · cached in DuckDB after first ask.")
+        if text:
+            st.markdown(text)
+        elif err:
+            st.warning(f"AI review unavailable: {err}")
+        else:
+            st.info("Open Overview to request a review, or regenerate below.")
+        if st.button("Regenerate AI review", key=f"regen_{listing_id}"):
+            with st.spinner(f"Re-asking {DEFAULT_AI_MODEL}…"):
+                try:
+                    review = get_or_create_review(
+                        db, row, model=DEFAULT_AI_MODEL, force=True
+                    )
+                    st.session_state[f"ai_review_{listing_id}"] = review.review_text
+                    st.session_state.pop(f"ai_review_error_{listing_id}", None)
+                    st.rerun()
+                except Exception as exc:
+                    st.error(str(exc))
 
 
 def _tab_board(filtered: pd.DataFrame) -> None:
-    """Tabular offer board for the filtered set."""
+    """Tabular offer board; selecting a row opens Offer for that listing."""
     cols = [c for c in _BOARD_COLUMNS if c in filtered.columns]
-    st.caption(f"{len(filtered)} offers after filters")
-    st.dataframe(filtered[cols], width="stretch", hide_index=True)
+    board = filtered[cols].reset_index(drop=True)
+    st.caption(f"{len(board)} offers after filters · click a row to open Offer")
+    event = st.dataframe(
+        board,
+        width="stretch",
+        hide_index=True,
+        on_select="rerun",
+        selection_mode="single-row",
+        key="explore_board",
+    )
+    listing_id = listing_id_from_board_selection(board, event)
+    if listing_id is None:
+        return
+    st.session_state["explore_offer_id"] = listing_id
+    st.session_state["explore_section"] = "Offer"
+    st.rerun()
 
 
 def render_explore() -> None:
-    """Render Explore with sidebar filters and three tabs."""
+    """Render Explore with sidebar filters and Map / Offer / Board sections."""
     st.title("Explore")
     try:
         frame = load_scored()
@@ -362,25 +523,34 @@ def render_explore() -> None:
     air_stations = load_gios_stations()
     gunb = load_gunb_points()
 
-    map_tab, offer_tab, board_tab = st.tabs(["Map", "Offer", "Board"])
-    with map_tab:
-        _tab_map(
-            filtered,
-            oou=oou,
-            amenities=amenities,
-            shops=shops,
-            stops=stops,
-            hourly=hourly,
-            traffic_sample=traffic_sample,
-            air_stations=air_stations,
-            gunb=gunb,
-            flags=flags,
-            hour=hour,
-            basemap=basemap,
-            commute_lon=float(config.commute_target_lon),
-            commute_lat=float(config.commute_target_lat),
-        )
-    with offer_tab:
-        _tab_offer(filtered, oou, amenities)
-    with board_tab:
+    if "explore_section" not in st.session_state:
+        st.session_state["explore_section"] = "Map"
+    section = st.segmented_control(
+        "Section",
+        options=list(EXPLORE_SECTIONS),
+        key="explore_section",
+        label_visibility="collapsed",
+    )
+    if section is None:
+        section = "Map"
+    map_kwargs = {
+        "oou": oou,
+        "amenities": amenities,
+        "shops": shops,
+        "stops": stops,
+        "hourly": hourly,
+        "traffic_sample": traffic_sample,
+        "air_stations": air_stations,
+        "gunb": gunb,
+        "flags": flags,
+        "hour": hour,
+        "basemap": basemap,
+        "commute_lon": float(config.commute_target_lon),
+        "commute_lat": float(config.commute_target_lat),
+    }
+    if section == "Map":
+        _tab_map(filtered, **map_kwargs)
+    elif section == "Offer":
+        _tab_offer(filtered, **map_kwargs)
+    else:
         _tab_board(filtered)
