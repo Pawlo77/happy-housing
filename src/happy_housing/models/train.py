@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -304,6 +306,8 @@ def _fit_lgbm(
     y_train: pd.Series,
     params: dict[str, Any],
     random_state: int,
+    *,
+    n_jobs: int = 1,
 ) -> lgb.LGBMRegressor:
     work = features_train.copy()
     cat_in_frame: list[str] = []
@@ -320,6 +324,7 @@ def _fit_lgbm(
         subsample=float(params.get("subsample", 1.0)),
         colsample_bytree=float(params.get("colsample_bytree", 1.0)),
         random_state=random_state,
+        n_jobs=int(n_jobs),
         verbosity=-1,
     )
     model.fit(
@@ -447,11 +452,30 @@ def train_price_model(
     )
     best_val_metrics: dict[str, float] = {}
 
-    for trial_i, params in enumerate(candidates):
-        model = _fit_lgbm(features_train, y_train, params, settings.random_state)
+    def _eval_trial(
+        trial_i: int, params: dict[str, Any]
+    ) -> tuple[int, dict[str, Any], dict[str, float], float]:
+        # Cap OpenMP threads per trial so parallel HPO does not oversubscribe.
+        model = _fit_lgbm(
+            features_train, y_train, params, settings.random_state, n_jobs=1
+        )
         val_pred = model.predict(features_val)
         val_metrics = compute_regression_metrics(y_val.to_numpy(), np.asarray(val_pred))
         score = float(val_metrics[opt_metric])
+        return trial_i, params, val_metrics, score
+
+    workers = min(4, len(candidates), max(1, (os.cpu_count() or 2)))
+    trial_results: list[tuple[int, dict[str, Any], dict[str, float], float]] = []
+    if workers <= 1 or len(candidates) == 1:
+        trial_results = [_eval_trial(i, p) for i, p in enumerate(candidates)]
+    else:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = [pool.submit(_eval_trial, i, p) for i, p in enumerate(candidates)]
+            for fut in as_completed(futures):
+                trial_results.append(fut.result())
+        trial_results.sort(key=lambda row: row[0])
+
+    for trial_i, params, val_metrics, score in trial_results:
         logger.info(
             "HPO trial %s/%s %s=%s params=%s",
             trial_i + 1,
@@ -474,7 +498,9 @@ def train_price_model(
             best_val_metrics = val_metrics
 
     # Final model: train + val, evaluate on untouched test.
-    final_model = _fit_lgbm(features_tv, y_tv, best_params, settings.random_state)
+    final_model = _fit_lgbm(
+        features_tv, y_tv, best_params, settings.random_state, n_jobs=-1
+    )
     test_pred = final_model.predict(features_test)
     test_metrics = compute_regression_metrics(y_test.to_numpy(), np.asarray(test_pred))
 
@@ -590,6 +616,7 @@ def oof_predict_price_per_m2(
     train_settings: TrainSettings,
     *,
     n_splits: int = 5,
+    params: dict[str, Any] | None = None,
 ) -> np.ndarray:
     """Out-of-fold predictions for train-label rows; final-model style for others.
 
@@ -601,7 +628,6 @@ def oof_predict_price_per_m2(
     settings = train_settings
     feature_cols = active_feature_columns(use_neighborhood=settings.use_neighborhood)
     preds = np.full(len(frame), np.nan, dtype=float)
-    work = frame
     label_mask = pd.Series(True, index=frame.index)
     if settings.train_otodom_labels_only and "source" in frame.columns:
         sources = frame["source"].astype(str).str.lower()
@@ -630,7 +656,7 @@ def oof_predict_price_per_m2(
         random_state=settings.random_state,
     )
     usable_arr = np.asarray(usable)
-    params = _default_params(model_config)
+    fold_params = dict(params) if params else _default_params(model_config)
     for train_pos, test_pos in kf.split(usable_arr):
         train_ids = usable_arr[train_pos]
         test_ids = usable_arr[test_pos]
@@ -646,7 +672,7 @@ def oof_predict_price_per_m2(
         x_tr = _impute_with_medians(raw.loc[train_ids], medians, feature_cols)
         x_te = _impute_with_medians(raw.loc[test_ids], medians, feature_cols)
         y_tr = target.loc[train_ids]
-        fold_model = _fit_lgbm(x_tr, y_tr, params, settings.random_state)
+        fold_model = _fit_lgbm(x_tr, y_tr, fold_params, settings.random_state, n_jobs=1)
         for col in CATEGORICAL_FEATURE_COLUMNS:
             if col in x_te.columns:
                 x_te[col] = x_te[col].astype(str).fillna("unknown").astype("category")
@@ -667,7 +693,9 @@ def oof_predict_price_per_m2(
         )
         x_all = _impute_with_medians(raw.loc[usable], medians, feature_cols)
         y_all = target.loc[usable]
-        full_model = _fit_lgbm(x_all, y_all, params, settings.random_state)
+        full_model = _fit_lgbm(
+            x_all, y_all, fold_params, settings.random_state, n_jobs=-1
+        )
         x_other = _impute_with_medians(raw.loc[other_ids], medians, feature_cols)
         for col in CATEGORICAL_FEATURE_COLUMNS:
             if col in x_other.columns:
@@ -685,7 +713,6 @@ def oof_predict_price_per_m2(
             result.model, frame, use_neighborhood=settings.use_neighborhood
         )
         preds[missing] = fill[missing]
-    del work
     return preds
 
 

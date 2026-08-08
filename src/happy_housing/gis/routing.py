@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import numpy as np
@@ -15,32 +15,27 @@ logger = logging.getLogger(__name__)
 _OTP_MAX_WORKERS: int = 8
 """Bound OTP fan-out so large listing sets do not open one socket per row."""
 
+OSRM_CHUNK_SIZE: int = 200
+"""Max origins per OSRM Table request (URL / server limit)."""
 
-def osrm_table_durations_seconds(
-    origins: Iterable[tuple[float, float]],
+_OSRM_CHUNK_WORKERS: int = 4
+"""Parallel OSRM chunk requests when the origin list is large."""
+
+
+def _osrm_table_chunk(
+    origins: Sequence[tuple[float, float]],
     destination: tuple[float, float],
-    base_url: str = "http://127.0.0.1:5000",
-    timeout_s: float = 30.0,
+    *,
+    base_url: str,
+    timeout_s: float,
 ) -> np.ndarray | None:
-    """Query OSRM Table API for durations from origins to one destination.
-
-    Args:
-        origins: Sequence of ``(lon, lat)`` points.
-        destination: ``(lon, lat)`` commute target.
-        base_url: Local OSRM HTTP root.
-        timeout_s: Request timeout.
-
-    Returns:
-        Durations in seconds, or ``None`` if OSRM is unavailable.
-    """
-    coords = list(origins)
-    if not coords:
+    """Single OSRM Table request for one origin chunk."""
+    if not origins:
         return np.array([], dtype=float)
-    # OSRM table: all points in one coordinates list; destinations index last.
-    all_points = [*coords, destination]
+    all_points = [*origins, destination]
     coord_str = ";".join(f"{lon},{lat}" for lon, lat in all_points)
     dest_index = len(all_points) - 1
-    sources = ";".join(str(i) for i in range(len(coords)))
+    sources = ";".join(str(i) for i in range(len(origins)))
     url = (
         f"{base_url.rstrip('/')}/table/v1/driving/{coord_str}"
         f"?sources={sources}&destinations={dest_index}"
@@ -56,6 +51,59 @@ def osrm_table_durations_seconds(
     except Exception as exc:
         logger.warning("OSRM unavailable (%s); using distance proxy", exc)
         return None
+
+
+def osrm_table_durations_seconds(
+    origins: Iterable[tuple[float, float]],
+    destination: tuple[float, float],
+    base_url: str = "http://127.0.0.1:5000",
+    timeout_s: float = 30.0,
+) -> np.ndarray | None:
+    """Query OSRM Table API for durations from origins to one destination.
+
+    Large origin lists are split into ``OSRM_CHUNK_SIZE`` batches (fetched in
+    parallel) so URL length and server limits do not fail the whole request.
+
+    Args:
+        origins: Sequence of ``(lon, lat)`` points.
+        destination: ``(lon, lat)`` commute target.
+        base_url: Local OSRM HTTP root.
+        timeout_s: Request timeout per chunk.
+
+    Returns:
+        Durations in seconds, or ``None`` if OSRM is unavailable.
+    """
+    coords = list(origins)
+    if not coords:
+        return np.array([], dtype=float)
+    chunk = max(1, int(OSRM_CHUNK_SIZE))
+    if len(coords) <= chunk:
+        return _osrm_table_chunk(
+            coords, destination, base_url=base_url, timeout_s=timeout_s
+        )
+
+    slices = [coords[i : i + chunk] for i in range(0, len(coords), chunk)]
+    parts: list[np.ndarray | None] = [None] * len(slices)
+    workers = min(_OSRM_CHUNK_WORKERS, len(slices))
+
+    def _run(
+        idx: int, batch: Sequence[tuple[float, float]]
+    ) -> tuple[int, np.ndarray | None]:
+        return idx, _osrm_table_chunk(
+            batch, destination, base_url=base_url, timeout_s=timeout_s
+        )
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(_run, i, batch) for i, batch in enumerate(slices)]
+        for fut in as_completed(futures):
+            idx, arr = fut.result()
+            if arr is None:
+                return None
+            parts[idx] = arr
+    ordered = [p for p in parts if p is not None]
+    if len(ordered) != len(slices):
+        return None
+    return np.concatenate(ordered)
 
 
 def attach_commute_minutes(

@@ -166,23 +166,31 @@ def nearest_distance_meters(
     *,
     attr_cols: tuple[str, ...] | list[str] = (),
     attr_rename: dict[str, str] | None = None,
+    left_projected: gpd.GeoDataFrame | None = None,
+    copy: bool = True,
 ) -> gpd.GeoDataFrame:
-    """Distance from each listing to nearest point; optionally copy attributes."""
+    """Distance from each listing to nearest point; optionally copy attributes.
+
+    Pass ``left_projected`` (listings already in ``projected_crs``) and
+    ``copy=False`` from enrich loops to avoid reprojecting / copying the full
+    frame on every amenity type.
+    """
     rename = dict(attr_rename or {})
     wanted = [c for c in attr_cols if c in points.columns]
+    out = listings.copy() if copy else listings
     if points.empty:
-        result = listings.copy()
-        result[out_col] = float("nan")
+        out[out_col] = float("nan")
         for col in wanted:
-            result[rename.get(col, col)] = float("nan")
-        return result
-    left = listings.to_crs(projected_crs)
+            out[rename.get(col, col)] = float("nan")
+        return out
+    left = (
+        left_projected if left_projected is not None else listings.to_crs(projected_crs)
+    )
     right_cols = ["geometry", *wanted]
     right = points.to_crs(projected_crs)[right_cols]
     matched = left.sjoin_nearest(right, how="left", distance_col=out_col)
     matched = matched[~matched.index.duplicated(keep="first")]
     aligned = matched.reindex(listings.index)
-    out = listings.copy()
     out[out_col] = aligned[out_col].to_numpy()
     for col in wanted:
         dest = rename.get(col, col)
@@ -393,6 +401,7 @@ def enrich_listings(
     city_pois: gpd.GeoDataFrame | None = None,
     bike_paths: gpd.GeoDataFrame | None = None,
     bike_path_coverage_radius_m: float = BIKE_PATH_COVERAGE_RADIUS_M,
+    bike_path_sample: pd.DataFrame | None = None,
     rail_areas: gpd.GeoDataFrame | None = None,
     military: gpd.GeoDataFrame | None = None,
     airport_areas: gpd.GeoDataFrame | None = None,
@@ -437,6 +446,27 @@ def enrich_listings(
     gdf = attach_contour_level(gdf, road, "lden_db", "road_lden_db")
     gdf = attach_contour_level(gdf, rail, "lden_db", "rail_lden_db")
 
+    # One projected frame for all nearest-distance joins (avoids Nx reproject/copy).
+    left_proj = gdf.to_crs(projected_crs)
+
+    def _near(
+        points: gpd.GeoDataFrame,
+        col: str,
+        *,
+        attr_cols: tuple[str, ...] | list[str] = (),
+        attr_rename: dict[str, str] | None = None,
+    ) -> None:
+        nearest_distance_meters(
+            gdf,
+            points,
+            projected_crs,
+            col,
+            attr_cols=attr_cols,
+            attr_rename=attr_rename,
+            left_projected=left_proj,
+            copy=False,
+        )
+
     amenity_cols = (
         ("hospital", "dist_hospital_m"),
         ("fire_station", "dist_fire_station_m"),
@@ -449,10 +479,10 @@ def enrich_listings(
             subset = amenities[amenities["amenity"] == amenity_value]
         else:
             subset = amenities.iloc[0:0]
-        gdf = nearest_distance_meters(gdf, subset, projected_crs, col)
+        _near(subset, col)
 
     if parks is not None and not parks.empty:
-        gdf = nearest_distance_meters(gdf, parks, projected_crs, "dist_park_m")
+        _near(parks, "dist_park_m")
     else:
         gdf["dist_park_m"] = float("nan")
 
@@ -466,29 +496,29 @@ def enrich_listings(
         paths,
         projected_crs=projected_crs,
         coverage_radius_m=float(bike_path_coverage_radius_m),
+        sample_points=bike_path_sample,
+        left_projected=left_proj,
     )
 
     if rail_areas is not None and not rail_areas.empty:
-        gdf = nearest_distance_meters(
-            gdf, rail_areas, projected_crs, "dist_rail_area_m"
-        )
+        _near(rail_areas, "dist_rail_area_m")
     else:
         gdf["dist_rail_area_m"] = float("nan")
 
     if military is not None and not military.empty:
-        gdf = nearest_distance_meters(gdf, military, projected_crs, "dist_military_m")
+        _near(military, "dist_military_m")
     else:
         gdf["dist_military_m"] = float("nan")
 
     if airport_areas is not None and not airport_areas.empty:
-        gdf = nearest_distance_meters(
-            gdf, airport_areas, projected_crs, "dist_airport_area_m"
-        )
+        _near(airport_areas, "dist_airport_area_m")
     else:
         gdf["dist_airport_area_m"] = float("nan")
 
     traffic = traffic_sample if traffic_sample is not None else pd.DataFrame()
-    gdf = attach_traffic_features(gdf, traffic, projected_crs=projected_crs)
+    gdf = attach_traffic_features(
+        gdf, traffic, projected_crs=projected_crs, left_projected=left_proj
+    )
 
     school_src: gpd.GeoDataFrame | None = None
     if schools is not None and not schools.empty:
@@ -498,14 +528,12 @@ def enrich_listings(
         if not osm_schools.empty:
             school_src = _points_for_nearest(osm_schools)
     if school_src is not None:
-        gdf = nearest_distance_meters(gdf, school_src, projected_crs, "dist_school_m")
+        _near(school_src, "dist_school_m")
     else:
         gdf["dist_school_m"] = float("nan")
 
     if shops is not None and not shops.empty:
-        gdf = nearest_distance_meters(
-            gdf, _points_for_nearest(shops), projected_crs, "dist_shop_m"
-        )
+        _near(_points_for_nearest(shops), "dist_shop_m")
     else:
         gdf["dist_shop_m"] = float("nan")
 
@@ -527,7 +555,7 @@ def enrich_listings(
                 gdf[col] = float("nan")
                 continue
             subset = typed[typed["object_type"].astype(str) == key]
-            gdf = nearest_distance_meters(gdf, subset, projected_crs, col)
+            _near(subset, col)
     else:
         for t in AMENITY_TYPES:
             if t.source in {"sports", "wfs"} and t.key != "school":
@@ -539,10 +567,8 @@ def enrich_listings(
             geometry=gpd.points_from_xy(gios_stations["lon"], gios_stations["lat"]),
             crs="EPSG:4326",
         )
-        gdf = nearest_distance_meters(
-            gdf,
+        _near(
             air,
-            projected_crs,
             "dist_air_station_m",
             attr_cols=_GIOS_AQ_ATTRS,
             attr_rename=_GIOS_AQ_RENAME,
@@ -561,12 +587,12 @@ def enrich_listings(
             ),
             crs="EPSG:4326",
         )
-        gdf = nearest_distance_meters(gdf, stops, projected_crs, "dist_transit_stop_m")
+        _near(stops, "dist_transit_stop_m")
     else:
         gdf["dist_transit_stop_m"] = float("nan")
 
     if gunb_points is not None and not gunb_points.empty:
-        gdf = nearest_distance_meters(gdf, gunb_points, projected_crs, "dist_gunb_m")
+        _near(gunb_points, "dist_gunb_m")
     else:
         gdf["dist_gunb_m"] = float("nan")
 
@@ -574,5 +600,6 @@ def enrich_listings(
         geometry=[Point(commute_lon, commute_lat)],
         crs="EPSG:4326",
     )
-    gdf = nearest_distance_meters(gdf, target, projected_crs, "dist_daszynskiego_m")
-    return gdf
+    _near(target, "dist_daszynskiego_m")
+    # Single copy collapses fragmented column blocks from many inserts.
+    return gdf.copy()

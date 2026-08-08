@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -41,7 +42,7 @@ from happy_housing.gis import (
     load_amenity_points,
     load_shop_points,
 )
-from happy_housing.gis.bike_paths import fetch_bike_paths
+from happy_housing.gis.bike_paths import fetch_bike_paths, load_bike_path_sample
 from happy_housing.gis.location_fix import snap_listings_out_of_parks
 from happy_housing.gis.routing import (
     attach_commute_minutes,
@@ -314,21 +315,30 @@ def run_pipeline(
         else:
             shops = load_shop_points(fixtures / "shops.json")
 
-    parks = fetch_warsaw_parks(
-        cache,
-        fixture_path=fixtures / "parks.geojson",
-        force_refresh=force_gis_refresh,
-    )
-    schools = fetch_warsaw_schools(
-        cache,
-        fixture_path=fixtures / "schools.geojson",
-        force_refresh=force_gis_refresh,
-    )
-    city_pois = fetch_warsaw_city_pois(
-        cache,
-        fixture_path=fixtures / "city_pois.geojson",
-        force_refresh=force_gis_refresh,
-    )
+    # Independent HTTP / WFS fetches in parallel (not OSMnx — shared settings).
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        fut_parks = pool.submit(
+            fetch_warsaw_parks,
+            cache,
+            fixture_path=fixtures / "parks.geojson",
+            force_refresh=force_gis_refresh,
+        )
+        fut_schools = pool.submit(
+            fetch_warsaw_schools,
+            cache,
+            fixture_path=fixtures / "schools.geojson",
+            force_refresh=force_gis_refresh,
+        )
+        fut_pois = pool.submit(
+            fetch_warsaw_city_pois,
+            cache,
+            fixture_path=fixtures / "city_pois.geojson",
+            force_refresh=force_gis_refresh,
+        )
+        parks = fut_parks.result()
+        schools = fut_schools.result()
+        city_pois = fut_pois.result()
+    # OSMnx road / bike fetches stay serial (global ox.settings).
     traffic_sample = fetch_traffic_road_sample(
         cache,
         bbox=config.bbox.as_tuple(),
@@ -341,6 +351,7 @@ def run_pipeline(
         fixture_path=fixtures / "bike_paths.geojson",
         force_refresh=force_gis_refresh,
     )
+    bike_path_sample = load_bike_path_sample(cache)
 
     def _zone_fixture(name: str) -> gpd.GeoDataFrame:
         path = fixtures / name
@@ -383,6 +394,7 @@ def run_pipeline(
         city_pois=city_pois,
         bike_paths=bike_paths,
         bike_path_coverage_radius_m=float(app_settings.bike_path_coverage_radius_m),
+        bike_path_sample=bike_path_sample if not bike_path_sample.empty else None,
         rail_areas=rail_areas,
         military=military,
         airport_areas=airport_areas,
@@ -464,6 +476,7 @@ def run_pipeline(
             config.model,
             train_settings,
             n_splits=5,
+            params=result.best_params or None,
         )
     except Exception as exc:
         logger.warning("OOF scoring failed (%s); falling back to in-sample", exc)

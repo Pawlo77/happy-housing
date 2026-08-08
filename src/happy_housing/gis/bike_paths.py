@@ -14,6 +14,8 @@ import numpy as np
 import pandas as pd
 from shapely.geometry import LineString, MultiLineString
 
+from happy_housing.gis.spatial_query import balltree_radius_weight_sums
+
 logger = logging.getLogger(__name__)
 
 _CACHE_NAME: str = "bike_paths.geojson"
@@ -104,19 +106,20 @@ def attach_bike_path_features(
     coverage_radius_m: float = BIKE_PATH_COVERAGE_RADIUS_M,
     sample_step_m: float = _DEFAULT_SAMPLE_STEP_M,
     sample_points: pd.DataFrame | None = None,
+    left_projected: gpd.GeoDataFrame | None = None,
 ) -> gpd.GeoDataFrame:
     """Attach ``dist_bike_path_m`` and ``bike_path_coverage_m`` to listings.
 
     Coverage approximates metres of bike infrastructure within
     ``coverage_radius_m`` via densified path samples (count x step).
     """
-    out = listings.copy()
+    out = listings
     if paths.empty:
         out["dist_bike_path_m"] = float("nan")
         out["bike_path_coverage_m"] = 0.0
         return out
 
-    left = out.to_crs(projected_crs)
+    left = left_projected if left_projected is not None else out.to_crs(projected_crs)
     right = paths.to_crs(projected_crs)[["geometry"]]
     matched = left.sjoin_nearest(right, how="left", distance_col="dist_bike_path_m")
     matched = matched[~matched.index.duplicated(keep="first")]
@@ -141,20 +144,13 @@ def attach_bike_path_features(
         if "step_m" in sample_points
         else (float(sample_step_m))
     )
-    buffers = left.copy()
-    buffers["geometry"] = buffers.geometry.buffer(float(coverage_radius_m))
-    hit = gpd.sjoin(
-        pts[["geometry"]],
-        buffers[["geometry"]],
-        how="inner",
-        predicate="within",
+    query_xy = np.column_stack([left.geometry.x.to_numpy(), left.geometry.y.to_numpy()])
+    data_xy = np.column_stack([pts.geometry.x.to_numpy(), pts.geometry.y.to_numpy()])
+    weights = np.full(len(pts), step, dtype=float)
+    coverage = balltree_radius_weight_sums(
+        query_xy, data_xy, weights, float(coverage_radius_m)
     )
-    if hit.empty:
-        out["bike_path_coverage_m"] = 0.0
-        return out
-    counts = hit.groupby("index_right").size()
-    coverage = counts.reindex(out.index, fill_value=0).astype(float) * step
-    out["bike_path_coverage_m"] = coverage.to_numpy(dtype=float)
+    out["bike_path_coverage_m"] = coverage
     return out
 
 

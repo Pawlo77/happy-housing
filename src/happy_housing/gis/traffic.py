@@ -15,6 +15,11 @@ import numpy as np
 import pandas as pd
 from shapely.geometry import LineString, MultiLineString
 
+from happy_housing.gis.spatial_query import (
+    balltree_nearest_distances,
+    balltree_radius_weight_sums,
+)
+
 logger = logging.getLogger(__name__)
 
 HIGHWAY_BASE_WEIGHT: dict[str, float] = {
@@ -344,47 +349,30 @@ def attach_traffic_features(
     *,
     projected_crs: str,
     neighbourhood_radius_m: float = TRAFFIC_NEIGHBOURHOOD_RADIUS_M,
+    left_projected: gpd.GeoDataFrame | None = None,
 ) -> gpd.GeoDataFrame:
     """Attach ``dist_traffic_road_m`` and ``traffic_weight_nearby``.
 
     Distance is to the nearest densified OSM drive sample. Neighbourhood weight
     sums ``base_weight`` of sample points within ``neighbourhood_radius_m``.
     """
-    out = listings.copy()
+    out = listings
     if sample.empty or not {"lon", "lat", "base_weight"}.issubset(sample.columns):
         out["dist_traffic_road_m"] = float("nan")
         out["traffic_weight_nearby"] = 0.0
         return out
 
+    left = left_projected if left_projected is not None else out.to_crs(projected_crs)
     pts = gpd.GeoDataFrame(
         sample,
         geometry=gpd.points_from_xy(sample["lon"], sample["lat"]),
         crs="EPSG:4326",
-    )
-    left = out.to_crs(projected_crs)
-    right = pts.to_crs(projected_crs)
-    matched = left.sjoin_nearest(
-        right[["geometry"]], how="left", distance_col="dist_traffic_road_m"
-    )
-    matched = matched[~matched.index.duplicated(keep="first")]
-    aligned = matched.reindex(out.index)
-    out["dist_traffic_road_m"] = aligned["dist_traffic_road_m"].to_numpy(dtype=float)
-
-    weight_pts = right[["geometry"]].copy()
-    weight_pts["base_weight"] = pts.to_crs(projected_crs)["base_weight"].astype(float)
-    buffers = left.copy()
-    buffers["geometry"] = buffers.geometry.buffer(float(neighbourhood_radius_m))
-    hit = gpd.sjoin(
-        weight_pts,
-        buffers[["geometry"]],
-        how="inner",
-        predicate="within",
-    )
-    if hit.empty:
-        out["traffic_weight_nearby"] = 0.0
-        return out
-    weights = hit.groupby("index_right")["base_weight"].sum()
-    out["traffic_weight_nearby"] = (
-        weights.reindex(out.index, fill_value=0.0).astype(float).to_numpy()
+    ).to_crs(projected_crs)
+    query_xy = np.column_stack([left.geometry.x.to_numpy(), left.geometry.y.to_numpy()])
+    data_xy = np.column_stack([pts.geometry.x.to_numpy(), pts.geometry.y.to_numpy()])
+    weights = pts["base_weight"].to_numpy(dtype=float)
+    out["dist_traffic_road_m"] = balltree_nearest_distances(query_xy, data_xy)
+    out["traffic_weight_nearby"] = balltree_radius_weight_sums(
+        query_xy, data_xy, weights, float(neighbourhood_radius_m)
     )
     return out
