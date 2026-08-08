@@ -62,7 +62,12 @@ from happy_housing.app.explore_nav import (
     listing_id_from_map_selection,
     prepare_offer_select_state,
 )
-from happy_housing.app.filters import FilterState, apply_filters, apply_starred_only
+from happy_housing.app.filters import (
+    FilterState,
+    apply_filters,
+    apply_starred_only,
+    offer_age_months,
+)
 from happy_housing.app.llm_metrics import llm_metrics_path
 from happy_housing.app.map_layers import (
     MAX_GUNB_MAP_POINTS,
@@ -183,20 +188,13 @@ def _sidebar_filters(frame: pd.DataFrame) -> tuple[FilterState, bool]:
         if "source" in frame.columns
         else []
     )
-    months = sorted([
-        m
-        for m in frame
-        .get("listed_month", pd.Series(dtype=str))
-        .dropna()
-        .astype(str)
-        .unique()
-        .tolist()
-        if m not in {"NaT", "unknown"}
-    ])
     ppm = pd.to_numeric(frame.get("price_per_m2"), errors="coerce")
     finite = ppm[ppm.notna()]
     ppm_min = int(finite.min()) if not finite.empty else 0
     ppm_max = int(finite.max()) + 1 if not finite.empty else 1
+    ages = offer_age_months(frame)
+    age_finite = ages.dropna()
+    age_max = int(age_finite.max()) if not age_finite.empty else 0
 
     district = st.sidebar.selectbox(
         "District",
@@ -224,15 +222,18 @@ def _sidebar_filters(frame: pd.DataFrame) -> tuple[FilterState, bool]:
         help=FILTER_HELP["max_ppm"],
         key="explore_max_ppm",
     )
-    month = "(all)"
-    if months:
-        month = st.sidebar.select_slider(
-            "Listed month",
-            options=["(all)", *months],
-            value="(all)",
-            help=FILTER_HELP["month"],
-            key="explore_month",
+    max_age_months: int | None = None
+    if age_max > 0:
+        picked_age = st.sidebar.slider(
+            "Offer age (months)",
+            min_value=0,
+            max_value=age_max,
+            value=age_max,
+            help=FILTER_HELP["max_age_months"],
+            key="explore_max_age_months",
         )
+        if picked_age < age_max:
+            max_age_months = int(picked_age)
     starred_only = st.sidebar.checkbox(
         "Starred only",
         value=False,
@@ -248,7 +249,7 @@ def _sidebar_filters(frame: pd.DataFrame) -> tuple[FilterState, bool]:
             source=source,
             oou=oou,
             max_price_per_m2=float(max_ppm),
-            month=month,
+            max_age_months=max_age_months,
         ),
         starred_only,
     )

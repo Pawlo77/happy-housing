@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 
 import pandas as pd
 
@@ -19,11 +20,55 @@ class FilterState:
     """Aircraft Lden ≥55 dB: ``(all)``, ``inside``, or ``outside``."""
     max_price_per_m2: float | None = None
     """Upper bound on listing zł/m²."""
-    month: str = "(all)"
-    """Listed month ``YYYY-MM`` or ``(all)``."""
+    max_age_months: int | None = None
+    """Keep offers with age ≤ this many months; ``None`` = no age filter."""
 
 
-def apply_filters(frame: pd.DataFrame, state: FilterState) -> pd.DataFrame:
+def offer_age_months(
+    frame: pd.DataFrame,
+    *,
+    as_of: date | None = None,
+) -> pd.Series:
+    """Whole months since listing date (``listed_at``, else ``listed_month``)."""
+    ref = as_of or date.today()
+    n = len(frame)
+    ages = pd.Series([pd.NA] * n, index=frame.index, dtype="Float64")
+    if n == 0:
+        return ages
+
+    if "listed_at" in frame.columns:
+        listed = pd.to_datetime(frame["listed_at"], errors="coerce", utc=False)
+    else:
+        listed = pd.Series(pd.NaT, index=frame.index)
+
+    if "listed_month" in frame.columns:
+        month_raw = frame["listed_month"].astype(str)
+        month_dates = pd.to_datetime(
+            month_raw.where(~month_raw.isin({"unknown", "NaT", "nan", "None"})),
+            format="%Y-%m",
+            errors="coerce",
+        )
+        listed = listed.fillna(month_dates)
+
+    valid = listed.notna()
+    if not valid.any():
+        return ages
+
+    years = listed.dt.year.astype("Int64")
+    months = listed.dt.month.astype("Int64")
+    days = listed.dt.day.astype("Int64")
+    age = (ref.year - years) * 12 + (ref.month - months)
+    age = age.where(days.isna() | (ref.day >= days), age - 1)
+    age = age.clip(lower=0)
+    return ages.where(~valid, age.astype("Float64"))
+
+
+def apply_filters(
+    frame: pd.DataFrame,
+    state: FilterState,
+    *,
+    as_of: date | None = None,
+) -> pd.DataFrame:
     """Return rows matching ``state`` without mutating the input."""
     if frame.empty:
         return frame.copy()
@@ -40,8 +85,9 @@ def apply_filters(frame: pd.DataFrame, state: FilterState) -> pd.DataFrame:
         mask &= pd.to_numeric(frame["price_per_m2"], errors="coerce").le(
             float(state.max_price_per_m2)
         )
-    if state.month != "(all)" and "listed_month" in frame.columns:
-        mask &= frame["listed_month"].astype(str).eq(state.month)
+    if state.max_age_months is not None:
+        ages = offer_age_months(frame, as_of=as_of)
+        mask &= ages.notna() & ages.le(float(state.max_age_months))
     return frame.loc[mask].reset_index(drop=True)
 
 

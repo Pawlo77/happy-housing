@@ -106,9 +106,10 @@ FILTER_HELP: dict[str, str] = {
         "Cap asking zł/m². Hard budget filter on price attractiveness; "
         "does not change livability overlays."
     ),
-    "month": (
-        "Filter by listed_month. Fresher asks ≈ current market; stale asks "
-        "may be mispriced or less liquid."
+    "max_age_months": (
+        "Keep offers no older than this many months (from listed_at / "
+        "listed_month). Fresher asks ≈ current market; stale asks may be "
+        "mispriced or less liquid. Max = no age filter."
     ),
 }
 """Explore sidebar filter help texts."""
