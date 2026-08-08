@@ -62,6 +62,7 @@ from happy_housing.app.explore_nav import (
 from happy_housing.app.filters import FilterState, apply_filters, apply_starred_only
 from happy_housing.app.llm_metrics import llm_metrics_path
 from happy_housing.app.map_layers import LayerFlags
+from happy_housing.app.map_marker_shapes import map_shape_legend_caption
 from happy_housing.app.maps import (
     basemap_style,
     build_explore_layers,
@@ -380,7 +381,8 @@ def _tab_map(
         "Transit uses real GTFS departures at the selected hour. "
         "Traffic is a diurnal mobility proxy (not live sensors). "
         "Parks from UM Warszawa PLACE_SKWERY (testmapa). "
-        "Lden bands from EEA END major-airport contours. Hover pins for details."
+        "Lden bands from EEA END major-airport contours. Hover pins for details. "
+        + map_shape_legend_caption()
     )
     if filtered.empty and flags.offers:
         st.warning("No offers match filters — disable Offers or widen filters.")

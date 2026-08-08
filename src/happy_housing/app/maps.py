@@ -18,6 +18,7 @@ from happy_housing.app.map_layers import (
     prepare_transit_for_hour,
     traffic_weights_for_hour,
 )
+from happy_housing.app.map_marker_shapes import marker_icon
 from happy_housing.app.spatial_insights import prepare_spatial_points
 
 logger = logging.getLogger(__name__)
@@ -98,6 +99,36 @@ def _scatter(
     )
 
 
+def _icon(
+    data: pd.DataFrame,
+    *,
+    layer_id: str,
+    kind: str,
+    fill_color: list[int],
+    size: float | str = 26,
+    size_min_pixels: int = 14,
+    size_max_pixels: int = 36,
+) -> pdk.Layer | None:
+    """IconLayer with a fixed silhouette for ``kind`` (shops, police, …)."""
+    if data.empty:
+        return None
+    work = data.copy()
+    icon = marker_icon(kind, fill_color)
+    work["icon"] = [icon] * len(work)
+    return pdk.Layer(
+        "IconLayer",
+        data=work,
+        get_position="[lon, lat]",
+        get_icon="icon",
+        get_size=size,
+        size_units="pixels",
+        size_min_pixels=size_min_pixels,
+        size_max_pixels=size_max_pixels,
+        pickable=True,
+        id=layer_id,
+    )
+
+
 def listings_scatter_layer(frame: pd.DataFrame) -> pdk.Layer | None:
     """Scatterplot of filtered offers coloured by listing-model delta."""
     map_df = prepare_listings_for_map(frame)
@@ -120,7 +151,7 @@ def amenity_layers(
     show_fire: bool = True,
     show_police: bool = True,
 ) -> list[pdk.Layer]:
-    """Toggleable OSM amenity scatters with readable pixel radii."""
+    """Toggleable OSM amenity markers with distinct silhouettes per type."""
     if amenities.empty or "amenity" not in amenities.columns:
         return []
     pts = amenities.copy()
@@ -144,13 +175,14 @@ def amenity_layers(
             else kind
         )
         subset["tooltip_detail"] = f"Amenity · {kind.replace('_', ' ')}"
-        layer = _scatter(
+        layer = _icon(
             subset,
             layer_id=f"amenity-{kind}",
+            kind=kind,
             fill_color=rgba,
-            radius=55,
-            radius_min_pixels=4,
-            radius_max_pixels=9,
+            size=28,
+            size_min_pixels=16,
+            size_max_pixels=34,
         )
         if layer is not None:
             layers.append(layer)
@@ -254,15 +286,16 @@ def aircraft_noise_layers(
 
 
 def shops_layer(shops: pd.DataFrame) -> pdk.Layer | None:
-    """Retail / supermarket points."""
+    """Retail / supermarket points (square markers)."""
     prepared = prepare_shops_for_map(shops)
-    return _scatter(
+    return _icon(
         prepared,
         layer_id="shops",
+        kind="shop",
         fill_color=[124, 58, 237, 200],
-        radius=50,
-        radius_min_pixels=3,
-        radius_max_pixels=8,
+        size=22,
+        size_min_pixels=12,
+        size_max_pixels=28,
     )
 
 
@@ -290,17 +323,19 @@ def transit_layers(
             id="transit-heat",
         )
     ]
-    top = prepared.head(180)
-    scatter = _scatter(
+    top = prepared.head(180).copy()
+    top["icon_size"] = (14.0 + top["n_departures"].astype(float) * 0.15).clip(16, 34)
+    icons = _icon(
         top,
         layer_id="transit-stops",
+        kind="transit",
         fill_color=[14, 116, 144, 210],
-        radius="radius",
-        radius_min_pixels=3,
-        radius_max_pixels=11,
+        size="icon_size",
+        size_min_pixels=14,
+        size_max_pixels=34,
     )
-    if scatter is not None:
-        layers.append(scatter)
+    if icons is not None:
+        layers.append(icons)
     return layers
 
 
@@ -324,7 +359,7 @@ def traffic_heatmap_layer(sample: pd.DataFrame, *, hour: int) -> pdk.Layer | Non
 
 
 def air_stations_layer(stations: pd.DataFrame) -> pdk.Layer | None:
-    """GIOŚ air-quality station markers."""
+    """GIOŚ air-quality station markers (hexagon)."""
     prepared = prepare_point_layer(
         stations,
         lat_col="lat",
@@ -333,18 +368,19 @@ def air_stations_layer(stations: pd.DataFrame) -> pdk.Layer | None:
         detail="air station (distance feature in model)",
         layer_label="Air",
     )
-    return _scatter(
+    return _icon(
         prepared,
         layer_id="air",
+        kind="air",
         fill_color=[22, 163, 74, 220],
-        radius=60,
-        radius_min_pixels=4,
-        radius_max_pixels=10,
+        size=30,
+        size_min_pixels=16,
+        size_max_pixels=36,
     )
 
 
 def gunb_layer(points: pd.DataFrame) -> pdk.Layer | None:
-    """GUNB construction / permit markers."""
+    """GUNB construction / permit markers (star)."""
     name_col = (
         "adres"
         if "adres" in points.columns
@@ -362,13 +398,14 @@ def gunb_layer(points: pd.DataFrame) -> pdk.Layer | None:
         detail="construction / permit proxy",
         layer_label="GUNB",
     )
-    return _scatter(
+    return _icon(
         prepared,
         layer_id="gunb",
+        kind="gunb",
         fill_color=[161, 98, 7, 210],
-        radius=55,
-        radius_min_pixels=3,
-        radius_max_pixels=9,
+        size=26,
+        size_min_pixels=14,
+        size_max_pixels=32,
     )
 
 
@@ -382,16 +419,17 @@ def commute_target_layer(lon: float, lat: float) -> pdk.Layer:
             "tooltip_detail": "Commute target used by the model",
         }
     ])
-    layer = _scatter(
+    layer = _icon(
         data,
         layer_id="commute-target",
+        kind="commute",
         fill_color=[15, 23, 42, 230],
-        radius=70,
-        radius_min_pixels=5,
-        radius_max_pixels=12,
+        size=36,
+        size_min_pixels=22,
+        size_max_pixels=44,
     )
     if layer is None:
-        msg = "commute target scatter unexpectedly empty"
+        msg = "commute target icon unexpectedly empty"
         raise RuntimeError(msg)
     return layer
 
@@ -406,16 +444,17 @@ def focus_marker_layer(lat: float, lon: float) -> pdk.Layer:
             "tooltip_detail": "Focus pin",
         }
     ])
-    layer = _scatter(
+    layer = _icon(
         data,
         layer_id="focus",
+        kind="focus",
         fill_color=[15, 15, 15, 240],
-        radius=65,
-        radius_min_pixels=5,
-        radius_max_pixels=12,
+        size=38,
+        size_min_pixels=24,
+        size_max_pixels=48,
     )
     if layer is None:
-        msg = "focus marker scatter unexpectedly empty"
+        msg = "focus marker icon unexpectedly empty"
         raise RuntimeError(msg)
     return layer
 
