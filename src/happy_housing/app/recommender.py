@@ -17,6 +17,11 @@ from happy_housing.app.preferences import (
     UserPreferences,
     apply_preferences,
 )
+from happy_housing.gis.amenity_catalog import (
+    RECOMMENDER_DIST_CAP_M,
+    amenity_keys,
+    dist_column,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -109,10 +114,14 @@ def score_offers(
     demotion_alpha: float,
     impressions: dict[str, dict[str, Any]],
     prefs: UserPreferences | None = None,
+    amenity_weights: dict[str, float] | None = None,
 ) -> pd.DataFrame:
-    """Rank offers by bargain + proximity (+ soft prefs) with seen-demotion.
+    """Rank offers by bargain + proximity (+ soft prefs / amenity weights).
 
     When ``prefs.enabled``, hard-filters first via ``apply_preferences``.
+    Non-zero ``amenity_weights`` nudge score by proximity to each type
+    (positive = prefer near, negative = prefer far), capped at
+    ``RECOMMENDER_DIST_CAP_M``.
     """
     work = frame
     if prefs is not None and prefs.enabled:
@@ -139,8 +148,22 @@ def score_offers(
     noise_bonus = pd.Series(0.0, index=work.index, dtype=float)
     if prefs is not None and prefs.oou == OOU_PREFER_OUTSIDE:
         noise_bonus = (1.0 - _col(work, "in_oou").fillna(0.0).clip(0.0, 1.0)) * 0.15
+    amenity_bonus = pd.Series(0.0, index=work.index, dtype=float)
+    weights = amenity_weights or {}
+    cap = float(RECOMMENDER_DIST_CAP_M)
+    for key in amenity_keys():
+        weight = float(weights.get(key, 0.0) or 0.0)
+        if abs(weight) < 1e-9:
+            continue
+        dist = _col(work, dist_column(key))
+        prox = (1.0 - (dist.fillna(cap) / cap)).clip(0.0, 1.0)
+        amenity_bonus = amenity_bonus + (0.20 * weight * prox)
     base = (
-        0.50 * bargain + 0.25 * commute_score + 0.20 * transit_score + noise_bonus
+        0.50 * bargain
+        + 0.25 * commute_score
+        + 0.20 * transit_score
+        + noise_bonus
+        + amenity_bonus
     ).clip(0.0, 1.0)
     counts = (
         work["listing_id"]
@@ -167,6 +190,7 @@ def retrain_recommender(
     top_n: int,
     demotion_alpha: float,
     prefs: UserPreferences | None = None,
+    amenity_weights: dict[str, float] | None = None,
 ) -> dict[str, float]:
     """Rescore the universe, persist metrics, return summary stats."""
     impressions = load_impressions(impressions_path(processed_dir))
@@ -175,6 +199,7 @@ def retrain_recommender(
         demotion_alpha=demotion_alpha,
         impressions=impressions,
         prefs=prefs,
+        amenity_weights=amenity_weights,
     )
     top = ranked.head(max(1, int(top_n)))
     unseen = 0
@@ -206,6 +231,7 @@ def top_recommendations(
     top_n: int,
     demotion_alpha: float,
     prefs: UserPreferences | None = None,
+    amenity_weights: dict[str, float] | None = None,
     record: bool = True,
 ) -> pd.DataFrame:
     """Return top-N ranked listing rows; optionally record impressions + metrics."""
@@ -215,6 +241,7 @@ def top_recommendations(
         demotion_alpha=demotion_alpha,
         impressions=impressions,
         prefs=prefs,
+        amenity_weights=amenity_weights,
     )
     top = ranked.head(max(0, int(top_n)))
     if top.empty:
@@ -227,6 +254,7 @@ def top_recommendations(
             top_n=top_n,
             demotion_alpha=demotion_alpha,
             prefs=prefs,
+            amenity_weights=amenity_weights,
         )
     ids = top["listing_id"].tolist()
     conf_map = dict(zip(top["listing_id"], top["confidence"], strict=True))

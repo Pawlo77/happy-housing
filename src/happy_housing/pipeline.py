@@ -60,7 +60,11 @@ from happy_housing.ingest.gunb import download_gunb_mazowieckie, gunb_points_gdf
 from happy_housing.ingest.market import ensure_market_primary
 from happy_housing.ingest.otodom import scrape_otodom_warsaw
 from happy_housing.ingest.rcn import extract_rcn_transactions
-from happy_housing.ingest.warsaw_map import fetch_warsaw_parks, fetch_warsaw_schools
+from happy_housing.ingest.warsaw_map import (
+    fetch_warsaw_city_pois,
+    fetch_warsaw_parks,
+    fetch_warsaw_schools,
+)
 from happy_housing.models.metrics import coerce_opt_metric
 from happy_housing.models.neighborhood import attach_neighborhood_rcn_features
 from happy_housing.models.train import (
@@ -311,6 +315,10 @@ def run_pipeline(
         cache,
         fixture_path=fixtures / "schools.geojson",
     )
+    city_pois = fetch_warsaw_city_pois(
+        cache,
+        fixture_path=fixtures / "city_pois.geojson",
+    )
 
     commute = resolve_commute_target(app_settings, config)
     logger.info(
@@ -331,6 +339,7 @@ def run_pipeline(
         parks=parks,
         schools=schools,
         shops=shops,
+        city_pois=city_pois,
         aircraft_lden_path=fixtures / "chopin_aircraft_lden.geojson",
         aircraft_lnight_path=fixtures / "chopin_aircraft_lnight.geojson",
         road_lden_path=road_lden_path if road_lden_path.exists() else None,

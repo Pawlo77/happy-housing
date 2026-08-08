@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import geopandas as gpd
 import numpy as np
 import pandas as pd
 
@@ -73,6 +74,8 @@ class LayerFlags:
     """GUNB construction / permit points."""
     parks: bool = False
     """UM Warszawa parks / squares (PLACE_SKWERY)."""
+    city_poi_types: tuple[str, ...] = ()
+    """Selected city / sports / civic object_type keys for map markers."""
     city_boundary: bool = True
     """Warsaw administrative boundary outline."""
     military: bool = True
@@ -90,6 +93,9 @@ MAX_GUNB_MAP_POINTS = 3000
 
 MAX_SHOP_MAP_POINTS = 5000
 """Hard cap for OSM shop markers on the map."""
+
+MAX_CITY_POI_MAP_POINTS = 4000
+"""Hard cap for UM city / sports POI markers on the map."""
 
 _MAP_PAYLOAD_COLUMNS: tuple[str, ...] = (
     "lon",
@@ -286,6 +292,45 @@ def prepare_point_layer(
     out["tooltip_name"] = out[name_col].astype(str).str.slice(0, 80)
     out["tooltip_detail"] = f"{layer_label} · {detail}"
     out["layer_label"] = layer_label
+    return slim_map_frame(out)
+
+
+def prepare_city_pois_for_map(
+    frame: gpd.GeoDataFrame | pd.DataFrame,
+    *,
+    object_types: frozenset[str] | set[str] | tuple[str, ...],
+    max_points: int = MAX_CITY_POI_MAP_POINTS,
+) -> pd.DataFrame:
+    """Filter city POIs by ``object_type`` and slim for IconLayer."""
+    if frame is None or getattr(frame, "empty", True):
+        return pd.DataFrame()
+    if not object_types:
+        return pd.DataFrame()
+    out = frame.copy()
+    if "object_type" not in out.columns:
+        return pd.DataFrame()
+    wanted = {str(t) for t in object_types}
+    out = out.loc[out["object_type"].astype(str).isin(wanted)]
+    if out.empty:
+        return pd.DataFrame()
+    if "geometry" in out.columns:
+        out["lon"] = out.geometry.x
+        out["lat"] = out.geometry.y
+    out["lat"] = pd.to_numeric(out.get("lat"), errors="coerce")
+    out["lon"] = pd.to_numeric(out.get("lon"), errors="coerce")
+    out = out.dropna(subset=["lat", "lon"])
+    out = limit_map_points(out, max_points)
+    if out.empty:
+        return out
+    name = (
+        out["name"].fillna("POI").astype(str)
+        if "name" in out.columns
+        else pd.Series("POI", index=out.index)
+    )
+    kind = out["object_type"].astype(str)
+    out["tooltip_name"] = name.str.slice(0, 80)
+    out["tooltip_detail"] = "City map · " + kind.str.replace("_", " ", regex=False)
+    out["layer_label"] = kind
     return slim_map_frame(out)
 
 

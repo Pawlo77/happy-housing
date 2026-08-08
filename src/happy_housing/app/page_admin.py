@@ -7,6 +7,7 @@ import subprocess  # nosec B404 — Admin runs fixed local pipeline/scrape comma
 import sys
 from pathlib import Path
 
+import pandas as pd
 import streamlit as st
 
 from happy_housing.app.ai_review import (
@@ -744,6 +745,11 @@ def _tab_stars_news(settings: AppSettings, settings_file: Path, proc: Path) -> N
 
 def _tab_recommender(settings: AppSettings, settings_file: Path, proc: Path) -> None:
     """Bargain recommender retrain and impression memory."""
+    from happy_housing.gis.amenity_catalog import (
+        AMENITY_TYPES,
+        coerce_amenity_weights,
+    )
+
     metrics = load_recommender_metrics(proc)
     impressions = load_impressions(impressions_path(proc))
     m1, m2, m3, m4 = st.columns(4)
@@ -770,17 +776,61 @@ def _tab_recommender(settings: AppSettings, settings_file: Path, proc: Path) -> 
         key="settings_rec_alpha",
         help="Higher → already-seen offers rank lower (soft, not excluded).",
     )
+    st.markdown("#### Amenity polarity & weight")
+    st.caption(
+        "Positive = prefer offers near this type; negative = prefer far. "
+        "Magnitude -1..+1. Distance soft-cap 2 km. "
+        "Sports from mapa.um.warszawa.pl/obiekty-sportowe; civic WFS; "
+        "EV charging is OSM (not on the city portal)."
+    )
+    weights = coerce_amenity_weights(settings.recommender_amenity_weights)
+    weight_rows = [
+        {
+            "group": t.group,
+            "type": t.key,
+            "label": t.label,
+            "weight": float(weights.get(t.key, 0.0)),
+        }
+        for t in AMENITY_TYPES
+    ]
+    edited = st.data_editor(
+        pd.DataFrame(weight_rows),
+        hide_index=True,
+        width="stretch",
+        column_config={
+            "group": st.column_config.TextColumn("Group", disabled=True),
+            "type": st.column_config.TextColumn("Key", disabled=True),
+            "label": st.column_config.TextColumn("Object type", disabled=True),
+            "weight": st.column_config.NumberColumn(
+                "Weight (-1..+1)",
+                min_value=-1.0,
+                max_value=1.0,
+                step=0.05,
+                format="%.2f",
+            ),
+        },
+        disabled=["group", "type", "label"],
+        key="settings_rec_amenity_weights",
+    )
+    new_weights = {
+        str(row["type"]): float(row["weight"])
+        for _, row in edited.iterrows()
+        if "type" in row and "weight" in row
+    }
+    new_weights = coerce_amenity_weights(new_weights)
     r1, r2, r3 = st.columns(3)
     with r1:
         if st.button("Save recommender settings", key="save_rec_settings"):
             settings.recommender_top_n = int(top_n)
             settings.recommender_demotion_alpha = float(alpha)
+            settings.recommender_amenity_weights = new_weights
             save_app_settings(settings_file, settings)
             st.success("Recommender settings saved.")
     with r2:
         if st.button("Retrain recommendation model", type="primary", key="retrain_rec"):
             settings.recommender_top_n = int(top_n)
             settings.recommender_demotion_alpha = float(alpha)
+            settings.recommender_amenity_weights = new_weights
             save_app_settings(settings_file, settings)
             try:
                 frame = load_scored()
@@ -795,6 +845,7 @@ def _tab_recommender(settings: AppSettings, settings_file: Path, proc: Path) -> 
                         top_n=int(top_n),
                         demotion_alpha=float(alpha),
                         prefs=prefs,
+                        amenity_weights=new_weights,
                     )
                 st.success(
                     f"Retrained · {int(out['n_recommended'])} of "

@@ -67,6 +67,7 @@ def enrich_board_recommendations(
     impressions: dict[str, dict[str, Any]],
     demotion_alpha: float,
     prefs: UserPreferences | None = None,
+    amenity_weights: dict[str, float] | None = None,
 ) -> pd.DataFrame:
     """Attach recommender confidence and seen flags for board display/sort."""
     if frame.empty or "listing_id" not in frame.columns:
@@ -83,6 +84,7 @@ def enrich_board_recommendations(
         demotion_alpha=demotion_alpha,
         impressions=impressions,
         prefs=prefs,
+        amenity_weights=amenity_weights,
     )
     conf = ranked.set_index("listing_id")["confidence"]
     work["confidence"] = work["listing_id"].map(conf).astype(float)

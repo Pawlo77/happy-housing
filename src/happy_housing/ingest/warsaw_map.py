@@ -1,9 +1,11 @@
-"""UM Warszawa map portal WFS client (testmapa / mapa.um.warszawa.pl).
+"""UM Warszawa map portal WFS + MapViewer client (mapa.um.warszawa.pl).
 
 Parks & squares live in ``PLACE_SKWERY``; education POIs / catchments come from
 WFS layers matching school / oświata keywords (see ``SCHOOL_TYPE_NAME_CANDIDATES``).
-Strategic noise maps are WMS-only today — aircraft Lden still comes from EEA END
-fixtures elsewhere.
+Sports objects (gyms, pools, …) come from Oracle MapViewer dataserver used by
+``/obiekty-sportowe/``. Other civic POIs (libraries, pharmacies, …) are WFS
+typeNames. Strategic noise maps are WMS-only — aircraft Lden still comes from
+EEA END fixtures elsewhere.
 """
 
 from __future__ import annotations
@@ -14,7 +16,11 @@ import re
 from pathlib import Path
 
 import geopandas as gpd
+import pandas as pd
 import requests
+from shapely.geometry import shape
+
+from happy_housing.gis.amenity_catalog import sport_key_for_osrid
 
 logger = logging.getLogger(__name__)
 
@@ -53,8 +59,42 @@ WARSAW_LAYER_REGISTRY: dict[str, dict[str, str]] = {
     "schools": {
         "cache_name": "warsaw_schools.geojson",
     },
+    "city_pois": {
+        "cache_name": "warsaw_city_pois.geojson",
+    },
 }
 """Named layers → default cache file (and parks typeName)."""
+
+WARSAW_MAPVIEWER_DATASERVER: str = (
+    "https://testmapa.um.warszawa.pl/mapviewer/dataserver"
+)
+"""Oracle MapViewer GeoJSON dataserver (sports portal backend)."""
+
+SPORTS_SQL: str = (
+    "select ws.ID, ws.SHAPE, ws.DZIELNICA, ws.OSRID, ws.OSRNAZWASKROCONA "
+    "from OBIEKTY_SPORTOWE_MAPA_V ws "
+    "WHERE ws.ROK_WYLACZENIA IS NULL AND ws.OSRID not in (32,31,66)"
+)
+"""JDBC theme SQL matching the public sports map portal."""
+
+ICE_RINKS_SQL: str = "select * from LODOWISKA_MAPA_V"
+"""Seasonal ice rinks theme (MapViewer ``edytor`` datasource)."""
+
+# Civic WFS layers → amenity catalog keys (point-ish POIs).
+WARSAW_CIVIC_WFS_LAYERS: tuple[tuple[str, str, str], ...] = (
+    ("library", "ns92528565:BIBLIOTEKI", "library"),
+    ("pharmacy", "wfs:APTEKI", "pharmacy"),
+    ("bike_share", "wfs:STACJE_ROWEROWE", "bike station"),
+    ("park_and_ride", "wfs:PARKINGI_PARK_AND_RIDE", "P+R"),
+    ("hotel", "wfs:HOTELE", "hotel"),
+    ("theater", "wfs:TEATRY", "theatre"),
+    ("police_um", "wfs:POLICJA", "police"),
+    ("cemetery", "ns92528565:CMENTARZE", "cemetery"),
+    ("dormitory", "wfs:AKADEMIKI", "dormitory"),
+    ("metro_entrance", "wfs:METRO_WEJSCIA", "metro entrance"),
+    ("senior_club", "ns92528565:KLUBY_SENIORA", "senior club"),
+)
+"""``(object_type, WFS typeName, default name)`` civic layers."""
 
 
 def normalize_warsaw_crs(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
@@ -296,3 +336,314 @@ def fetch_warsaw_schools(
         return frame
 
     return gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
+
+
+def _geojson_features_to_gdf(payload: dict[str, object]) -> gpd.GeoDataFrame:
+    """Parse MapViewer FeatureCollection JSON into EPSG:4326 GeoDataFrame."""
+    features = payload.get("features") or []
+    if not isinstance(features, list) or not features:
+        return gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
+    rows: list[dict[str, object]] = []
+    geoms = []
+    for feat in features:
+        if not isinstance(feat, dict):
+            continue
+        raw_props = feat.get("properties") or {}
+        props: dict[str, object] = (
+            dict(raw_props) if isinstance(raw_props, dict) else {}
+        )
+        fid = feat.get("_id")
+        if fid is not None and "ID" not in props:
+            props["ID"] = fid
+        geom = feat.get("geometry")
+        if not geom:
+            continue
+        try:
+            parsed = shape(geom)
+        except (TypeError, ValueError) as exc:
+            logger.debug("Skip MapViewer feature geometry: %s", exc)
+            continue
+        geoms.append(parsed)
+        rows.append(props)
+    if not rows:
+        return gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
+    frame = gpd.GeoDataFrame(rows, geometry=geoms, crs="EPSG:4326")
+    return frame[frame.geometry.notna() & ~frame.geometry.is_empty]
+
+
+def fetch_mapviewer_jdbc_theme(
+    *,
+    datasource: str,
+    theme: str,
+    sql: str,
+    id_col: str = "ID",
+    geom_col: str = "SHAPE",
+    jdbc_srid: int = 2178,
+    to_srid: int = 4326,
+    dataserver_base: str = WARSAW_MAPVIEWER_DATASERVER,
+    timeout_s: float = _DEFAULT_TIMEOUT_S,
+) -> gpd.GeoDataFrame:
+    """Fetch a MapViewer JDBC theme as GeoJSON features (EPSG:4326)."""
+    url = f"{dataserver_base.rstrip('/')}/{datasource}"
+    try:
+        response = requests.get(
+            url,
+            params={
+                "t": theme,
+                "sql": sql,
+                "id_col": id_col,
+                "geom_col": geom_col,
+                "jdbc_srid": str(jdbc_srid),
+                "to_srid": str(to_srid),
+                "include_label_box": "true",
+            },
+            timeout=timeout_s,
+            headers={"User-Agent": "happy-housing/1.0"},
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if isinstance(payload, dict) and payload.get("mds_error"):
+            logger.warning(
+                "MapViewer dataserver error theme=%s: %s",
+                theme,
+                payload.get("mds_error"),
+            )
+            return gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
+        frame = _geojson_features_to_gdf(payload)
+        logger.info("MapViewer theme=%s returned %s features", theme, len(frame))
+        return frame
+    except Exception as exc:
+        logger.warning("MapViewer theme=%s failed: %s", theme, exc)
+        return gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
+
+
+def _normalize_sports_frame(frame: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Attach ``object_type`` / ``name`` from sports OSRID attributes."""
+    if frame.empty:
+        return gpd.GeoDataFrame(
+            columns=["object_type", "name", "source", "geometry"],
+            geometry=[],
+            crs="EPSG:4326",
+        )
+    out = frame.copy()
+    if "OSRID" in out.columns:
+        out["object_type"] = out["OSRID"].map(sport_key_for_osrid)
+    else:
+        out["object_type"] = None
+    name_series = None
+    for candidate in ("OSRNAZWASKROCONA", "NAZWA_SERWIS", "LABEL", "name"):
+        if candidate in out.columns:
+            name_series = out[candidate].astype(str)
+            break
+    if name_series is None:
+        name_series = (
+            out["object_type"]
+            .fillna("sport")
+            .astype(str)
+            .str.replace("_", " ", regex=False)
+        )
+    out["name"] = name_series
+    out["source"] = "sports"
+    out = out[out["object_type"].notna()]
+    keep = ["object_type", "name", "source", "geometry"]
+    return gpd.GeoDataFrame(out[keep], geometry="geometry", crs="EPSG:4326")
+
+
+def fetch_warsaw_sports_objects(
+    *,
+    force_refresh: bool = False,
+    dataserver_base: str = WARSAW_MAPVIEWER_DATASERVER,
+    timeout_s: float = _DEFAULT_TIMEOUT_S,
+    fixture_path: Path | None = None,
+) -> gpd.GeoDataFrame:
+    """Download sports + ice-rink POIs from the city sports map backend.
+
+    Args:
+        force_refresh: Unused here (caller caches combined city POIs).
+        dataserver_base: MapViewer dataserver root.
+        timeout_s: HTTP timeout.
+        fixture_path: Offline GeoJSON fallback.
+
+    Returns:
+        Points with ``object_type``, ``name``, ``source`` in EPSG:4326.
+    """
+    del force_refresh  # combined cache owns refresh; keep API symmetric
+    sports = fetch_mapviewer_jdbc_theme(
+        datasource="dane_wawa",
+        theme="obiekty-sportowe",
+        sql=SPORTS_SQL,
+        id_col="ID",
+        geom_col="SHAPE",
+        dataserver_base=dataserver_base,
+        timeout_s=timeout_s,
+    )
+    ice = fetch_mapviewer_jdbc_theme(
+        datasource="edytor",
+        theme="lodowiska",
+        sql=ICE_RINKS_SQL,
+        id_col="OBJECTID",
+        geom_col="SHAPE",
+        dataserver_base=dataserver_base,
+        timeout_s=timeout_s,
+    )
+    parts = [_normalize_sports_frame(sports), _normalize_sports_frame(ice)]
+    parts = [p for p in parts if not p.empty]
+    if parts:
+        return gpd.GeoDataFrame(
+            pd.concat(parts, ignore_index=True),
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+    if fixture_path is not None and fixture_path.exists():
+        logger.warning("Using sports fixture %s", fixture_path)
+        loaded = gpd.read_file(fixture_path)
+        if loaded.crs is None:
+            loaded = loaded.set_crs("EPSG:4326")
+        elif str(loaded.crs) != "EPSG:4326":
+            loaded = loaded.to_crs("EPSG:4326")
+        if "object_type" not in loaded.columns:
+            loaded = _normalize_sports_frame(loaded)
+        return loaded
+    return gpd.GeoDataFrame(
+        columns=["object_type", "name", "source", "geometry"],
+        geometry=[],
+        crs="EPSG:4326",
+    )
+
+
+def _civic_layer_to_pois(
+    frame: gpd.GeoDataFrame,
+    *,
+    object_type: str,
+    default_name: str,
+) -> gpd.GeoDataFrame:
+    """Normalize one WFS civic layer to city-POI schema (centroids)."""
+    if frame.empty:
+        return gpd.GeoDataFrame(
+            columns=["object_type", "name", "source", "geometry"],
+            geometry=[],
+            crs="EPSG:4326",
+        )
+    out = _ensure_name_column(frame, default_name)
+    if out.crs is None:
+        out = out.set_crs("EPSG:4326")
+    elif str(out.crs) != "EPSG:4326":
+        out = out.to_crs("EPSG:4326")
+    # Centroids for polygons
+    geom_types = set(out.geometry.geom_type.unique())
+    if not geom_types <= {"Point", "MultiPoint"}:
+        projected = out.to_crs("EPSG:2180")
+        out = out.copy()
+        out["geometry"] = projected.geometry.centroid.to_crs("EPSG:4326")
+    out["object_type"] = object_type
+    out["source"] = "wfs"
+    return gpd.GeoDataFrame(
+        out[["object_type", "name", "source", "geometry"]],
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+
+
+def fetch_warsaw_civic_pois(
+    cache_dir: Path,
+    *,
+    force_refresh: bool = False,
+    wfs_url: str = WARSAW_WFS_URL,
+    timeout_s: float = _DEFAULT_TIMEOUT_S,
+) -> gpd.GeoDataFrame:
+    """Download civic WFS POI layers and normalize to city-POI schema."""
+    parts: list[gpd.GeoDataFrame] = []
+    for object_type, type_name, default_name in WARSAW_CIVIC_WFS_LAYERS:
+        cache_name = f"warsaw_civic_{object_type}.geojson"
+        frame = fetch_warsaw_wfs_layer(
+            cache_dir,
+            type_name=type_name,
+            cache_name=cache_name,
+            force_refresh=force_refresh,
+            wfs_url=wfs_url,
+            timeout_s=timeout_s,
+            default_name=default_name,
+        )
+        parts.append(
+            _civic_layer_to_pois(
+                frame, object_type=object_type, default_name=default_name
+            )
+        )
+    parts = [p for p in parts if not p.empty]
+    if not parts:
+        return gpd.GeoDataFrame(
+            columns=["object_type", "name", "source", "geometry"],
+            geometry=[],
+            crs="EPSG:4326",
+        )
+    return gpd.GeoDataFrame(
+        pd.concat(parts, ignore_index=True),
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+
+
+def fetch_warsaw_city_pois(
+    cache_dir: Path,
+    *,
+    fixture_path: Path | None = None,
+    force_refresh: bool = False,
+    wfs_url: str = WARSAW_WFS_URL,
+    dataserver_base: str = WARSAW_MAPVIEWER_DATASERVER,
+    timeout_s: float = _DEFAULT_TIMEOUT_S,
+) -> gpd.GeoDataFrame:
+    """Sports + civic city POIs; cache as ``warsaw_city_pois.geojson``.
+
+    Args:
+        cache_dir: Cache directory.
+        fixture_path: Offline combined GeoJSON fallback.
+        force_refresh: Ignore combined cache.
+        wfs_url: Civic WFS endpoint.
+        dataserver_base: Sports MapViewer dataserver.
+        timeout_s: HTTP timeout.
+
+    Returns:
+        Points with ``object_type``, ``name``, ``source`` columns.
+    """
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_path = cache_dir / WARSAW_LAYER_REGISTRY["city_pois"]["cache_name"]
+    if not force_refresh and cache_path.exists():
+        return gpd.read_file(cache_path)
+
+    sports = fetch_warsaw_sports_objects(
+        dataserver_base=dataserver_base,
+        timeout_s=timeout_s,
+        fixture_path=None,
+    )
+    civic = fetch_warsaw_civic_pois(
+        cache_dir,
+        force_refresh=force_refresh,
+        wfs_url=wfs_url,
+        timeout_s=timeout_s,
+    )
+    parts = [p for p in (sports, civic) if not p.empty]
+    if parts:
+        frame = gpd.GeoDataFrame(
+            pd.concat(parts, ignore_index=True),
+            geometry="geometry",
+            crs="EPSG:4326",
+        )
+    else:
+        frame = gpd.GeoDataFrame(
+            columns=["object_type", "name", "source", "geometry"],
+            geometry=[],
+            crs="EPSG:4326",
+        )
+
+    if frame.empty and fixture_path is not None and fixture_path.exists():
+        logger.warning("Using city POI fixture %s", fixture_path)
+        frame = gpd.read_file(fixture_path)
+        if frame.crs is None:
+            frame = frame.set_crs("EPSG:4326")
+        elif str(frame.crs) != "EPSG:4326":
+            frame = frame.to_crs("EPSG:4326")
+
+    if not frame.empty:
+        frame.to_file(cache_path, driver="GeoJSON")
+        logger.info("Cached %s city POIs → %s", len(frame), cache_path)
+    return frame

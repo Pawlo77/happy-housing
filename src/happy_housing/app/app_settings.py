@@ -8,6 +8,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from happy_housing.app.io_cache import read_json
+from happy_housing.gis.amenity_catalog import coerce_amenity_weights
 from happy_housing.models.metrics import coerce_opt_metric
 
 logger = logging.getLogger(__name__)
@@ -101,6 +102,8 @@ class AppSettings:
     """How many promising offers to surface after retrain."""
     recommender_demotion_alpha: float = 1.0
     """Soft-demotion strength for already-seen recommendations."""
+    recommender_amenity_weights: dict[str, float] | None = None
+    """Per-amenity score weights (-1..+1); None -> catalog defaults (all 0)."""
     stats_min_district_offers: int = 5
     """Minimum offers before a district appears on Stats scoreboards."""
     stats_top_n: int = 15
@@ -371,6 +374,12 @@ def load_app_settings(path: Path) -> AppSettings:
                     defaults.recommender_demotion_alpha,
                 )
             ),
+        ),
+        recommender_amenity_weights=coerce_amenity_weights(
+            payload.get(
+                "recommender_amenity_weights",
+                defaults.recommender_amenity_weights,
+            )
         ),
         stats_min_district_offers=max(
             1,

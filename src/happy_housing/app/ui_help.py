@@ -80,6 +80,12 @@ LAYER_HELP: dict[str, str] = {
         "Closer green space raises day-to-day livability and often supports "
         "price; dist_park_m is a model feature and Prefs can cap max distance."
     ),
+    "city_poi_types": (
+        "UM sports objects (mapa.um.warszawa.pl/obiekty-sportowe) plus civic "
+        "WFS POIs (libraries, pharmacies, bike-share, …). Multiselect filters "
+        "which types draw; default gyms + swimming pools. Admin -> Recommendations "
+        "sets +/- weights that nudge the bargain recommender by proximity."
+    ),
     "city_boundary": (
         "Warsaw city administrative outline (OSM). Context only — shows where "
         "offers sit relative to the city edge."

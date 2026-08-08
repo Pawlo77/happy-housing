@@ -21,6 +21,7 @@ from happy_housing.app.chat_tools import ChatToolContext
 from happy_housing.app.explore_nav import open_explore_offer
 from happy_housing.app.llm_metrics import llm_metrics_path
 from happy_housing.app.preferences import UserPreferences, preferences_path
+from happy_housing.gis.amenity_catalog import coerce_amenity_weights
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +56,7 @@ def _build_ctx(
         active_listing_id=str(active) if active else None,
         settings_top_n=int(settings.recommender_top_n),
         demotion_alpha=float(settings.recommender_demotion_alpha),
+        amenity_weights=coerce_amenity_weights(settings.recommender_amenity_weights),
         settings=settings,
     )
 

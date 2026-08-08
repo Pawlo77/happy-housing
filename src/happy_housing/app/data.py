@@ -155,6 +155,17 @@ def load_parks() -> gpd.GeoDataFrame:
     return gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
 
 
+def load_city_pois() -> gpd.GeoDataFrame:
+    """Load UM sports + civic city POIs from cache or fixture."""
+    config = load_config()
+    cache = config.data.cache_path() / "warsaw_city_pois.geojson"
+    fixture = config.data.fixtures_path() / "city_pois.geojson"
+    for path in (cache, fixture):
+        if path.exists():
+            return read_geojson_gdf(str(path), path.stat().st_mtime)
+    return gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
+
+
 def _load_zone_fixture(filename: str) -> gpd.GeoDataFrame:
     """Load a zone-overlay GeoJSON fixture, or an empty frame."""
     path = load_config().data.fixtures_path() / filename

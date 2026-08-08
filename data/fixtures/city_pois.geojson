@@ -1,0 +1,32 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "object_type": "gym",
+        "name": "Test Gym",
+        "source": "sports"
+      },
+      "geometry": { "type": "Point", "coordinates": [20.99, 52.23] }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "object_type": "indoor_pool",
+        "name": "Test Pool",
+        "source": "sports"
+      },
+      "geometry": { "type": "Point", "coordinates": [21.01, 52.24] }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "object_type": "library",
+        "name": "Test Library",
+        "source": "wfs"
+      },
+      "geometry": { "type": "Point", "coordinates": [21.00, 52.22] }
+    }
+  ]
+}

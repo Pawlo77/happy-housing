@@ -11,6 +11,8 @@ import geopandas as gpd
 import pandas as pd
 from shapely.geometry import Point
 
+from happy_housing.gis.amenity_catalog import AMENITY_TYPES, dist_column
+
 logger = logging.getLogger(__name__)
 
 AIRCRAFT_LDEN_EXPOSURE_DB: float = 55.0
@@ -383,12 +385,13 @@ def enrich_listings(
     parks: gpd.GeoDataFrame | None = None,
     schools: gpd.GeoDataFrame | None = None,
     shops: gpd.GeoDataFrame | None = None,
+    city_pois: gpd.GeoDataFrame | None = None,
     aircraft_lden_path: Path | None = None,
     aircraft_lnight_path: Path | None = None,
     road_lden_path: Path | None = None,
     rail_lden_path: Path | None = None,
 ) -> gpd.GeoDataFrame:
-    """Attach noise, amenity, park, school, shop, air, transit, GUNB, commute."""
+    """Attach noise, amenity, park, school, shop, city-POI, air, transit, GUNB."""
     gdf = listings_to_gdf(listings)
     lden = (
         load_noise_contours(aircraft_lden_path, "lden_db")
@@ -428,6 +431,7 @@ def enrich_listings(
         ("fire_station", "dist_fire_station_m"),
         ("police", "dist_police_m"),
         ("subway", "dist_metro_m"),
+        ("charging_station", "dist_charging_station_m"),
     )
     for amenity_value, col in amenity_cols:
         if not amenities.empty and "amenity" in amenities.columns:
@@ -459,6 +463,30 @@ def enrich_listings(
         )
     else:
         gdf["dist_shop_m"] = float("nan")
+
+    if (
+        city_pois is not None
+        and not city_pois.empty
+        and "object_type" in city_pois.columns
+    ):
+        typed = _points_for_nearest(city_pois)
+        city_keys = {
+            t.key
+            for t in AMENITY_TYPES
+            if t.source in {"sports", "wfs"} and t.key not in {"school"}
+        }
+        present = set(typed["object_type"].astype(str).unique())
+        for key in sorted(city_keys):
+            col = dist_column(key)
+            if key not in present:
+                gdf[col] = float("nan")
+                continue
+            subset = typed[typed["object_type"].astype(str) == key]
+            gdf = nearest_distance_meters(gdf, subset, projected_crs, col)
+    else:
+        for t in AMENITY_TYPES:
+            if t.source in {"sports", "wfs"} and t.key != "school":
+                gdf[dist_column(t.key)] = float("nan")
 
     if not gios_stations.empty:
         air = gpd.GeoDataFrame(

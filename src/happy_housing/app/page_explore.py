@@ -45,6 +45,7 @@ from happy_housing.app.data import (
     load_airport_areas,
     load_amenities,
     load_city_boundary,
+    load_city_pois,
     load_config,
     load_gios_stations,
     load_gtfs_hourly,
@@ -139,6 +140,12 @@ from happy_housing.app.ui_help import (
     PREF_HELP,
     SPATIAL_METRIC_HELP,
     layer_help,
+)
+from happy_housing.gis.amenity_catalog import (
+    AMENITY_TYPES,
+    DEFAULT_MAP_OBJECT_TYPES,
+    amenity_keys,
+    coerce_amenity_weights,
 )
 from happy_housing.ingest.otodom import fetch_listing_detail, otodom_session
 from happy_housing.models.train import (
@@ -415,6 +422,24 @@ def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
             help=layer_help("commute_target"),
             key="explore_ly_commute",
         ),
+        city_poi_types=(),
+    )
+    label_by_key = {t.key: f"{t.group}: {t.label}" for t in AMENITY_TYPES}
+    default_keys = list(DEFAULT_MAP_OBJECT_TYPES)
+    selected_labels = st.multiselect(
+        "City map objects (UM sports + civic)",
+        options=[label_by_key[k] for k in amenity_keys() if k in label_by_key],
+        default=[label_by_key[k] for k in default_keys if k in label_by_key],
+        help=(
+            "Sports objects from mapa.um.warszawa.pl/obiekty-sportowe plus civic "
+            "WFS layers. Default: gyms + swimming pools. EV charging is OSM "
+            "(use OSM layers / Admin weights)."
+        ),
+        key="explore_ly_city_pois",
+    )
+    label_to_key = {v: k for k, v in label_by_key.items()}
+    flags.city_poi_types = tuple(
+        label_to_key[label] for label in selected_labels if label in label_to_key
     )
     return flags, hour, basemap
 
@@ -448,6 +473,7 @@ def _tab_map(
     military: gpd.GeoDataFrame,
     rail_areas: gpd.GeoDataFrame,
     airport: gpd.GeoDataFrame,
+    city_pois: gpd.GeoDataFrame,
     flags: LayerFlags,
     hour: int,
     basemap: str,
@@ -475,6 +501,7 @@ def _tab_map(
         military=military,
         rail_areas=rail_areas,
         airport=airport,
+        city_pois=city_pois,
         commute_lon=commute_lon,
         commute_lat=commute_lat,
         hour=hour,
@@ -813,6 +840,7 @@ def _tab_offer(
     military: gpd.GeoDataFrame,
     rail_areas: gpd.GeoDataFrame,
     airport: gpd.GeoDataFrame,
+    city_pois: gpd.GeoDataFrame,
     flags: LayerFlags,
     hour: int,
     basemap: str,
@@ -925,6 +953,7 @@ def _tab_offer(
             military=military,
             rail_areas=rail_areas,
             airport=airport,
+            city_pois=city_pois,
             commute_lon=commute_lon,
             commute_lat=commute_lat,
             hour=hour,
@@ -1001,6 +1030,9 @@ def _tab_board(
         impressions=impressions,
         demotion_alpha=float(app_settings.recommender_demotion_alpha),
         prefs=prefs,
+        amenity_weights=coerce_amenity_weights(
+            app_settings.recommender_amenity_weights
+        ),
     )
     labels = [label for _, label in BOARD_SORT_OPTIONS]
     keys = [key for key, _ in BOARD_SORT_OPTIONS]
@@ -1127,6 +1159,9 @@ def _tab_news(
             top_n=int(app_settings.recommender_top_n),
             demotion_alpha=float(app_settings.recommender_demotion_alpha),
             prefs=prefs,
+            amenity_weights=coerce_amenity_weights(
+                app_settings.recommender_amenity_weights
+            ),
             record=False,
         )
         current_ids = (
@@ -1142,6 +1177,9 @@ def _tab_news(
                 top_n=int(app_settings.recommender_top_n),
                 demotion_alpha=float(app_settings.recommender_demotion_alpha),
                 prefs=prefs,
+                amenity_weights=coerce_amenity_weights(
+                    app_settings.recommender_amenity_weights
+                ),
             )
             st.session_state[rec_ids_key] = current_ids
         if promising.empty:
@@ -1580,6 +1618,7 @@ def render_explore() -> None:
     air_stations = load_gios_stations()
     gunb = load_gunb_points()
     parks = load_parks()
+    city_pois = load_city_pois()
     city_boundary = load_city_boundary()
     military = load_military_areas()
     rail_areas = load_rail_areas()
@@ -1605,6 +1644,7 @@ def render_explore() -> None:
         "air_stations": air_stations,
         "gunb": gunb,
         "parks": parks,
+        "city_pois": city_pois,
         "city_boundary": city_boundary,
         "military": military,
         "rail_areas": rail_areas,

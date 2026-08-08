@@ -72,6 +72,8 @@ class ChatToolContext:
     """Default recommendation count."""
     demotion_alpha: float = 1.0
     """Recommender demotion strength."""
+    amenity_weights: dict[str, float] | None = None
+    """Per-amenity recommender weights from Admin."""
     settings: AppSettings | None = None
     """App settings for reviews / model id."""
     pending_open_listing_id: str | None = None
@@ -166,6 +168,7 @@ def recommend_offers(
         top_n=max(1, min(n, 30)),
         demotion_alpha=float(ctx.demotion_alpha),
         prefs=ctx.prefs,
+        amenity_weights=ctx.amenity_weights,
         record=False,
     )
     return [slim_offer_dict(row) for _, row in top.iterrows()]

@@ -13,6 +13,7 @@ import streamlit as st
 from happy_housing.app.commute_target import CommuteTarget, commute_compare_points
 from happy_housing.app.map_layers import (
     LayerFlags,
+    prepare_city_pois_for_map,
     prepare_gunb_for_map,
     prepare_listings_for_map,
     prepare_point_layer,
@@ -222,6 +223,45 @@ def parks_layer(parks: gpd.GeoDataFrame | None) -> pdk.Layer | None:
         detail="UM Warszawa PLACE_SKWERY (testmapa parks/squares)",
         default_name="Park",
     )
+
+
+_CITY_POI_RGBA: tuple[list[int], ...] = (
+    [250, 85, 45, 210],
+    [0, 150, 75, 210],
+    [0, 110, 220, 210],
+    [180, 60, 200, 210],
+    [230, 160, 20, 210],
+    [40, 160, 180, 210],
+)
+"""Rotating fill colours for city / sports POI types."""
+
+
+def city_poi_layers(
+    city_pois: gpd.GeoDataFrame | None,
+    *,
+    object_types: tuple[str, ...] | frozenset[str] | set[str],
+) -> list[pdk.Layer]:
+    """UM sports + civic map objects filtered by catalog keys."""
+    if city_pois is None or city_pois.empty or not object_types:
+        return []
+    layers: list[pdk.Layer] = []
+    for idx, key in enumerate(sorted({str(t) for t in object_types})):
+        prepared = prepare_city_pois_for_map(city_pois, object_types={key})
+        if prepared.empty:
+            continue
+        rgba = _CITY_POI_RGBA[idx % len(_CITY_POI_RGBA)]
+        layer = _icon(
+            prepared,
+            layer_id=f"city-poi-{key}",
+            kind="default",
+            fill_color=rgba,
+            size=24,
+            size_min_pixels=12,
+            size_max_pixels=30,
+        )
+        if layer is not None:
+            layers.append(layer)
+    return layers
 
 
 def zone_polygon_layer(
@@ -730,6 +770,7 @@ def build_explore_layers(
     military: gpd.GeoDataFrame | None = None,
     rail_areas: gpd.GeoDataFrame | None = None,
     airport: gpd.GeoDataFrame | None = None,
+    city_pois: gpd.GeoDataFrame | None = None,
 ) -> list[pdk.Layer]:
     """Assemble enabled Explore map layers in draw order."""
     layers: list[pdk.Layer] = []
@@ -748,6 +789,7 @@ def build_explore_layers(
         park_layer = parks_layer(parks)
         if park_layer is not None:
             layers.append(park_layer)
+    layers.extend(city_poi_layers(city_pois, object_types=flags.city_poi_types))
     if flags.traffic:
         heat = traffic_heatmap_layer(traffic_sample, hour=hour)
         if heat is not None:
