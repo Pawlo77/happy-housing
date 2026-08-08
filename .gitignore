@@ -1,4 +1,8 @@
-data/
+data/raw/
+data/processed/
+data/cache/
+# Keep committed fixtures under data/fixtures/
+
 .ai/
 mlruns/
 mlruns.db
