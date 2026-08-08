@@ -59,6 +59,7 @@ from happy_housing.app.explore_nav import (
     EXPLORE_SECTIONS,
     OFFER_SELECT_KEY,
     listing_id_from_board_selection,
+    listing_id_from_map_selection,
     prepare_offer_select_state,
 )
 from happy_housing.app.filters import FilterState, apply_filters, apply_starred_only
@@ -418,7 +419,8 @@ def _tab_map(
         "Transit uses real GTFS departures at the selected hour. "
         "Traffic is a diurnal mobility proxy (not live sensors). "
         "Parks from UM Warszawa PLACE_SKWERY (testmapa). "
-        "Lden bands from EEA END major-airport contours. Hover pins for details. "
+        "Lden bands from EEA END major-airport contours. "
+        "Hover offer pins for details; click a pin, then Open in Offer. "
         f"GUNB shows a Warsaw sample (max {MAX_GUNB_MAP_POINTS:,} points) so the "
         "map stays under Streamlit message limits. "
         "Transit lines: metro red · tram dark red · bus blue · rail green. "
@@ -452,13 +454,48 @@ def _tab_map(
         lon = float(filtered["lon"].mean())
     else:
         lat, lon = commute_lat, commute_lon
-    render_deck(
+    event = render_deck(
         layers,
         latitude=lat,
         longitude=lon,
         zoom=10.5,
         map_style=basemap_style(basemap),
+        selection_key="explore_map_deck",
     )
+    if not flags.offers or filtered.empty:
+        return
+    clicked = listing_id_from_map_selection(event)
+    if clicked is None:
+        st.caption("Click an offer pin to preview it and open the Offer tab.")
+        return
+    hit = filtered.loc[filtered["listing_id"].astype(str) == clicked]
+    if hit.empty:
+        return
+    row = hit.iloc[0]
+    st.subheader(f"Selected · {clicked}")
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("District", str(row.get("district") or "—"))
+    ppm = pd.to_numeric(row.get("price_per_m2"), errors="coerce")
+    c2.metric("zł/m²", f"{ppm:,.0f}" if pd.notna(ppm) else "—")
+    delta = pd.to_numeric(row.get("delta_price_per_m2"), errors="coerce")
+    c3.metric("Δ zł/m²", f"{delta:+,.0f}" if pd.notna(delta) else "—")
+    area = pd.to_numeric(row.get("area_m2"), errors="coerce")
+    c4.metric("Area", f"{area:.0f} m²" if pd.notna(area) else "—")
+    rooms = pd.to_numeric(row.get("rooms"), errors="coerce")
+    c5.metric("Rooms", f"{rooms:g}" if pd.notna(rooms) else "—")
+    price = pd.to_numeric(row.get("price_pln"), errors="coerce")
+    commute = pd.to_numeric(row.get("commute_min"), errors="coerce")
+    model = pd.to_numeric(row.get("model_price_per_m2"), errors="coerce")
+    st.caption(
+        f"Total {price:,.0f} zł · model {model:,.0f} zł/m² · commute {commute:.0f} min"
+        if pd.notna(price) and pd.notna(model) and pd.notna(commute)
+        else "Click Open in Offer for the full listing card."
+    )
+    if st.button("Open in Offer", type="primary", key=f"map_open_offer_{clicked}"):
+        st.session_state["explore_offer_id"] = clicked
+        st.session_state["explore_offer_force"] = True
+        st.session_state["explore_section"] = "Offer"
+        st.rerun()
 
 
 def _tab_spatial(

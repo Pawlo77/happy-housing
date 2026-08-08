@@ -84,6 +84,7 @@ def _scatter(
     radius: float | str = 90,
     radius_min_pixels: int = 5,
     radius_max_pixels: int = 18,
+    auto_highlight: bool = False,
 ) -> pdk.Layer | None:
     if data.empty:
         return None
@@ -96,6 +97,7 @@ def _scatter(
         radius_max_pixels=radius_max_pixels,
         get_fill_color=fill_color,
         pickable=True,
+        auto_highlight=auto_highlight,
         stroked=True,
         get_line_color=[255, 255, 255, 160],
         line_width_min_pixels=1,
@@ -155,6 +157,7 @@ def listings_scatter_layer(frame: pd.DataFrame) -> pdk.Layer | None:
         radius="radius",
         radius_min_pixels=3,
         radius_max_pixels=10,
+        auto_highlight=True,
     )
 
 
@@ -658,8 +661,9 @@ def render_deck(
     zoom: float = 11.0,
     map_style: str | dict[str, Any] | None = None,
     tooltip: dict[str, Any] | None = None,
-) -> None:
-    """Render a pydeck chart or fall back with a warning."""
+    selection_key: str | None = None,
+) -> Any:
+    """Render a pydeck chart; optional click selection when ``selection_key`` set."""
     view = pdk.ViewState(latitude=latitude, longitude=longitude, zoom=zoom)
     style = map_style or _STREETS_STYLE
     provider = deck_map_provider(style)
@@ -672,8 +676,18 @@ def render_deck(
         }
         if provider is not None:
             deck_kwargs["map_provider"] = provider
-        st.pydeck_chart(pdk.Deck(**deck_kwargs))
+        deck = pdk.Deck(**deck_kwargs)
+        if selection_key:
+            return st.pydeck_chart(
+                deck,
+                on_select="rerun",
+                selection_mode="single-object",
+                key=selection_key,
+            )
+        st.pydeck_chart(deck)
+        return None
     except Exception as exc:
         logger.exception("pydeck render failed: %s", exc)
         st.warning(f"pydeck unavailable ({exc})")
         st.caption("Map fallback unavailable for mixed layers.")
+        return None

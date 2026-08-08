@@ -20,6 +20,36 @@ OFFER_SELECT_KEY: str = "explore_offer_select"
 """Session key for the Offer-tab listing selectbox."""
 
 
+def listing_id_from_map_selection(event: object | None) -> str | None:
+    """Resolve ``listing_id`` from a ``st.pydeck_chart`` selection event."""
+    if event is None:
+        return None
+    selection = getattr(event, "selection", None)
+    if selection is None and isinstance(event, dict):
+        selection = event.get("selection")
+    if selection is None:
+        return None
+    objects = getattr(selection, "objects", None)
+    if objects is None and isinstance(selection, dict):
+        objects = selection.get("objects")
+    if not isinstance(objects, dict):
+        return None
+    # Prefer the listings scatter layer; fall back to any object with listing_id.
+    candidates: list[Any] = []
+    if "listings" in objects:
+        candidates.extend(list(objects.get("listings") or []))
+    else:
+        for rows in objects.values():
+            candidates.extend(list(rows or []))
+    for obj in candidates:
+        if not isinstance(obj, dict):
+            continue
+        lid = obj.get("listing_id") or obj.get("tooltip_name")
+        if lid:
+            return str(lid)
+    return None
+
+
 def listing_id_from_board_selection(
     frame: pd.DataFrame,
     event: object | None,

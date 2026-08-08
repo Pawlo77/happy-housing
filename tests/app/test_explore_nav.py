@@ -6,6 +6,7 @@ import pandas as pd
 
 from happy_housing.app.explore_nav import (
     listing_id_from_board_selection,
+    listing_id_from_map_selection,
     prepare_offer_select_state,
 )
 
@@ -23,6 +24,20 @@ def test_listing_id_from_board_selection_empty() -> None:
     frame = pd.DataFrame({"listing_id": ["OTO-1"]})
     assert listing_id_from_board_selection(frame, None) is None
     assert listing_id_from_board_selection(frame, {"selection": {"rows": []}}) is None
+
+
+def test_listing_id_from_map_selection_reads_listings_layer() -> None:
+    event = {
+        "selection": {
+            "objects": {"listings": [{"listing_id": "OTO-9", "tooltip_name": "OTO-9"}]}
+        }
+    }
+    assert listing_id_from_map_selection(event) == "OTO-9"
+
+
+def test_listing_id_from_map_selection_empty() -> None:
+    assert listing_id_from_map_selection(None) is None
+    assert listing_id_from_map_selection({"selection": {"objects": {}}}) is None
 
 
 def test_prepare_offer_select_state_force_overrides_current() -> None:

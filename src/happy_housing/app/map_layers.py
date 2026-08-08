@@ -86,6 +86,7 @@ MAX_SHOP_MAP_POINTS = 5000
 _MAP_PAYLOAD_COLUMNS: tuple[str, ...] = (
     "lon",
     "lat",
+    "listing_id",
     "tooltip_name",
     "tooltip_detail",
     "icon_size",
@@ -166,7 +167,7 @@ def diurnal_traffic_weight(hour: int) -> float:
 
 
 def prepare_listings_for_map(frame: pd.DataFrame) -> pd.DataFrame:
-    """Listing pins with delta colours and hover fields."""
+    """Listing pins with delta colours and rich hover fields."""
     if frame.empty:
         return pd.DataFrame()
     out = frame.copy()
@@ -175,24 +176,83 @@ def prepare_listings_for_map(frame: pd.DataFrame) -> pd.DataFrame:
     out = out.dropna(subset=["lat", "lon"])
     if out.empty:
         return pd.DataFrame()
+    out["listing_id"] = out["listing_id"].astype(str)
     delta = pd.to_numeric(out["delta_price_per_m2"], errors="coerce").fillna(0.0)
     over = delta.to_numpy() > 0
     out["color_r"] = np.where(over, 220, 30)
     out["color_g"] = np.where(over, 40, 170)
     out["color_b"] = 70
     out["color_a"] = 200
-    area = pd.to_numeric(out.get("area_m2"), errors="coerce").fillna(50.0)
-    # Radius is metres in ScatterplotLayer; keep pins small on city zoom.
-    out["radius"] = (area * 0.7).clip(22, 55)
-    out["tooltip_name"] = out["listing_id"].astype(str)
-    ppm = pd.to_numeric(out.get("price_per_m2"), errors="coerce")
+    area = pd.to_numeric(out.get("area_m2"), errors="coerce")
+    out["radius"] = (area.fillna(50.0) * 0.7).clip(22, 55)
+    out["tooltip_name"] = out["listing_id"]
+    ppm = pd.to_numeric(out["price_per_m2"], errors="coerce")
+    price = (
+        pd.to_numeric(out["price_pln"], errors="coerce")
+        if "price_pln" in out.columns
+        else pd.Series(np.nan, index=out.index)
+    )
+    rooms = (
+        pd.to_numeric(out["rooms"], errors="coerce")
+        if "rooms" in out.columns
+        else pd.Series(np.nan, index=out.index)
+    )
+    year = (
+        pd.to_numeric(out["year_built"], errors="coerce")
+        if "year_built" in out.columns
+        else pd.Series(np.nan, index=out.index)
+    )
+    commute = (
+        pd.to_numeric(out["commute_min"], errors="coerce")
+        if "commute_min" in out.columns
+        else pd.Series(np.nan, index=out.index)
+    )
+    model = (
+        pd.to_numeric(out["model_price_per_m2"], errors="coerce")
+        if "model_price_per_m2" in out.columns
+        else pd.Series(np.nan, index=out.index)
+    )
+    district = (
+        out["district"].astype(str)
+        if "district" in out.columns
+        else pd.Series("", index=out.index)
+    )
+    source = (
+        out["source"].astype(str)
+        if "source" in out.columns
+        else pd.Series("", index=out.index)
+    )
+
+    def _fmt_int(series: pd.Series, suffix: str = "") -> pd.Series:
+        return series.map(lambda v: f"{v:,.0f}{suffix}" if pd.notna(v) else "—")
+
+    def _fmt_signed(series: pd.Series, suffix: str = "") -> pd.Series:
+        return series.map(lambda v: f"{v:+,.0f}{suffix}" if pd.notna(v) else "—")
+
     out["tooltip_detail"] = (
-        out.get("district", pd.Series("", index=out.index)).astype(str)
+        district
+        + " · "
+        + source
+        + "<br/>"
+        + "Ask "
+        + _fmt_int(ppm, " zł/m²")
         + " · Δ "
-        + delta.map(lambda v: f"{v:+.0f}")
-        + " zł/m² · "
-        + ppm.map(lambda v: f"{v:,.0f}" if v == v else "—")
-        + " zł/m²"
+        + _fmt_signed(delta, " zł/m²")
+        + "<br/>"
+        + "Model "
+        + _fmt_int(model, " zł/m²")
+        + " · Total "
+        + _fmt_int(price, " zł")
+        + "<br/>"
+        + _fmt_int(area, " m²")
+        + " · "
+        + rooms.map(lambda v: f"{v:g} rooms" if pd.notna(v) else "— rooms")
+        + " · built "
+        + year.map(lambda v: f"{int(v)}" if pd.notna(v) else "—")
+        + "<br/>"
+        + "Commute "
+        + commute.map(lambda v: f"{v:.0f} min" if pd.notna(v) else "—")
+        + "<br/><i>Click pin → Open in Offer below</i>"
     )
     return slim_map_frame(out)
 
