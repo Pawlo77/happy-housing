@@ -41,6 +41,7 @@ ingest_urls:
   gtfs_zip: https://mkuran.pl/gtfs/warsaw.zip
   gios_stations: https://api.gios.gov.pl/pjp-api/v1/rest/station/findAll
   rcn_zip: https://mapa.um.warszawa.pl/rcn_gml/rcn20260622.zip
+  gunb_zip: https://wyszukiwarka.gunb.gov.pl/pliki_pobranie/wynik_mazowieckie.zip
 
 # null = unlimited (download everything the source returns)
 ingest:

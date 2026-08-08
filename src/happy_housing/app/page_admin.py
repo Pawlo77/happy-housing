@@ -303,12 +303,12 @@ def _tab_pipeline() -> None:
     st.subheader("Remodel / full pipeline")
     download_remote = st.checkbox(
         "Re-download GTFS / GIOŚ / RCN / GUNB (full sources)",
-        value=False,
+        value=True,
         help="RCN GML is multi-GB; full parse can take a long time.",
     )
     scrape_otodom = st.checkbox(
         "Scrape Otodom inside pipeline (full, per config ingest limits)",
-        value=False,
+        value=True,
     )
     use_osm = st.checkbox(
         "Fetch OSM amenities + shops (else fixture/cache)", value=True

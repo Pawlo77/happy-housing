@@ -171,6 +171,7 @@ def run_pipeline(
         download_gunb_mazowieckie(
             raw,
             gunb_parquet,
+            url=config.ingest_urls.gunb_zip,
             fixture_path=fixtures / "gunb_points.json",
         )
     else:

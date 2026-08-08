@@ -253,9 +253,6 @@ def _fetch_gios_stations_http(url: str) -> pd.DataFrame:
         if len(rows) < page_size:
             break
         page += 1
-        if page > 100:
-            logger.warning("GIOŚ pagination stopped after 100 pages")
-            break
     return pd.DataFrame(records)
 
 

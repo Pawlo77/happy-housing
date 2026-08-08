@@ -200,8 +200,8 @@ def scrape_otodom_warsaw(
     *,
     max_pages: int | None = None,
     max_listings: int | None = None,
-    detail_workers: int = 6,
-    sleep_s: float = 0.35,
+    detail_workers: int = 8,
+    sleep_s: float = 0.25,
     page_size: int = 72,
 ) -> pd.DataFrame:
     """Scrape Warsaw flat-sale listings from Otodom into a parquet file.
@@ -222,6 +222,7 @@ def scrape_otodom_warsaw(
     session = _session()
     cards: list[dict[str, Any]] = []
     page = 1
+    total_items: int | None = None
     while True:
         if page_cap is not None and page > page_cap:
             break
@@ -234,6 +235,16 @@ def scrape_otodom_warsaw(
             cards.append(_normalize_search_item(item))
         pagination = ads.get("pagination") or {}
         total_pages = int(pagination.get("totalPages") or page)
+        if total_items is None and pagination.get("totalItems") is not None:
+            try:
+                total_items = int(pagination["totalItems"])
+                logger.info(
+                    "Otodom reports totalItems=%s totalPages=%s",
+                    total_items,
+                    total_pages,
+                )
+            except (TypeError, ValueError):
+                total_items = None
         time.sleep(sleep_s)
         if page >= total_pages or reached_cap(len(cards), listing_cap):
             break

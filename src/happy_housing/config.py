@@ -220,9 +220,13 @@ class IngestUrlsConfig:
     """GIOŚ air-quality stations list (v1)."""
     rcn_zip: str = "https://mapa.um.warszawa.pl/rcn_gml/rcn20260622.zip"
     """UM Warszawa RCN GML bulk zip."""
+    gunb_zip: str = (
+        "https://wyszukiwarka.gunb.gov.pl/pliki_pobranie/wynik_mazowieckie.zip"
+    )
+    """Official GUNB Mazowieckie bulk zip (attributes; coords via GUGiK WFS)."""
 
     def __post_init__(self) -> None:
-        for name in ("gtfs_zip", "gios_stations", "rcn_zip"):
+        for name in ("gtfs_zip", "gios_stations", "rcn_zip", "gunb_zip"):
             _require_str(name, str(getattr(self, name)))
 
     def to_dict(self) -> dict[str, Any]:
