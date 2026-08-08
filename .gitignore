@@ -3,6 +3,9 @@ data/processed/
 data/cache/
 # Keep committed fixtures under data/fixtures/
 
+# Runtime log files (pipeline / ingest / app redirects)
+logs/
+
 .ai/
 mlruns/
 mlruns.db
