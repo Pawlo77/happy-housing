@@ -10,9 +10,20 @@ def test_about_sections_cover_business_basics() -> None:
     assert titles[0] == "What this is"
     assert "Who it is for" in titles
     assert "What we model" in titles
+    assert "Explore Assistant" in titles
     assert "What it is not" in titles
     assert "Where to go next" not in titles
-    assert "Assistant" in ABOUT_SECTIONS[-1].body
+    assert titles.index("Explore Assistant") < titles.index("What it is not")
+
+
+def test_assistant_section_explains_capabilities() -> None:
+    section = next(s for s in ABOUT_SECTIONS if s.title == "Explore Assistant")
+    low = section.body.lower()
+    assert "explore" in low
+    assert "chat" in low
+    for needle in ("recommend", "prefer", "star", "offer"):
+        assert needle in low, f"missing capability cue '{needle}'"
+    assert "lm studio" in low or "local model" in low
 
 
 def test_about_copy_stays_plain_and_nonempty() -> None:

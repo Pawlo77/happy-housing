@@ -54,14 +54,28 @@ ABOUT_SECTIONS: tuple[AboutSection, ...] = (
         ),
     ),
     AboutSection(
+        title="Explore Assistant",
+        body=(
+            "On **Explore**, open the **Chat** tab or the **Assistant** "
+            "popover. It is a local-model chat (LM Studio) that calls tools "
+            "over your scored listings — it does not invent ids or prices.\n\n"
+            "Ask it to search and recommend flats, update Explore preferences "
+            "in plain language, read starred watches and their news, pull "
+            "cached offer AI reviews, look up public web opinions, or open "
+            "an offer in the UI. Conversations persist so you can continue "
+            "later.\n\n"
+            "Admin → Assistant turns the chat on/off and tunes the prompt. "
+            "Offer-page **AI review** is a separate one-shot write-up, not "
+            "the multi-turn Assistant."
+        ),
+    ),
+    AboutSection(
         title="What it is not",
         body=(
             "Not a bank appraisal, not a notary opinion, and not investment "
             "advice. Listings go stale; public layers have gaps; the model "
             "can be wrong on odd flats. Treat it as a research lens — then "
-            "verify on the street and with people you trust. "
-            "Use the Explore Assistant for questions, preferences, and "
-            "recommendations."
+            "verify on the street and with people you trust."
         ),
     ),
 )

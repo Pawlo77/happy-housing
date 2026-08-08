@@ -20,8 +20,8 @@ Streamlit multipage UI: **Home · Explore · Stats · Admin**.
 
 ### Home
 
-Default **About** tab (purpose and how to read the numbers), then market pulse
-charts, model hold-out metrics, and open-data source inventory.
+Default **About** tab (purpose, Explore Assistant, how to read the numbers),
+then market pulse charts, model hold-out metrics, and open-data source inventory.
 
 ![Home — Market pulse](docs/screenshots/01b-home-pulse.png)
 
