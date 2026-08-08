@@ -18,6 +18,7 @@ from happy_housing.app.map_layers import (
     prepare_transit_for_hour,
     traffic_weights_for_hour,
 )
+from happy_housing.app.spatial_insights import prepare_spatial_points
 
 logger = logging.getLogger(__name__)
 
@@ -367,6 +368,80 @@ def focus_marker_layer(lat: float, lon: float) -> pdk.Layer:
         msg = "focus marker scatter unexpectedly empty"
         raise RuntimeError(msg)
     return layer
+
+
+def spatial_heatmap_layer(
+    points: pd.DataFrame,
+    *,
+    layer_id: str = "spatial-heat",
+    radius_pixels: int = 40,
+) -> pdk.Layer | None:
+    """Weighted heatmap for Spatial-tab metrics."""
+    if points.empty or "weight" not in points.columns:
+        return None
+    return pdk.Layer(
+        "HeatmapLayer",
+        data=points,
+        get_position="[lon, lat]",
+        get_weight="weight",
+        radiusPixels=radius_pixels,
+        intensity=1.4,
+        threshold=0.03,
+        opacity=0.65,
+        pickable=False,
+        id=layer_id,
+    )
+
+
+def spatial_hex_layer(
+    points: pd.DataFrame,
+    *,
+    layer_id: str = "spatial-hex",
+) -> pdk.Layer | None:
+    """Hexagon bins with elevation from weights (denser than heat alone)."""
+    if points.empty or "weight" not in points.columns:
+        return None
+    return pdk.Layer(
+        "HexagonLayer",
+        data=points,
+        get_position="[lon, lat]",
+        get_elevation_weight="weight",
+        get_color_weight="weight",
+        elevation_scale=40,
+        elevation_range=[0, 800],
+        extruded=True,
+        coverage=0.85,
+        radius=280,
+        opacity=0.55,
+        pickable=True,
+        id=layer_id,
+    )
+
+
+def build_spatial_layers(
+    *,
+    listings: pd.DataFrame,
+    metric_key: str,
+    traffic_sample: pd.DataFrame,
+    hour: int,
+    show_hex: bool,
+) -> list[pdk.Layer]:
+    """Assemble Spatial-tab layers for the selected metric."""
+    layers: list[pdk.Layer] = []
+    if metric_key == "traffic":
+        heat = traffic_heatmap_layer(traffic_sample, hour=hour)
+        if heat is not None:
+            layers.append(heat)
+        return layers
+    points = prepare_spatial_points(listings, metric_key)
+    heat = spatial_heatmap_layer(points)
+    if heat is not None:
+        layers.append(heat)
+    if show_hex:
+        hex_layer = spatial_hex_layer(points)
+        if hex_layer is not None:
+            layers.append(hex_layer)
+    return layers
 
 
 def build_explore_layers(

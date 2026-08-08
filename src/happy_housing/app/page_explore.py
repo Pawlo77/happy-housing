@@ -27,7 +27,12 @@ from happy_housing.app.board_sort import (
     enrich_board_recommendations,
     sort_board,
 )
-from happy_housing.app.charts import OVERPRICED, UNDERPRICED, diverging_bar_chart
+from happy_housing.app.charts import (
+    OVERPRICED,
+    UNDERPRICED,
+    bar_chart,
+    diverging_bar_chart,
+)
 from happy_housing.app.data import (
     load_aircraft_lden,
     load_amenities,
@@ -54,6 +59,7 @@ from happy_housing.app.map_layers import LayerFlags
 from happy_housing.app.maps import (
     basemap_style,
     build_explore_layers,
+    build_spatial_layers,
     focus_marker_layer,
     render_deck,
 )
@@ -80,6 +86,12 @@ from happy_housing.app.recommender import (
     record_impressions,
     retrain_recommender,
     top_recommendations,
+)
+from happy_housing.app.spatial_insights import (
+    SPATIAL_METRICS,
+    district_spatial_summary,
+    get_spatial_metric,
+    spatial_kpis,
 )
 from happy_housing.app.star_news import (
     StarNewsItem,
@@ -329,6 +341,120 @@ def _tab_map(
         zoom=10.5,
         map_style=basemap_style(basemap),
     )
+
+
+def _tab_spatial(
+    filtered: pd.DataFrame,
+    *,
+    traffic_sample: pd.DataFrame,
+    hour: int,
+    basemap: str,
+    commute_lon: float,
+    commute_lat: float,
+) -> None:
+    """Spatial analytics: metric heatmaps + district charts (not map-only)."""
+    st.caption(
+        "Pick a market signal — map shows spatial intensity; KPIs and district "
+        "bars explain where it concentrates. Uses the same sidebar filters as Map."
+    )
+    labels = [m.label for m in SPATIAL_METRICS]
+    keys = [m.key for m in SPATIAL_METRICS]
+    choice = st.selectbox(
+        "Spatial metric",
+        options=labels,
+        index=0,
+        key="explore_spatial_metric",
+    )
+    metric_key = keys[labels.index(str(choice))]
+    metric = get_spatial_metric(metric_key)
+    show_hex = st.checkbox(
+        "Show hex elevation (3D)",
+        value=False,
+        key="explore_spatial_hex",
+        help="Extruded hex bins weighted by the same metric (listing metrics only).",
+        disabled=metric_key == "traffic",
+    )
+
+    kpis = spatial_kpis(filtered, metric_key)
+    k1, k2, k3 = st.columns(3)
+    k1.metric("Mapped points", f"{int(kpis['n_points']):,}")
+    headline = float(kpis["headline_value"])
+    k2.metric(
+        str(kpis["headline"]),
+        f"{headline:,.0f}" if headline == headline else "—",
+    )
+    k3.metric("Districts ranked", f"{int(kpis['districts']):,}")
+    st.caption(metric.blurb)
+
+    map_col, chart_col = st.columns([1.35, 1.0], gap="large")
+    with map_col:
+        layers = build_spatial_layers(
+            listings=filtered,
+            metric_key=metric_key,
+            traffic_sample=traffic_sample,
+            hour=hour,
+            show_hex=bool(show_hex) and metric_key != "traffic",
+        )
+        if not layers:
+            st.info(
+                "No spatial points for this metric under current filters "
+                "(or traffic sample missing)."
+            )
+        else:
+            if not filtered.empty and {"lat", "lon"} <= set(filtered.columns):
+                lat = float(pd.to_numeric(filtered["lat"], errors="coerce").mean())
+                lon = float(pd.to_numeric(filtered["lon"], errors="coerce").mean())
+                if lat != lat or lon != lon:
+                    lat, lon = commute_lat, commute_lon
+            else:
+                lat, lon = commute_lat, commute_lon
+            render_deck(
+                layers,
+                latitude=lat,
+                longitude=lon,
+                zoom=10.5 if not show_hex else 11.0,
+                map_style=basemap_style(basemap),
+            )
+    with chart_col:
+        if metric_key == "traffic":
+            st.info(
+                "Traffic uses the OSM diurnal sample — pick hour in the sidebar. "
+                "District bars are not defined for this proxy."
+            )
+            st.metric("Hour", f"{hour:02d}:00")
+        else:
+            summary = district_spatial_summary(filtered, metric_key)
+            if summary.empty:
+                st.info("Not enough district coverage for a leaderboard.")
+            else:
+                bar_chart(
+                    summary.head(12),
+                    x="value",
+                    y="district",
+                    title=f"Top districts · {metric.value_title}",
+                    x_title=metric.value_title,
+                    color=UNDERPRICED,
+                )
+                st.dataframe(
+                    summary.rename(
+                        columns={"n": "Offers", "value": metric.value_title}
+                    ),
+                    width="stretch",
+                    hide_index=True,
+                )
+
+    st.subheader("How to read this")
+    tips = {
+        "price_ppm": "Warm = high asking zł/m². Cross-check with Bargain heat.",
+        "listing_density": "Warm = many open asks. Inventory pressure, not sales.",
+        "sold_density": "RCN-only points — closed deals, not Otodom asks.",
+        "avg_area": "Warm = larger floor plates in that pocket.",
+        "popularity": "Newer listed_month values weigh more (fresh inventory).",
+        "commute": "Warm = shorter modelled commute to Daszyńskiego.",
+        "bargain": "Warm = more negative listing - model residual.",
+        "traffic": "Warm = higher diurnal road activity proxy at the selected hour.",
+    }
+    st.markdown(tips.get(metric_key, metric.blurb))
 
 
 @st.cache_data(show_spinner=False)  # type: ignore[misc]
@@ -1185,7 +1311,7 @@ def render_explore() -> None:
         "commute_lon": float(config.commute_target_lon),
         "commute_lat": float(config.commute_target_lat),
     }
-    tab_map, tab_offer, tab_board, tab_news, tab_prefs = st.tabs(
+    tab_map, tab_spatial, tab_offer, tab_board, tab_news, tab_prefs = st.tabs(
         list(EXPLORE_SECTIONS),
         key="explore_section",
         on_change="rerun",
@@ -1200,6 +1326,23 @@ def render_explore() -> None:
             if captions:
                 st.caption(f"{' · '.join(captions)} · {len(map_board)} offers")
             _tab_map(map_board, **map_kwargs)
+    with tab_spatial:
+        if tab_spatial.open:
+            captions_s: list[str] = []
+            if starred_only:
+                captions_s.append("Starred only")
+            if prefs.enabled:
+                captions_s.append("Prefs on")
+            if captions_s:
+                st.caption(f"{' · '.join(captions_s)} · {len(map_board)} offers")
+            _tab_spatial(
+                map_board,
+                traffic_sample=traffic_sample,
+                hour=hour,
+                basemap=basemap,
+                commute_lon=float(config.commute_target_lon),
+                commute_lat=float(config.commute_target_lat),
+            )
     with tab_offer:
         if tab_offer.open:
             _tab_offer(

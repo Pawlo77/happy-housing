@@ -54,5 +54,6 @@ def test_prepare_offer_select_state_keeps_user_choice_without_force() -> None:
 def test_explore_sections_include_prefs() -> None:
     from happy_housing.app.explore_nav import EXPLORE_SECTIONS
 
+    assert "Spatial" in EXPLORE_SECTIONS
     assert EXPLORE_SECTIONS[-1] == "Prefs"
     assert "News" in EXPLORE_SECTIONS
