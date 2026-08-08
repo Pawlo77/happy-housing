@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 from urllib.parse import unquote
 
 import geopandas as gpd
 import pandas as pd
+import pydeck as pdk
 from shapely.geometry import Point
 
 from happy_housing.app.map_marker_shapes import (
@@ -59,3 +61,32 @@ def test_amenity_and_shop_layers_use_icon_layer() -> None:
     )
     assert shops is not None
     assert shops.type == "IconLayer"
+
+
+def test_icon_atlas_is_literal_not_expression() -> None:
+    """Bare ``icon_atlas`` strings become ``@@=data:…`` → Streamlit crash.
+
+    pydeck must emit a plain ``data:`` atlas (quoted input), with rows
+    referencing the shared ``marker`` mapping — not per-row SVG blobs.
+    """
+    amenities = gpd.GeoDataFrame(
+        {
+            "amenity": ["hospital"],
+            "name": ["H"],
+            "geometry": [Point(21.0, 52.2)],
+        },
+        crs="EPSG:4326",
+    )
+    layers = amenity_layers(
+        amenities, show_hospital=True, show_fire=False, show_police=False
+    )
+    assert len(layers) == 1
+    payload = json.loads(pdk.Deck(layers=layers).to_json())
+    layer = payload["layers"][0]
+    atlas = layer.get("iconAtlas") or ""
+    assert isinstance(atlas, str)
+    assert atlas.startswith("data:image/svg+xml")
+    assert not atlas.startswith("@@=")
+    rows = layer.get("data") or []
+    assert rows
+    assert rows[0].get("icon") == "marker"

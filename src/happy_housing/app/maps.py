@@ -123,12 +123,21 @@ def _icon(
     size_min_pixels: int = 14,
     size_max_pixels: int = 36,
 ) -> pdk.Layer | None:
-    """IconLayer with one shared SVG atlas (not per-row data URLs)."""
+    """IconLayer with one shared SVG atlas (not per-row data URLs).
+
+    pydeck treats bare string layer props as deck.gl JSON expressions
+    (``@@=…``). A raw ``data:`` / ``http:`` ``icon_atlas`` then hits
+    Streamlit's ``convertFunction`` and fails with
+    ``Unexpected ':' at character 4``. Quote the atlas URL so pydeck
+    emits a plain string (see ``pydeck.bindings.layer.Layer``).
+    """
     if data.empty:
         return None
     work = slim_map_frame(data).copy()
     icon = marker_icon(kind, fill_color)
     work["icon"] = "marker"
+    # Quoted → literal string in JSON (no ``@@=`` expression wrapper).
+    atlas_url = f'"{icon["url"]}"'
     return pdk.Layer(
         "IconLayer",
         data=work,
@@ -138,7 +147,7 @@ def _icon(
         size_units="pixels",
         size_min_pixels=size_min_pixels,
         size_max_pixels=size_max_pixels,
-        icon_atlas=icon["url"],
+        icon_atlas=atlas_url,
         icon_mapping={
             "marker": {
                 "x": 0,
