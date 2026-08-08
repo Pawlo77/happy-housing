@@ -61,6 +61,37 @@ class PlaceSuggestion:
     """OSM element id."""
 
 
+def format_place_option_labels(
+    hits: list[PlaceSuggestion] | tuple[object, ...],
+) -> list[str]:
+    """Stable selectbox labels ``1. …`` so duplicate display names stay distinct."""
+    labels: list[str] = []
+    for i, row in enumerate(hits):
+        if isinstance(row, PlaceSuggestion):
+            name = row.label
+        elif isinstance(row, dict):
+            name = str(row.get("label") or "")
+        else:
+            name = str(getattr(row, "label", row))
+        labels.append(f"{i + 1}. {name}")
+    return labels
+
+
+def resolve_place_pick(
+    pick: str,
+    hits: list[PlaceSuggestion] | tuple[object, ...],
+    labels: list[str] | None = None,
+) -> PlaceSuggestion | dict[str, object] | None:
+    """Map a selectbox pick to the corresponding hit by index (not by name)."""
+    options = labels if labels is not None else format_place_option_labels(hits)
+    if pick not in options:
+        return None
+    idx = options.index(pick)
+    if idx < 0 or idx >= len(hits):
+        return None
+    return hits[idx]  # type: ignore[return-value]
+
+
 def search_places(
     query: str,
     *,

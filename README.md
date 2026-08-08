@@ -47,6 +47,8 @@ Sidebar filters + map overlays. **Map / Spatial / Offer / Board / News / Chat / 
 
 ![Explore — Offer context](docs/screenshots/06-explore-offer-context.png)
 
+![Explore — Chat](docs/screenshots/07-explore-chat.png)
+
 ### Stats
 
 Filterable market analytics for decisions — not a vanity dashboard:

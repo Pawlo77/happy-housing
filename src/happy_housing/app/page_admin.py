@@ -37,7 +37,12 @@ from happy_housing.app.data import (
     load_scored,
     processed_dir,
 )
-from happy_housing.app.geocode import live_search_ready, search_places
+from happy_housing.app.geocode import (
+    format_place_option_labels,
+    live_search_ready,
+    resolve_place_pick,
+    search_places,
+)
 from happy_housing.app.listing_attrs import promote_listing_flags
 from happy_housing.app.llm_metrics import (
     clear_llm_metrics,
@@ -141,7 +146,7 @@ def _tab_general(settings: AppSettings, settings_file: Path, proc: Path) -> None
         except Exception as exc:
             st.error(f"Nominatim search failed: {exc}")
             hit_rows = ()
-    option_labels = [f"{i + 1}. {row['label']}" for i, row in enumerate(hit_rows)]
+    option_labels = format_place_option_labels(hit_rows)
     place_pick = st.selectbox(
         "Search place",
         options=option_labels,
@@ -155,10 +160,10 @@ def _tab_general(settings: AppSettings, settings_file: Path, proc: Path) -> None
         ),
     )
     if place_pick:
-        if place_pick in option_labels:
-            chosen = hit_rows[option_labels.index(str(place_pick))]
-            new_lon = float(chosen["lon"])
-            new_lat = float(chosen["lat"])
+        chosen = resolve_place_pick(str(place_pick), hit_rows, option_labels)
+        if chosen is not None and isinstance(chosen, dict):
+            new_lon = float(str(chosen["lon"]))
+            new_lat = float(str(chosen["lat"]))
             new_label = str(chosen["label"])[:120]
             changed = (
                 abs(float(st.session_state["admin_commute_lon"]) - new_lon) > 1e-6

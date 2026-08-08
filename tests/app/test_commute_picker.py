@@ -2,12 +2,20 @@
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock, patch
+
 from happy_housing.app.commute_target import (
     CommuteTarget,
     commute_compare_points,
     commute_compare_view,
 )
-from happy_housing.app.geocode import live_search_ready
+from happy_housing.app.geocode import (
+    PlaceSuggestion,
+    format_place_option_labels,
+    live_search_ready,
+    resolve_place_pick,
+    search_places,
+)
 from happy_housing.app.maps import commute_compare_layers
 
 
@@ -16,6 +24,66 @@ def test_live_search_ready_requires_min_chars() -> None:
     assert live_search_ready("  a ") is False
     assert live_search_ready("pl") is True
     assert live_search_ready("plac") is True
+
+
+def test_resolve_place_pick_uses_index_not_duplicate_label() -> None:
+    hits = (
+        {"label": "Same Place", "lon": 20.1, "lat": 52.1, "osm_id": 1},
+        {"label": "Same Place", "lon": 20.2, "lat": 52.2, "osm_id": 2},
+    )
+    labels = format_place_option_labels(hits)
+    assert labels[0] != labels[1]
+    first = resolve_place_pick(labels[0], hits, labels)
+    second = resolve_place_pick(labels[1], hits, labels)
+    assert first is not None and second is not None
+    assert float(first["lon"]) == 20.1  # type: ignore[index]
+    assert float(second["lon"]) == 20.2  # type: ignore[index]
+
+
+def test_resolve_place_pick_with_place_suggestion() -> None:
+    hits = [
+        PlaceSuggestion("A", 20.0, 52.0, "node", 1),
+        PlaceSuggestion("B", 21.0, 53.0, "way", 2),
+    ]
+    labels = format_place_option_labels(hits)
+    picked = resolve_place_pick(labels[1], hits, labels)
+    assert isinstance(picked, PlaceSuggestion)
+    assert picked.lon == 21.0
+
+
+def test_nominatim_throttle_sleeps_between_calls() -> None:
+    response = MagicMock()
+    response.raise_for_status = MagicMock()
+    response.json.return_value = []
+    import happy_housing.app.geocode as geo
+
+    with (
+        patch("happy_housing.app.geocode.requests.get", return_value=response),
+        patch("happy_housing.app.geocode.time.sleep") as sleep,
+    ):
+        geo._last_request_monotonic = 0.0
+        with patch(
+            "happy_housing.app.geocode.time.monotonic",
+            side_effect=[10.0, 10.0],
+        ):
+            search_places("aa")
+        geo._last_request_monotonic = 10.0
+        with patch(
+            "happy_housing.app.geocode.time.monotonic",
+            side_effect=[10.2, 11.2],
+        ):
+            search_places("bb")
+        assert sleep.called
+        assert float(sleep.call_args.args[0]) >= 0.5
+
+
+def test_commute_compare_view_zoom_buckets() -> None:
+    same = CommuteTarget(lon=20.98, lat=52.23, label="A")
+    _, _, z_same = commute_compare_view(saved=same, draft=same)
+    assert z_same == 13.0
+    far = CommuteTarget(lon=21.2, lat=52.4, label="B")
+    _, _, z_far = commute_compare_view(saved=same, draft=far)
+    assert z_far == 10.0
 
 
 def test_commute_compare_points_saved_and_draft() -> None:

@@ -66,6 +66,12 @@ def main() -> None:
             _shot(page, "06-explore-offer-context.png")
         except Exception as exc:
             print(f"skip offer Context: {exc}")
+        try:
+            _tab(page, "Chat")
+            page.wait_for_timeout(2500)
+            _shot(page, "07-explore-chat.png")
+        except Exception as exc:
+            print(f"skip Explore Chat: {exc}")
 
         _nav(page, "Stats")
         page.get_by_text("sidebar filters apply", exact=False).first.wait_for(
