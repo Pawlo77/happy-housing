@@ -8,7 +8,7 @@ export OMP_NUM_THREADS=1
 
 .DEFAULT_GOAL := help
 
-.PHONY: help install update clean prek prek-all check tests coverage mlflow mlflow-stop datasets
+.PHONY: help install update clean prek prek-all check tests coverage mlflow mlflow-stop datasets otodom pipeline app
 
 MLFLOW_HOST ?= 127.0.0.1
 MLFLOW_PORT ?= 5005
@@ -48,8 +48,17 @@ tests: ## Run the test suite
 coverage: ## Run tests with coverage report
 	uv run pytest --cov=./src/happy_housing --cov-report=term-missing tests/
 
-datasets: ## Download or build datasets (project-specific)
-	@echo "Not implemented — add dataset targets for your experiment."
+datasets: ## Download GTFS, GIOŚ, RCN, GUNB into data/
+	uv run python -c "from pathlib import Path; from happy_housing.config import load_experiment_config; from happy_housing.ingest import download_gtfs_stops, fetch_gios_stations, download_file; from happy_housing.ingest.rcn import extract_rcn_transactions; from happy_housing.ingest.gunb import download_gunb_mazowieckie; c=load_experiment_config(Path('configs/experiment.yaml')); r=c.data.raw_path(); p=c.data.processed_path(); f=c.data.fixtures_path(); r.mkdir(parents=True, exist_ok=True); p.mkdir(parents=True, exist_ok=True); download_gtfs_stops(c.ingest_urls.gtfs_zip, r, p/'gtfs_stops.parquet'); fetch_gios_stations(c.ingest_urls.gios_stations, p/'gios_stations.parquet'); z=download_file(c.ingest_urls.rcn_zip, r/'rcn_warsaw.zip', timeout_s=1800); extract_rcn_transactions(z, p/'rcn_transactions.parquet', max_rows=40000); download_gunb_mazowieckie(r, p/'gunb_mazowieckie.parquet', fixture_path=f/'gunb_points.json')"
+
+otodom: ## Scrape Otodom Warsaw flats (rate-limited)
+	uv run python -c "from pathlib import Path; from happy_housing.ingest.otodom import scrape_otodom_warsaw; scrape_otodom_warsaw(Path('data/processed/otodom_listings.parquet'), max_pages=50, max_listings=1200)"
+
+pipeline: ## Full ingest → GIS → score → MLflow train
+	uv run python -m happy_housing.pipeline
+
+app: ## Launch Streamlit GUI (requires pipeline outputs)
+	uv run streamlit run src/happy_housing/app/streamlit_app.py --server.port 8501 --server.address 127.0.0.1 --server.headless true
 
 mlflow: ## Launch MLflow UI for local runs
 	@PORT="$(MLFLOW_PORT)"; \
