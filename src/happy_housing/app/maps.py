@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import geopandas as gpd
+import numpy as np
 import pandas as pd
 import pydeck as pdk
 import streamlit as st
@@ -16,14 +17,25 @@ _AMENITY_COLORS: dict[str, list[int]] = {
 }
 """RGBA colours for amenity scatter layers."""
 
+_DEFAULT_MAP_STYLE = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
+"""Carto positron GL basemap URL for pydeck."""
+
+_DEFAULT_TOOLTIP: dict[str, Any] = {
+    "html": ("<b>{listing_id}</b><br/>{district}<br/>Δ {delta_price_per_m2} zł/m²"),
+    "style": {"backgroundColor": "#111", "color": "white"},
+}
+"""Default listing hover tooltip for Explore maps."""
+
 
 def _listing_colors(frame: pd.DataFrame) -> pd.DataFrame:
+    """Attach map styling columns (vectorized) without mutating ``frame``."""
     out = frame.copy()
     out["lat"] = out["lat"].astype(float)
     out["lon"] = out["lon"].astype(float)
     delta = out["delta_price_per_m2"].astype(float)
-    out["color_r"] = delta.apply(lambda d: 220 if d > 0 else 30)
-    out["color_g"] = delta.apply(lambda d: 40 if d > 0 else 170)
+    over = delta.to_numpy() > 0
+    out["color_r"] = np.where(over, 220, 30)
+    out["color_g"] = np.where(over, 40, 170)
     out["radius"] = (out["area_m2"].fillna(50).astype(float) * 2.5).clip(60, 280)
     return out
 
@@ -44,17 +56,14 @@ def listings_scatter_layer(frame: pd.DataFrame) -> pdk.Layer:
 
 def amenity_layers(amenities: gpd.GeoDataFrame) -> list[pdk.Layer]:
     """One scatter layer per amenity type."""
-    layers: list[pdk.Layer] = []
-    if amenities.empty:
-        return layers
+    if amenities.empty or "amenity" not in amenities.columns:
+        return []
     pts = amenities.copy()
     pts["lon"] = pts.geometry.x
     pts["lat"] = pts.geometry.y
-    amenity_col = "amenity" if "amenity" in pts.columns else None
-    if amenity_col is None:
-        return layers
+    layers: list[pdk.Layer] = []
     for kind, rgba in _AMENITY_COLORS.items():
-        subset = pts[pts[amenity_col] == kind]
+        subset = pts.loc[pts["amenity"] == kind]
         if subset.empty:
             continue
         layers.append(
@@ -76,8 +85,7 @@ def oou_polygon_layer(oou: gpd.GeoDataFrame | None) -> list[pdk.Layer]:
     if oou is None or oou.empty:
         return []
     records: list[dict[str, Any]] = []
-    for _, row in oou.iterrows():
-        geom = row.geometry
+    for geom in oou.geometry:
         if geom is None or geom.is_empty:
             continue
         if geom.geom_type == "Polygon":
@@ -126,25 +134,17 @@ def render_deck(
     zoom: float = 11.0,
     tooltip: dict[str, Any] | None = None,
 ) -> None:
-    """Render a pydeck chart or fall back to ``st.map``."""
+    """Render a pydeck chart or fall back with a warning."""
     view = pdk.ViewState(latitude=latitude, longitude=longitude, zoom=zoom)
     try:
         st.pydeck_chart(
             pdk.Deck(
-                map_style=(
-                    "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
-                ),
+                map_style=_DEFAULT_MAP_STYLE,
                 layers=layers,
                 initial_view_state=view,
-                tooltip=tooltip
-                or {
-                    "html": "<b>{listing_id}</b><br/>{district}<br/>"
-                    "Δ {delta_price_per_m2} zł/m²",
-                    "style": {"backgroundColor": "#111", "color": "white"},
-                },
+                tooltip=tooltip or _DEFAULT_TOOLTIP,
             )
         )
     except Exception as exc:
         st.warning(f"pydeck unavailable ({exc})")
-        # Best-effort fallback from first layer data is not always tabular.
         st.caption("Map fallback unavailable for mixed layers.")

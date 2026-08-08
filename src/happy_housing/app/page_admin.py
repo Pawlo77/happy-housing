@@ -9,13 +9,17 @@ from pathlib import Path
 
 import streamlit as st
 
-from happy_housing.app.data import load_config, load_metadata, processed_dir
-from happy_housing.config import load_experiment_config
+from happy_housing.app.data import (
+    clear_data_caches,
+    load_config,
+    load_metadata,
+    processed_dir,
+)
 
 logger = logging.getLogger(__name__)
 
 
-def _run_command(command: list[str], *, timeout_s: int) -> tuple[int, str]:
+def _run_command(command: list[str], timeout_s: int) -> tuple[int, str]:
     """Run a subprocess and return ``(returncode, combined_output)``."""
     completed = subprocess.run(  # nosec B603 — argv built in-process, shell=False
         command,
@@ -85,6 +89,7 @@ def render_admin() -> None:
             else:
                 st.code(log[-8000:] or "(no output)")
                 if code == 0:
+                    clear_data_caches()
                     st.success(f"Scrape finished → {out_path}")
                 else:
                     st.error(f"Scrape failed (exit {code})")
@@ -111,8 +116,8 @@ def render_admin() -> None:
             else:
                 st.code(log[-12000:] or "(no output)")
                 if code == 0:
+                    clear_data_caches()
                     st.success("Pipeline finished — Home metrics refreshed.")
-                    _ = load_experiment_config(Path("configs/experiment.yaml"))
                 else:
                     st.error(f"Pipeline failed (exit {code})")
 
