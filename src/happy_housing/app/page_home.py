@@ -10,6 +10,7 @@ import streamlit as st
 
 from happy_housing.app.charts import bar_chart, histogram
 from happy_housing.app.data import load_metadata, load_scored, scored_path
+from happy_housing.app.home_hero import format_hero_stats, hero_html
 from happy_housing.app.home_stats import counts_frame, market_summary
 from happy_housing.app.metadata import (
     DEFAULT_METHODOLOGY,
@@ -18,59 +19,31 @@ from happy_housing.app.metadata import (
 )
 
 
-def _format_refresh(refreshed: str | None) -> str:
-    if not refreshed:
-        return "—"
-    return refreshed[:19].replace("T", " ")
-
-
 def _hero(refreshed: str | None, n_offers: int, r2: float | None) -> None:
-    """Top brand strip with badges and headline metrics."""
-    with st.container(border=True):
-        left, right = st.columns([2.2, 1], vertical_alignment="center")
-        with left:
-            st.title("happy-housing")
-            st.caption(
-                "Warsaw fair-price intelligence — open data, LightGBM, "
-                "explainable maps."
-            )
-            b1, b2, b3 = st.columns(3)
-            b1.badge("Open data", color="green")
-            b2.badge("LightGBM + SHAP", color="primary")
-            b3.badge("Warsaw focus", color="gray")
-        with right:
-            st.metric("Scored offers", f"{n_offers:,}")
-            st.metric(
-                "Hold-out R²",
-                f"{r2:.3f}" if r2 is not None else "—",
-            )
-            st.caption(f"Last refresh (UTC): {_format_refresh(refreshed)}")
+    """Top brand strip — wordmark + quiet metrics, no card chrome."""
+    st.html(hero_html(format_hero_stats(refreshed, n_offers, r2)))
 
 
 def _kpi_strip(summary: dict[str, Any], duration_s: float | None) -> None:
-    """Primary KPI row in bordered metric cards."""
+    """Primary KPI row without nested cards."""
     c1, c2, c3, c4 = st.columns(4)
-    with c1.container(border=True):
-        st.metric("Median zł/m²", f"{summary['median_price_per_m2']:,.0f}")
-    with c2.container(border=True):
-        delta = summary["median_delta"]
-        st.metric(
-            "Median delta",
-            f"{delta:,.0f}",
-            delta="listing - model",
-            delta_color="off",
-        )
-    with c3.container(border=True):
-        share = summary["share_overpriced"]
-        st.metric(
-            "Share overpriced",
-            f"{100 * share:.0f}%" if share == share else "—",
-        )
-    with c4.container(border=True):
-        if duration_s is not None:
-            st.metric("Pipeline duration", f"{duration_s:.1f}s")
-        else:
-            st.metric("Pipeline duration", "—")
+    c1.metric("Median zł/m²", f"{summary['median_price_per_m2']:,.0f}")
+    delta = summary["median_delta"]
+    c2.metric(
+        "Median delta",
+        f"{delta:,.0f}",
+        delta="listing - model",
+        delta_color="off",
+    )
+    share = summary["share_overpriced"]
+    c3.metric(
+        "Share overpriced",
+        f"{100 * share:.0f}%" if share == share else "—",
+    )
+    if duration_s is not None:
+        c4.metric("Pipeline duration", f"{duration_s:.1f}s")
+    else:
+        c4.metric("Pipeline duration", "—")
 
 
 def _tab_overview(
