@@ -268,17 +268,71 @@ def fetch_search_page(
     page: int,
     limit: int = 36,
     timeout_s: float = 45.0,
+    retries: int = 5,
 ) -> dict[str, Any]:
     """Fetch one Otodom search results page and return pageProps data."""
     params = {"limit": limit, "page": page}
     url = f"{_SEARCH_URL}?{urlencode(params)}"
-    response = session.get(url, timeout=timeout_s)
-    response.raise_for_status()
-    data = _extract_next_data(response.text)
-    ads = data["props"]["pageProps"]["data"]["searchAds"]
-    if not isinstance(ads, dict):
-        raise TypeError("Otodom searchAds payload must be a dict")
-    return ads
+    last_exc: Exception | None = None
+    for attempt in range(1, retries + 1):
+        try:
+            response = session.get(url, timeout=timeout_s)
+            response.raise_for_status()
+            data = _extract_next_data(response.text)
+            ads = data["props"]["pageProps"]["data"]["searchAds"]
+            if not isinstance(ads, dict):
+                raise TypeError("Otodom searchAds payload must be a dict")
+            return ads
+        except (requests.RequestException, ValueError, TypeError, KeyError) as exc:
+            last_exc = exc
+            sleep_for = min(2.0 * attempt, 12.0)
+            logger.warning(
+                "Otodom search page %s failed (attempt %s/%s): %s; retry in %.1ss",
+                page,
+                attempt,
+                retries,
+                exc,
+                sleep_for,
+            )
+            time.sleep(sleep_for)
+    if last_exc is None:
+        raise RuntimeError(f"Otodom search page {page} failed without exception")
+    raise last_exc
+
+
+def fetch_listing_detail(
+    session: requests.Session,
+    slug: str,
+    timeout_s: float = 45.0,
+    retries: int = 4,
+) -> dict[str, Any]:
+    """Fetch detail page and flatten all Otodom ad fields we care about."""
+    url = f"https://www.otodom.pl/pl/oferta/{slug}"
+    last_exc: Exception | None = None
+    for attempt in range(1, retries + 1):
+        try:
+            response = session.get(url, timeout=timeout_s)
+            response.raise_for_status()
+            data = _extract_next_data(response.text)
+            ad = data["props"]["pageProps"].get("ad") or {}
+            if not isinstance(ad, dict):
+                return flatten_otodom_ad({})
+            return flatten_otodom_ad(ad)
+        except (requests.RequestException, ValueError, TypeError, KeyError) as exc:
+            last_exc = exc
+            sleep_for = min(1.5 * attempt, 10.0)
+            logger.warning(
+                "Otodom detail %s failed (attempt %s/%s): %s; retry in %.1ss",
+                slug,
+                attempt,
+                retries,
+                exc,
+                sleep_for,
+            )
+            time.sleep(sleep_for)
+    if last_exc is None:
+        raise RuntimeError(f"Otodom detail {slug} failed without exception")
+    raise last_exc
 
 
 def _district_from_item(item: dict[str, Any]) -> str:
@@ -331,22 +385,6 @@ def _normalize_search_item(item: dict[str, Any]) -> dict[str, Any]:
         "lon": None,
         "year_built": None,
     }
-
-
-def fetch_listing_detail(
-    session: requests.Session,
-    slug: str,
-    timeout_s: float = 45.0,
-) -> dict[str, Any]:
-    """Fetch detail page and flatten all Otodom ad fields we care about."""
-    url = f"https://www.otodom.pl/pl/oferta/{slug}"
-    response = session.get(url, timeout=timeout_s)
-    response.raise_for_status()
-    data = _extract_next_data(response.text)
-    ad = data["props"]["pageProps"].get("ad") or {}
-    if not isinstance(ad, dict):
-        return flatten_otodom_ad({})
-    return flatten_otodom_ad(ad)
 
 
 def _ad_description(ad: dict[str, Any]) -> str | None:
