@@ -6,13 +6,18 @@ import streamlit as st
 
 # Streamlit reserves a large top pad under the header / top nav; TOML cannot
 # shrink it. Keep this CSS limited to padding-top — see no-custom-css.mdc.
-_DENSE_TOP_CSS = """
+# Must clear the top ``st.navigation`` bar (~3rem) plus a small gap so page
+# tabs / first widgets are not clipped; 1rem was too aggressive.
+_DENSE_TOP_PADDING = "4.5rem"
+"""Main block-container padding-top under top page navigation."""
+
+_DENSE_TOP_CSS = f"""
 <style>
 section.stMain .block-container,
 div.stMainBlockContainer,
-.stAppViewBlockContainer {
-  padding-top: 1rem;
-}
+.stAppViewBlockContainer {{
+  padding-top: {_DENSE_TOP_PADDING};
+}}
 </style>
 """
 
