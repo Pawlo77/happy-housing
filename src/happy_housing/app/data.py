@@ -12,6 +12,7 @@ import shap
 import streamlit as st
 
 from happy_housing.app.io_cache import clear_io_caches, file_mtime, read_geojson_gdf
+from happy_housing.app.listing_attrs import promote_listing_flags
 from happy_housing.app.metadata import RunMetadata, load_run_metadata
 from happy_housing.config import ExperimentConfig, load_experiment_config
 from happy_housing.ingest import build_gtfs_stop_hourly
@@ -89,7 +90,8 @@ def _read_scored(
         frame,
         otodom_path=Path(otodom_path) if otodom_path else None,
     )
-    return _with_listed_month(frame)
+    frame = promote_listing_flags(_with_listed_month(frame))
+    return frame
 
 
 def load_scored() -> pd.DataFrame:

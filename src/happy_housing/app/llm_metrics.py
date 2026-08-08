@@ -20,6 +20,9 @@ PURPOSE_OFFER_REVIEW: str = "offer_review"
 PURPOSE_PREF_PARSE: str = "pref_parse"
 """Explore Prefs natural-language → JSON translation."""
 
+PURPOSE_ATTR_EXTRACT: str = "attr_extract"
+"""Short listing-description → CSV attribute extraction."""
+
 _MAX_STORED_CALLS: int = 5_000
 """Soft cap — oldest events drop when appending past this size."""
 

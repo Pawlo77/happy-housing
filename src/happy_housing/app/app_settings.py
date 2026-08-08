@@ -13,7 +13,10 @@ from happy_housing.models.metrics import coerce_opt_metric
 logger = logging.getLogger(__name__)
 
 DEFAULT_LM_MODEL = "gemma-4-31b-it-mlx"
-"""Default LM Studio model id."""
+"""Default LM Studio model id for reviews / prefs."""
+
+DEFAULT_EXTRACT_LM_MODEL = "gemma-3-4b-it"
+"""Default lightweight LM Studio model for listing-attr extraction."""
 
 DEFAULT_AI_REVIEW_SYSTEM_PROMPT = (
     "You are a Warsaw residential real-estate analyst. "
@@ -34,6 +37,16 @@ class AppSettings:
 
     lm_model: str = DEFAULT_LM_MODEL
     """LM Studio model id for offer AI reviews / NL tools."""
+    extract_lm_model: str = DEFAULT_EXTRACT_LM_MODEL
+    """Lightweight LM Studio model for description attribute extraction."""
+    extract_attrs_enabled: bool = True
+    """Run short LM extract during pipeline / Admin backfill."""
+    extract_max_chars: int = 900
+    """Max description characters sent to the extract model."""
+    extract_max_tokens: int = 48
+    """Max tokens for extract responses (CSV line only)."""
+    extract_max_listings: int = 200
+    """Cap LM extract calls per pipeline/Admin run (0 = unlimited)."""
     ai_review_on_offer_open: bool = True
     """Auto-request AI review when opening Offer → AI review."""
     ai_review_system_prompt: str = DEFAULT_AI_REVIEW_SYSTEM_PROMPT
@@ -198,6 +211,25 @@ def load_app_settings(path: Path) -> AppSettings:
     return AppSettings(
         lm_model=str(payload.get("lm_model") or defaults.lm_model).strip()
         or defaults.lm_model,
+        extract_lm_model=str(
+            payload.get("extract_lm_model") or defaults.extract_lm_model
+        ).strip()
+        or defaults.extract_lm_model,
+        extract_attrs_enabled=bool(
+            payload.get("extract_attrs_enabled", defaults.extract_attrs_enabled)
+        ),
+        extract_max_chars=max(
+            200,
+            int(payload.get("extract_max_chars", defaults.extract_max_chars)),
+        ),
+        extract_max_tokens=max(
+            16,
+            int(payload.get("extract_max_tokens", defaults.extract_max_tokens)),
+        ),
+        extract_max_listings=max(
+            0,
+            int(payload.get("extract_max_listings", defaults.extract_max_listings)),
+        ),
         ai_review_on_offer_open=bool(
             payload.get("ai_review_on_offer_open", defaults.ai_review_on_offer_open)
         ),

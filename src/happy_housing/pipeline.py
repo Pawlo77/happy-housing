@@ -15,10 +15,13 @@ from happy_housing.app.app_settings import (
     save_app_settings,
     settings_path,
 )
+from happy_housing.app.attr_extract import enrich_frame_listing_attrs
 from happy_housing.app.commute_target import (
     mark_commute_features_applied,
     resolve_commute_target,
 )
+from happy_housing.app.listing_attrs import promote_listing_flags
+from happy_housing.app.llm_metrics import llm_metrics_path
 from happy_housing.app.metadata import (
     DEFAULT_METHODOLOGY,
     DEFAULT_SOURCES,
@@ -334,6 +337,18 @@ def run_pipeline(
         rail_lden_path=rail_lden_path if rail_lden_path.exists() else None,
     )
     train_frame = pd.DataFrame(enriched.drop(columns=["geometry"], errors="ignore"))
+    train_frame = promote_listing_flags(train_frame)
+    if app_settings.extract_attrs_enabled:
+        cap = int(app_settings.extract_max_listings) or None
+        train_frame = enrich_frame_listing_attrs(
+            train_frame,
+            model=app_settings.extract_lm_model,
+            max_chars=int(app_settings.extract_max_chars),
+            max_tokens=int(app_settings.extract_max_tokens),
+            use_llm=True,
+            metrics_path=llm_metrics_path(processed),
+            max_llm_calls=cap,
+        )
     train_frame = attach_commute_minutes(
         train_frame,
         dest_lon=commute.lon,

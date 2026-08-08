@@ -21,6 +21,7 @@ from happy_housing.app.app_settings import (
     save_app_settings,
     settings_path,
 )
+from happy_housing.app.attr_extract import enrich_frame_listing_attrs
 from happy_housing.app.commute_target import (
     commute_target_stale,
     recompute_commute_features,
@@ -34,6 +35,7 @@ from happy_housing.app.data import (
     processed_dir,
 )
 from happy_housing.app.geocode import search_places
+from happy_housing.app.listing_attrs import promote_listing_flags
 from happy_housing.app.llm_metrics import (
     clear_llm_metrics,
     llm_metrics_path,
@@ -254,11 +256,79 @@ def _tab_ai(settings: AppSettings, settings_file: Path, proc: Path) -> None:
     """LM Studio model, buyer prefs, and AI review prompt controls."""
     st.caption("Used for Offer AI reviews (LM Studio must be running locally).")
     lm_model = st.text_input(
-        "LM Studio model id",
+        "LM Studio model id (reviews / prefs)",
         value=settings.lm_model,
         help="Must match a model loaded in LM Studio.",
         key="settings_lm_model",
     )
+    st.subheader("Listing attribute extract")
+    st.caption(
+        "Lightweight model fills gaps from truncated descriptions "
+        "(CSV line, N if unknown). Structured Otodom fields always win."
+    )
+    extract_model = st.text_input(
+        "Extract LM Studio model id",
+        value=settings.extract_lm_model,
+        help="Default gemma-3-4b-it — keep small for speed.",
+        key="settings_extract_lm_model",
+    )
+    extract_on = st.checkbox(
+        "Enable description extract in pipeline",
+        value=settings.extract_attrs_enabled,
+        key="settings_extract_enabled",
+    )
+    e1, e2, e3 = st.columns(3)
+    with e1:
+        extract_chars = st.number_input(
+            "Max description chars",
+            min_value=200,
+            max_value=4000,
+            value=int(settings.extract_max_chars),
+            key="settings_extract_chars",
+        )
+    with e2:
+        extract_tokens = st.number_input(
+            "Max extract tokens",
+            min_value=16,
+            max_value=128,
+            value=int(settings.extract_max_tokens),
+            key="settings_extract_tokens",
+            help="CSV line only — keep low.",
+        )
+    with e3:
+        extract_cap = st.number_input(
+            "Max LM calls / run",
+            min_value=0,
+            max_value=50_000,
+            value=int(settings.extract_max_listings),
+            key="settings_extract_cap",
+            help="0 = unlimited. Prefer a cap for first runs.",
+        )
+    if st.button("Backfill attrs on scored listings", key="admin_extract_backfill"):
+        try:
+            frame = load_scored()
+        except FileNotFoundError as exc:
+            st.error(str(exc))
+        else:
+            cap = int(extract_cap) or None
+            with st.spinner(
+                f"Extracting attrs with {extract_model} (cap={cap or '∞'})…"
+            ):
+                work = promote_listing_flags(frame)
+                work = enrich_frame_listing_attrs(
+                    work,
+                    model=str(extract_model).strip() or settings.extract_lm_model,
+                    max_chars=int(extract_chars),
+                    max_tokens=int(extract_tokens),
+                    use_llm=True,
+                    metrics_path=llm_metrics_path(proc),
+                    max_llm_calls=cap,
+                )
+                out_path = processed_dir() / "listings_scored.parquet"
+                work.to_parquet(out_path, index=False)
+                clear_data_caches()
+            st.success(f"Wrote attrs → {out_path}")
+            st.rerun()
     ai_on_open = st.checkbox(
         "Auto-review when opening Offer → AI review",
         value=settings.ai_review_on_offer_open,
@@ -435,6 +505,13 @@ def _tab_ai(settings: AppSettings, settings_file: Path, proc: Path) -> None:
 
     if st.button("Save AI settings", type="primary", key="save_ai_settings"):
         settings.lm_model = lm_model.strip() or settings.lm_model
+        settings.extract_lm_model = (
+            str(extract_model).strip() or settings.extract_lm_model
+        )
+        settings.extract_attrs_enabled = bool(extract_on)
+        settings.extract_max_chars = int(extract_chars)
+        settings.extract_max_tokens = int(extract_tokens)
+        settings.extract_max_listings = int(extract_cap)
         settings.ai_review_on_offer_open = bool(ai_on_open)
         settings.ai_review_system_prompt = (
             str(system_prompt).strip() or DEFAULT_SYSTEM_PROMPT
