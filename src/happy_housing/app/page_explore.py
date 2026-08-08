@@ -48,7 +48,6 @@ from happy_housing.app.maps import (
     render_deck,
 )
 from happy_housing.app.offer_display import (
-    delta_band,
     livability_rows,
     offer_fact_rows,
 )
@@ -298,26 +297,31 @@ _DELTA_COLORS_HELP = "green underpriced · yellow fair · red overpriced"
 
 
 def _price_metrics(row: pd.Series) -> None:
-    """Listing / model / delta metrics via Streamlit widgets only."""
+    """Listing / model / delta metrics in equal-height bordered columns."""
     listing = float(row["price_per_m2"])
     model = float(row["model_price_per_m2"])
     delta = float(row["delta_price_per_m2"])
-    band = delta_band(delta)
-    # Named theme colours keep a compact signal; full key lives in help (hover).
-    marker_color = {"green": "green", "yellow": "yellow", "red": "red"}[band]
-    c1, c2, c3 = st.columns(3)
-    with c1.container(border=True):
-        st.metric("Listing zł/m²", f"{listing:,.0f}")
-    with c2.container(border=True):
-        st.metric("Model zł/m²", f"{model:,.0f}")
-    with c3.container(border=True):
+    c1, c2, c3 = st.columns(3, border=True)
+    with c1:
         st.metric(
-            "Delta (listing - model)",
+            "Listing zł/m²",
+            f"{listing:,.0f}",
+            help="Asking price per square metre",
+            height="stretch",
+        )
+    with c2:
+        st.metric(
+            "Model zł/m²",
+            f"{model:,.0f}",
+            help="Model fair price per square metre",
+            height="stretch",
+        )
+    with c3:
+        st.metric(
+            "Delta zł/m²",
             f"{delta:+,.0f}",
-            delta="●",
-            delta_color=marker_color,
-            delta_arrow="off",
             help=_DELTA_COLORS_HELP,
+            height="stretch",
         )
 
 
