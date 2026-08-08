@@ -204,9 +204,10 @@ def _tab_ai(settings: AppSettings, settings_file: Path, proc: Path) -> None:
             help="0 = unset",
         )
     avoid_oou = st.checkbox(
-        "Avoid OOU / aircraft noise-proxy zone",
+        "Avoid aircraft Lden ≥ 55 dB",
         value=settings.buyer_avoid_oou,
         key="settings_buyer_avoid_oou",
+        help="Prefer offers outside EEA END major-airport Lden ≥55 dB contours.",
     )
 
     st.subheader("Review prompt")
@@ -237,7 +238,7 @@ def _tab_ai(settings: AppSettings, settings_file: Path, proc: Path) -> None:
         key="settings_ai_inc_model",
     )
     inc_prox = st.checkbox(
-        "Proximity & livability (transit, metro, hospital, OOU, …)",
+        "Proximity & livability (transit, metro, hospital, aircraft Lden, …)",
         value=settings.ai_review_include_proximity,
         key="settings_ai_inc_prox",
     )

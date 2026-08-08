@@ -44,7 +44,7 @@ class LayerFlags:
     offers: bool = True
     """Scored listing pins."""
     oou: bool = True
-    """Chopin aircraft / noise-proxy polygon."""
+    """Chopin aircraft Lden contour bands (EEA END)."""
     hospitals: bool = False
     """OSM hospitals."""
     fire_stations: bool = False

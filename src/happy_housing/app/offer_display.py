@@ -52,7 +52,9 @@ def delta_hex(delta: float) -> str:
 def livability_rows(row: pd.Series) -> pd.DataFrame:
     """Livability signals with distances rounded to whole metres."""
     specs: tuple[tuple[str, str, str], ...] = (
-        ("in_oou", "OOU / aircraft zone", "flag"),
+        ("aircraft_lden_db", "Aircraft Lden (dB)", "db"),
+        ("aircraft_lnight_db", "Aircraft Lnight (dB)", "db"),
+        ("in_oou", "Lden ≥ 55 dB", "flag"),
         ("commute_min", "Commute to Daszyńskiego", "min"),
         ("dist_transit_stop_m", "Nearest transit stop", "m"),
         ("dist_metro_m", "Nearest metro", "m"),
@@ -71,6 +73,14 @@ def livability_rows(row: pd.Series) -> pd.DataFrame:
         elif kind == "min":
             metres_proxy = round_meters(raw)
             display = "—" if metres_proxy is None else f"{metres_proxy} min"
+        elif kind == "db":
+            metres_proxy = round_meters(raw)
+            if metres_proxy is None:
+                display = "—"
+            elif metres_proxy <= 0:
+                display = "below band / 0"
+            else:
+                display = f"≥ {metres_proxy} dB"
         else:
             display = format_meters(raw)
         out.append({"signal": label, "value": display})

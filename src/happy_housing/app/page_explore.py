@@ -29,13 +29,13 @@ from happy_housing.app.board_sort import (
 )
 from happy_housing.app.charts import OVERPRICED, UNDERPRICED, diverging_bar_chart
 from happy_housing.app.data import (
+    load_aircraft_lden,
     load_amenities,
     load_config,
     load_gios_stations,
     load_gtfs_hourly,
     load_gtfs_stops,
     load_gunb_points,
-    load_oou,
     load_scored,
     load_shap_bundle,
     load_shops,
@@ -145,9 +145,9 @@ def _sidebar_filters(frame: pd.DataFrame) -> tuple[FilterState, bool]:
     district = st.sidebar.selectbox("District", ["(all)", *districts])
     source = st.sidebar.selectbox("Source", ["(all)", *sources])
     oou = st.sidebar.selectbox(
-        "OOU / aircraft zone",
+        "Aircraft Lden ≥ 55 dB",
         ["(all)", "inside", "outside"],
-        help="Chopin restricted-use zone — noise/livability proxy, not measured dB.",
+        help="EEA END major-airport Lden band (≥55 dB). Binary filter on exposure.",
     )
     max_ppm = st.sidebar.slider(
         "Max listing zł/m²",
@@ -211,7 +211,7 @@ def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
     st.sidebar.caption("Toggle overlays. Hover any pin for details.")
     flags = LayerFlags(
         offers=st.sidebar.checkbox("Offers (Δ price)", value=True),
-        oou=st.sidebar.checkbox("OOU / noise proxy zone", value=True),
+        oou=st.sidebar.checkbox("Aircraft Lden contours", value=True),
         transit=st.sidebar.checkbox("Public transport (GTFS)", value=False),
         traffic=st.sidebar.checkbox("Traffic intensity proxy", value=False),
         shops=st.sidebar.checkbox("Shops", value=False),
@@ -247,7 +247,7 @@ def _tab_map(
         "Offers: green = model says underpriced, red = overpriced. "
         "Transit uses real GTFS departures at the selected hour. "
         "Traffic is a diurnal mobility proxy (not live sensors). "
-        "OOU = aircraft/noise zone proxy. Hover pins for details."
+        "Lden bands from EEA END major-airport contours. Hover pins for details."
     )
     if filtered.empty and flags.offers:
         st.warning("No offers match filters — disable Offers or widen filters.")
@@ -500,7 +500,7 @@ def _tab_offer(
     with context:
         st.caption(
             "Distances rounded to whole metres. "
-            "OOU is a zone flag (aircraft/noise proxy), not measured dB."
+            "Aircraft Lden/Lnight from EEA END contour bands (dB lower edge)."
         )
         st.dataframe(livability_rows(row), hide_index=True, width="stretch")
         _price_metrics(row)
@@ -745,7 +745,7 @@ def render_explore() -> None:
     map_board = apply_starred_only(filtered, starred) if starred_only else filtered
     config = load_config()
 
-    oou = load_oou()
+    oou = load_aircraft_lden()
     amenities = load_amenities()
     shops = load_shops()
     stops = load_gtfs_stops()

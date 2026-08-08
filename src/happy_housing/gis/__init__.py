@@ -1,4 +1,4 @@
-"""Spatial enrichment: OOU flags, amenity distances, air and transit proxies."""
+"""Spatial enrichment: aircraft noise bands, amenity distances, transit proxies."""
 
 from __future__ import annotations
 
@@ -7,18 +7,12 @@ from pathlib import Path
 
 import geopandas as gpd
 import pandas as pd
-from shapely.geometry import Point, Polygon
+from shapely.geometry import Point
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_OOU_COORDS: list[tuple[float, float]] = [
-    (20.90, 52.14),
-    (21.02, 52.14),
-    (21.02, 52.20),
-    (20.90, 52.20),
-    (20.90, 52.14),
-]
-"""Rough Chopin OOU rectangle used when no official polygon file is present."""
+AIRCRAFT_LDEN_EXPOSURE_DB: float = 55.0
+"""END reporting threshold used as binary high-exposure flag (``in_oou``)."""
 
 
 def listings_to_gdf(
@@ -32,35 +26,60 @@ def listings_to_gdf(
     return gpd.GeoDataFrame(listings.copy(), geometry=geometry, crs=crs)
 
 
-def load_or_create_oou_polygon(path: Path) -> gpd.GeoDataFrame:
-    """Load an OOU polygon GeoJSON or write the default Chopin bootstrap polygon."""
-    if path.exists():
-        return gpd.read_file(path)
-    polygon = Polygon(_DEFAULT_OOU_COORDS)
-    frame = gpd.GeoDataFrame(
-        {"zone": ["Z_bootstrap"], "name": ["Chopin OOU bootstrap"]},
-        geometry=[polygon],
-        crs="EPSG:4326",
-    )
-    path.parent.mkdir(parents=True, exist_ok=True)
-    frame.to_file(path, driver="GeoJSON")
-    logger.info("Wrote bootstrap OOU polygon to %s", path)
-    return frame
+def load_noise_contours(path: Path, value_col: str) -> gpd.GeoDataFrame:
+    """Load END-style noise contour polygons with a numeric band column."""
+    if not path.exists():
+        return gpd.GeoDataFrame(
+            columns=[value_col, "geometry"], geometry=[], crs="EPSG:4326"
+        )
+    frame = gpd.read_file(path)
+    if frame.empty or value_col not in frame.columns:
+        return gpd.GeoDataFrame(
+            columns=[value_col, "geometry"], geometry=[], crs="EPSG:4326"
+        )
+    out = frame[[value_col, "geometry"]].copy()
+    out[value_col] = pd.to_numeric(out[value_col], errors="coerce")
+    out = out[out[value_col].notna() & out.geometry.notna() & ~out.geometry.is_empty]
+    return gpd.GeoDataFrame(out, geometry="geometry", crs=frame.crs or "EPSG:4326")
 
 
-def flag_oou_membership(
+def attach_contour_level(
     listings: gpd.GeoDataFrame,
-    oou: gpd.GeoDataFrame,
+    contours: gpd.GeoDataFrame,
+    value_col: str,
+    out_col: str,
 ) -> gpd.GeoDataFrame:
-    """Add ``in_oou`` via spatial join (vectorized)."""
-    joined = gpd.sjoin(
-        listings,
-        oou[["geometry"]],
-        how="left",
-        predicate="within",
+    """Assign max contour band containing each listing; missing → 0."""
+    result = listings.copy()
+    if contours.empty or value_col not in contours.columns:
+        result[out_col] = 0.0
+        return result
+    right = contours[[value_col, "geometry"]].copy()
+    joined = gpd.sjoin(result, right, how="left", predicate="within")
+    levels = (
+        joined
+        .groupby(joined.index, sort=False)[value_col]
+        .max()
+        .reindex(result.index)
+        .fillna(0.0)
+        .astype(float)
     )
-    joined["in_oou"] = joined["index_right"].notna().astype(int)
-    return joined.drop(columns=["index_right"], errors="ignore")
+    result[out_col] = levels.to_numpy()
+    return result
+
+
+def attach_aircraft_noise_levels(
+    listings: gpd.GeoDataFrame,
+    *,
+    lden: gpd.GeoDataFrame,
+    lnight: gpd.GeoDataFrame,
+    exposure_db: float = AIRCRAFT_LDEN_EXPOSURE_DB,
+) -> gpd.GeoDataFrame:
+    """Attach ``aircraft_lden_db``, ``aircraft_lnight_db``, and exposure flag."""
+    out = attach_contour_level(listings, lden, "lden_db", "aircraft_lden_db")
+    out = attach_contour_level(out, lnight, "lnight_db", "aircraft_lnight_db")
+    out["in_oou"] = (out["aircraft_lden_db"] >= float(exposure_db)).astype(int)
+    return out
 
 
 def nearest_distance_meters(
@@ -231,19 +250,32 @@ def enrich_listings(
     listings: pd.DataFrame,
     *,
     projected_crs: str,
-    oou_path: Path,
     amenities: gpd.GeoDataFrame,
     gios_stations: pd.DataFrame,
     gtfs_stops: pd.DataFrame,
     commute_lon: float,
     commute_lat: float,
     gunb_points: gpd.GeoDataFrame | None = None,
+    aircraft_lden_path: Path | None = None,
+    aircraft_lnight_path: Path | None = None,
 ) -> gpd.GeoDataFrame:
-    """Attach OOU, amenity, air, transit, GUNB, and commute-distance features."""
+    """Attach aircraft noise, amenity, air, transit, GUNB, and commute features."""
     gdf = listings_to_gdf(listings)
-    oou = load_or_create_oou_polygon(oou_path)
-    gdf = flag_oou_membership(gdf, oou)
-
+    lden = (
+        load_noise_contours(aircraft_lden_path, "lden_db")
+        if aircraft_lden_path is not None
+        else gpd.GeoDataFrame(
+            columns=["lden_db", "geometry"], geometry=[], crs="EPSG:4326"
+        )
+    )
+    lnight = (
+        load_noise_contours(aircraft_lnight_path, "lnight_db")
+        if aircraft_lnight_path is not None
+        else gpd.GeoDataFrame(
+            columns=["lnight_db", "geometry"], geometry=[], crs="EPSG:4326"
+        )
+    )
+    gdf = attach_aircraft_noise_levels(gdf, lden=lden, lnight=lnight)
     amenity_cols = (
         ("hospital", "dist_hospital_m"),
         ("fire_station", "dist_fire_station_m"),

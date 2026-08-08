@@ -16,7 +16,7 @@ class FilterState:
     source: str = "(all)"
     """Listing source or ``(all)``."""
     oou: str = "(all)"
-    """OOU membership: ``(all)``, ``inside``, or ``outside``."""
+    """Aircraft Lden ≥55 dB: ``(all)``, ``inside``, or ``outside``."""
     max_price_per_m2: float | None = None
     """Upper bound on listing zł/m²."""
     month: str = "(all)"

@@ -29,6 +29,8 @@ def test_delta_band_colours() -> None:
 
 def test_livability_rows_round_distances() -> None:
     row = pd.Series({
+        "aircraft_lden_db": 60.0,
+        "aircraft_lnight_db": 0.0,
         "in_oou": 1,
         "commute_min": 12.4,
         "dist_transit_stop_m": 371.9,
@@ -43,3 +45,5 @@ def test_livability_rows_round_distances() -> None:
     transit = frame.loc[frame["signal"] == "Nearest transit stop", "value"].iloc[0]
     assert transit == "372 m"
     assert "Yes" in frame["value"].astype(str).tolist()
+    lden = frame.loc[frame["signal"] == "Aircraft Lden (dB)", "value"].iloc[0]
+    assert lden == "≥ 60 dB"

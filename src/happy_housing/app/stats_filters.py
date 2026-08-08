@@ -20,7 +20,7 @@ class StatsFilterState:
     months: list[str] = field(default_factory=list)
     """Listed months ``YYYY-MM``; empty means all."""
     oou: str = "(all)"
-    """OOU membership: ``(all)``, ``inside``, or ``outside``."""
+    """Aircraft Lden ≥55 dB: ``(all)``, ``inside``, or ``outside``."""
     valuation: str = "(all)"
     """Residual side: ``(all)``, ``underpriced``, or ``overpriced``."""
     price_min: float | None = None

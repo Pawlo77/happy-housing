@@ -41,7 +41,7 @@ _FIELD_LABELS: dict[str, str] = {
     "rooms": "Rooms",
     "district": "District",
     "commute_min": "Commute min",
-    "in_oou": "OOU",
+    "in_oou": "Lden≥55",
     "url": "URL",
 }
 

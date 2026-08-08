@@ -36,12 +36,13 @@ def _enriched_frame(tmp_path: Path) -> pd.DataFrame:
     enriched = enrich_listings(
         listings,
         projected_crs="EPSG:2180",
-        oou_path=tmp_path / "oou.geojson",
         amenities=amenities,
         gios_stations=gios,
         gtfs_stops=stops,
         commute_lon=20.983,
         commute_lat=52.23,
+        aircraft_lden_path=Path("data/fixtures/chopin_aircraft_lden.geojson"),
+        aircraft_lnight_path=Path("data/fixtures/chopin_aircraft_lnight.geojson"),
     )
     return pd.DataFrame(enriched.drop(columns=["geometry"], errors="ignore"))
 

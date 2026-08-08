@@ -67,7 +67,9 @@ _MODEL_KEYS: tuple[tuple[str, str], ...] = (
 """Model valuation fields."""
 
 _PROXIMITY_KEYS: tuple[tuple[str, str], ...] = (
-    ("in_oou", "OOU / aircraft noise-proxy zone"),
+    ("aircraft_lden_db", "Aircraft Lden (dB, EEA END)"),
+    ("aircraft_lnight_db", "Aircraft Lnight (dB, EEA END)"),
+    ("in_oou", "Aircraft Lden ≥ 55 dB"),
     ("commute_min", "Commute min to Daszyńskiego"),
     ("dist_daszynskiego_m", "Distance to Daszyńskiego (m)"),
     ("dist_transit_stop_m", "Nearest transit stop (m)"),
@@ -311,7 +313,7 @@ def _buyer_preferences_block(settings: AppSettings) -> list[str]:
     if settings.buyer_max_commute_min is not None:
         lines.append(f"Max commute (min): {settings.buyer_max_commute_min:g}")
     if settings.buyer_avoid_oou:
-        lines.append("Avoid OOU / aircraft noise-proxy zone: yes")
+        lines.append("Avoid aircraft Lden ≥ 55 dB: yes")
     if settings.buyer_must_haves.strip():
         lines.append(f"Must-haves: {settings.buyer_must_haves.strip()}")
     return lines
@@ -353,9 +355,10 @@ def build_review_prompt(
         if body:
             sections.append(
                 "## Proximity & livability\n"
-                "(distances in metres; OOU is a zone flag / noise proxy, "
-                "not measured dB; traffic intensity is a map-layer diurnal "
-                "proxy and is not stored per offer)\n" + "\n".join(body)
+                "(distances in metres; aircraft Lden/Lnight are EEA END "
+                "contour band lower edges in dB; traffic intensity is a "
+                "map-layer diurnal proxy and is not stored per offer)\n"
+                + "\n".join(body)
             )
 
     if cfg.ai_review_include_neighborhood_prices:

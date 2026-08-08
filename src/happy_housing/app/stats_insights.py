@@ -25,7 +25,7 @@ def _with_district(frame: pd.DataFrame) -> pd.DataFrame:
 
 
 def chopin_surcharge(frame: pd.DataFrame) -> dict[str, float]:
-    """Median zł/m² inside vs outside OOU — the aircraft-zone premium."""
+    """Median zł/m² inside vs outside Lden ≥55 dB — aircraft-noise premium."""
     ppm = _num(frame, "price_per_m2")
     oou = _num(frame, "in_oou")
     work = pd.DataFrame({"ppm": ppm, "in_oou": oou}).dropna()

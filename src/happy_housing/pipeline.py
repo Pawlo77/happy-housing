@@ -237,13 +237,14 @@ def run_pipeline(
     enriched = enrich_listings(
         listings,
         projected_crs=config.bbox.projected_crs,
-        oou_path=fixtures / "oou_chopin.geojson",
         amenities=amenities,
         gios_stations=gios_stations,
         gtfs_stops=gtfs_stops,
         commute_lon=config.commute_target_lon,
         commute_lat=config.commute_target_lat,
         gunb_points=gunb,
+        aircraft_lden_path=fixtures / "chopin_aircraft_lden.geojson",
+        aircraft_lnight_path=fixtures / "chopin_aircraft_lnight.geojson",
     )
     train_frame = pd.DataFrame(enriched.drop(columns=["geometry"], errors="ignore"))
     train_frame = attach_commute_minutes(

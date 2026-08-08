@@ -141,9 +141,15 @@ DEFAULT_SOURCE_CATALOG: tuple[DataSource, ...] = (
         unit="permits",
     ),
     DataSource(
-        name="Chopin OOU restricted-use zone",
-        url="https://www.lotnisko-chopina.pl/",
-        role="Aircraft restricted-use zone flag (noise/livability proxy).",
+        name="Chopin aircraft Lden / Lnight (EEA END)",
+        url=(
+            "https://noise.discomap.eea.europa.eu/arcgis/rest/services/"
+            "Noise/2012_NOISE_END_LAEA_update2015_Contours/MapServer"
+        ),
+        role=(
+            "Strategic aircraft noise contour bands (Lden/Lnight dB) for "
+            "Poland major airports — END 2012/update2015."
+        ),
         key="oou",
         unit="zones",
     ),
@@ -157,15 +163,16 @@ DEFAULT_METHODOLOGY: str = (
     "LightGBM regresses asking/transaction zł/m² from property traits "
     "(area, rooms, year) and livability distances (hospital, fire, police, "
     "transit, air station, GUNB permits, commute to Rondo Daszyńskiego) plus "
-    "an OOU aircraft-zone flag. SHAP TreeExplainer explains each offer. "
+    "an aircraft Lden/Lnight feature from EEA END contours. SHAP TreeExplainer "
+    "explains each offer. "
     "Commute minutes use local OSRM when available, else a 30 km/h distance proxy."
 )
 """Short modeling methodology blurb."""
 
 METHODOLOGY_STEPS: tuple[str, ...] = (
     "Ingest Otodom asks and UM Warszawa RCN transactions into one universe.",
-    "Enrich each pin with OOU membership and nearest amenity / transit / "
-    "air / GUNB distances.",
+    "Enrich each pin with aircraft Lden/Lnight bands and nearest amenity / "
+    "transit / air / GUNB distances.",
     "Attach commute minutes via local OSRM, or a 30 km/h distance proxy.",
     "Train LightGBM on hold-out zł/m²; log MAE/R² and the booster to MLflow.",
     "Score every offer; Explore explains residuals with SHAP TreeExplainer.",

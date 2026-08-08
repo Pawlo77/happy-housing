@@ -129,9 +129,17 @@ def load_amenities() -> gpd.GeoDataFrame:
     return _read_amenities(str(cache), str(fixture), max(mtimes, default=0.0))
 
 
-def load_oou() -> gpd.GeoDataFrame | None:
-    """Load Chopin OOU polygon when present."""
-    path = load_config().data.fixtures_path() / "oou_chopin.geojson"
+def load_aircraft_lden() -> gpd.GeoDataFrame | None:
+    """Load Chopin aircraft Lden contour bands when present."""
+    path = load_config().data.fixtures_path() / "chopin_aircraft_lden.geojson"
+    if not path.exists():
+        return None
+    return read_geojson_gdf(str(path), path.stat().st_mtime)
+
+
+def load_aircraft_lnight() -> gpd.GeoDataFrame | None:
+    """Load Chopin aircraft Lnight contour bands when present."""
+    path = load_config().data.fixtures_path() / "chopin_aircraft_lnight.geojson"
     if not path.exists():
         return None
     return read_geojson_gdf(str(path), path.stat().st_mtime)

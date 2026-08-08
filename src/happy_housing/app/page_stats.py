@@ -110,7 +110,7 @@ def _render_filters(frame: pd.DataFrame) -> StatsFilterState:
         r2c1, r2c2, r2c3, r2c4 = st.columns(4)
         with r2c1:
             oou = st.selectbox(
-                "OOU / aircraft zone",
+                "Aircraft Lden ≥ 55 dB",
                 options=["(all)", "inside", "outside"],
                 key="stats_oou",
             )
@@ -364,10 +364,10 @@ def _tab_place(frame: pd.DataFrame) -> None:
     a.metric(
         "Chopin surcharge",
         f"{surcharge:+.1f}%" if surcharge == surcharge else "—",
-        help="Median zł/m² inside OOU vs outside.",
+        help="Median zł/m² inside Lden ≥55 dB vs outside.",
     )
     b.metric(
-        "Inside OOU median",
+        "Inside Lden≥55 median",
         f"{chopin['median_inside']:,.0f}"
         if chopin["median_inside"] == chopin["median_inside"]
         else "—",
@@ -378,7 +378,7 @@ def _tab_place(frame: pd.DataFrame) -> None:
         if transit["share_within"] == transit["share_within"]
         else "—",
     )
-    d.metric("OOU sample", f"{int(chopin['n_inside']):,}")
+    d.metric("Lden≥55 sample", f"{int(chopin['n_inside']):,}")
 
     left, right = st.columns(2)
     with left:

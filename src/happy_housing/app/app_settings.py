@@ -45,7 +45,7 @@ class AppSettings:
     ai_review_include_model_valuation: bool = True
     """Include listing/model/delta zł/m²."""
     ai_review_include_proximity: bool = True
-    """Include transit/metro/hospital/… distances and OOU."""
+    """Include transit/metro/hospital/… distances and aircraft noise."""
     ai_review_include_neighborhood_prices: bool = True
     """Include local RCN historical sale comps."""
     ai_review_include_description: bool = True
@@ -79,7 +79,7 @@ class AppSettings:
     buyer_max_commute_min: float | None = None
     """Optional max commute minutes; None = unset."""
     buyer_avoid_oou: bool = False
-    """Prefer offers outside the OOU / noise-proxy zone."""
+    """Prefer offers outside aircraft Lden ≥55 dB END contours."""
     buyer_must_haves: str = ""
     """Free-text must-haves (balcony, garage, quiet street, …)."""
     news_history_cap: int = 200

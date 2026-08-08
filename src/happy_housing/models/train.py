@@ -45,6 +45,8 @@ CORE_FEATURE_COLUMNS: tuple[str, ...] = (
     "has_lift",
     "is_private_owner",
     "rent",
+    "aircraft_lden_db",
+    "aircraft_lnight_db",
     "in_oou",
     "dist_hospital_m",
     "dist_fire_station_m",

@@ -149,26 +149,42 @@ def amenity_layers(
     return layers
 
 
-def oou_polygon_layer(oou: gpd.GeoDataFrame | None) -> list[pdk.Layer]:
-    """Semi-transparent OOU polygon (aircraft / noise proxy)."""
-    if oou is None or oou.empty:
+def aircraft_noise_layers(
+    lden: gpd.GeoDataFrame | None,
+) -> list[pdk.Layer]:
+    """Colored END Lden contour bands (darker = louder)."""
+    if lden is None or lden.empty or "lden_db" not in lden.columns:
         return []
+    # Nested bands: draw quieter first so louder sits on top.
+    work = lden.copy()
+    work["lden_db"] = pd.to_numeric(work["lden_db"], errors="coerce")
+    work = work.dropna(subset=["lden_db"]).sort_values("lden_db")
     records: list[dict[str, Any]] = []
-    for geom in oou.geometry:
+    for _, row in work.iterrows():
+        geom = row.geometry
         if geom is None or geom.is_empty:
             continue
-        if geom.geom_type == "Polygon":
-            polys = [geom]
-        elif geom.geom_type == "MultiPolygon":
-            polys = list(geom.geoms)
-        else:
-            continue
+        db = float(row["lden_db"])
+        # Map 45→soft amber … 75→deep red.
+        t = min(1.0, max(0.0, (db - 45.0) / 30.0))
+        fill = [
+            int(220 - 40 * t),
+            int(160 - 120 * t),
+            int(40 - 20 * t),
+            int(40 + 50 * t),
+        ]
+        line = [int(180 - 40 * t), int(80 - 40 * t), 20, 200]
+        polys = [geom] if geom.geom_type == "Polygon" else list(geom.geoms)
         for poly in polys:
+            if poly.geom_type != "Polygon":
+                continue
             coords = [[float(x), float(y)] for x, y in poly.exterior.coords]
             records.append({
                 "coordinates": [coords],
-                "tooltip_name": "Chopin OOU",
-                "tooltip_detail": "Aircraft restricted-use / noise proxy (not dB)",
+                "fill_color": fill,
+                "line_color": line,
+                "tooltip_name": f"Aircraft Lden ≥ {db:.0f} dB",
+                "tooltip_detail": "EEA END major-airport contour (not live dB)",
             })
     if not records:
         return []
@@ -177,11 +193,11 @@ def oou_polygon_layer(oou: gpd.GeoDataFrame | None) -> list[pdk.Layer]:
             "PolygonLayer",
             data=records,
             get_polygon="coordinates",
-            get_fill_color=[180, 40, 40, 55],
-            get_line_color=[160, 20, 20, 200],
-            line_width_min_pixels=2,
+            get_fill_color="fill_color",
+            get_line_color="line_color",
+            line_width_min_pixels=1,
             pickable=True,
-            id="oou",
+            id="aircraft_lden",
         )
     ]
 
@@ -372,7 +388,7 @@ def build_explore_layers(
     """Assemble enabled Explore map layers in draw order."""
     layers: list[pdk.Layer] = []
     if flags.oou:
-        layers.extend(oou_polygon_layer(oou))
+        layers.extend(aircraft_noise_layers(oou))
     if flags.traffic:
         heat = traffic_heatmap_layer(traffic_sample, hour=hour)
         if heat is not None:
