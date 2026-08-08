@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from happy_housing.app.preferences import UserPreferences
 from happy_housing.app.recommender import (
     clear_recommendation_memory,
     impressions_path,
@@ -61,3 +62,40 @@ def test_retrain_and_clear_memory(tmp_path: Path) -> None:
     clear_recommendation_memory(tmp_path)
     assert load_impressions(impressions_path(tmp_path)) == {}
     assert not metrics_path(tmp_path).exists()
+
+
+def test_score_offers_respects_enabled_preferences() -> None:
+    frame = pd.DataFrame({
+        "listing_id": ["a", "b"],
+        "district": ["wola", "mokotow"],
+        "delta_price_per_m2": [-900.0, -900.0],
+        "commute_min": [10.0, 10.0],
+        "dist_transit_stop_m": [100.0, 100.0],
+        "in_oou": [0, 0],
+    })
+    prefs = UserPreferences(enabled=True, districts=["mokotow"])
+    ranked = score_offers(
+        frame,
+        demotion_alpha=1.0,
+        impressions={},
+        prefs=prefs,
+    )
+    assert list(ranked["listing_id"]) == ["b"]
+
+
+def test_retrain_metrics_include_prefs_enabled(tmp_path: Path) -> None:
+    frame = pd.DataFrame({
+        "listing_id": ["a"],
+        "delta_price_per_m2": [-200.0],
+        "commute_min": [12.0],
+        "dist_transit_stop_m": [200.0],
+    })
+    prefs = UserPreferences(enabled=True)
+    metrics = retrain_recommender(
+        frame,
+        processed_dir=tmp_path,
+        top_n=5,
+        demotion_alpha=1.0,
+        prefs=prefs,
+    )
+    assert metrics["prefs_enabled"] == 1.0

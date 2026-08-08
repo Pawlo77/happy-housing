@@ -157,7 +157,7 @@ def _tab_model(meta_metrics: dict[str, float], feature_columns: list[str]) -> No
     rec = load_recommender_metrics(processed_dir())
     st.subheader("Preference recommender")
     if rec:
-        r1, r2, r3, r4 = st.columns(4)
+        r1, r2, r3, r4, r5 = st.columns(5)
         r1.metric("Candidates", f"{int(rec.get('n_candidates', 0)):,}")
         r2.metric("Recommended", f"{int(rec.get('n_recommended', 0)):,}")
         r3.metric("Mean confidence", f"{rec.get('mean_confidence', float('nan')):.3f}")
@@ -165,12 +165,17 @@ def _tab_model(meta_metrics: dict[str, float], feature_columns: list[str]) -> No
             "Share unseen",
             f"{100 * rec.get('share_unseen', float('nan')):.0f}%",
         )
+        r5.metric(
+            "Prefs on",
+            "Yes" if rec.get("prefs_enabled", 0.0) >= 0.5 else "No",
+        )
         st.caption(
-            "Bargain + proximity scorer with soft demotion for already-seen "
-            "offers. Retrain from Admin → Recommendations."
+            "Rule-based preference-fit + bargain scorer with soft demotion for "
+            "already-seen offers (not the price LightGBM). "
+            "Configure on Explore → Prefs; retrain from Admin → Recommendations."
         )
     else:
-        st.info("No recommender metrics yet — Admin → Recommendations → Retrain.")
+        st.info("No recommender metrics yet — open Explore → News or Admin → Retrain.")
 
     st.subheader("How the fair price is built")
     for idx, step in enumerate(METHODOLOGY_STEPS, start=1):

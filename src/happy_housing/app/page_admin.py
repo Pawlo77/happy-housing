@@ -34,6 +34,7 @@ from happy_housing.app.llm_metrics import (
     purpose_stats_frame,
     summarize_llm_calls,
 )
+from happy_housing.app.preferences import load_preferences, preferences_path
 from happy_housing.app.recommender import (
     clear_recommendation_memory,
     impressions_path,
@@ -450,11 +451,13 @@ def _tab_recommender(settings: AppSettings, settings_file: Path, proc: Path) -> 
                 st.error(str(exc))
             else:
                 with st.spinner("Rescoring offers…"):
+                    prefs = load_preferences(preferences_path(proc))
                     out = retrain_recommender(
                         frame,
                         processed_dir=proc,
                         top_n=int(top_n),
                         demotion_alpha=float(alpha),
+                        prefs=prefs,
                     )
                 st.success(
                     f"Retrained · {int(out['n_recommended'])} of "

@@ -17,6 +17,9 @@ logger = logging.getLogger(__name__)
 PURPOSE_OFFER_REVIEW: str = "offer_review"
 """Explore Offer AI review generation."""
 
+PURPOSE_PREF_PARSE: str = "pref_parse"
+"""Explore Prefs natural-language → JSON translation."""
+
 _MAX_STORED_CALLS: int = 5_000
 """Soft cap — oldest events drop when appending past this size."""
 

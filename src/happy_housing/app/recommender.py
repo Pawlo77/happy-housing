@@ -12,6 +12,11 @@ import numpy as np
 import pandas as pd
 
 from happy_housing.app.io_cache import read_json
+from happy_housing.app.preferences import (
+    OOU_PREFER_OUTSIDE,
+    UserPreferences,
+    apply_preferences,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -103,19 +108,40 @@ def score_offers(
     *,
     demotion_alpha: float,
     impressions: dict[str, dict[str, Any]],
+    prefs: UserPreferences | None = None,
 ) -> pd.DataFrame:
-    """Rank offers by bargain + proximity confidence with soft seen-demotion."""
-    if frame.empty or "listing_id" not in frame.columns:
+    """Rank offers by bargain + proximity (+ soft prefs) with seen-demotion.
+
+    When ``prefs.enabled``, hard-filters first via ``apply_preferences``.
+    """
+    work = frame
+    if prefs is not None and prefs.enabled:
+        work = apply_preferences(frame, prefs)
+    if work.empty or "listing_id" not in work.columns:
         return pd.DataFrame(columns=["listing_id", "confidence"])
-    work = frame.copy()
+    work = work.copy()
     delta = _col(work, "delta_price_per_m2")
     commute = _col(work, "commute_min")
     transit = _col(work, "dist_transit_stop_m")
-    # Bargain: more negative delta → higher score (cap at 1).
     bargain = ((-delta).clip(lower=0.0) / 2000.0).clip(upper=1.0).fillna(0.0)
-    commute_score = (1.0 - (commute.fillna(60.0) / 60.0)).clip(0.0, 1.0)
-    transit_score = (1.0 - (transit.fillna(1000.0) / 1000.0)).clip(0.0, 1.0)
-    base = 0.55 * bargain + 0.25 * commute_score + 0.20 * transit_score
+    commute_cap = (
+        float(prefs.max_commute_min)
+        if prefs is not None and prefs.max_commute_min
+        else 60.0
+    )
+    transit_cap = (
+        float(prefs.max_dist_transit_m)
+        if prefs is not None and prefs.max_dist_transit_m
+        else 1000.0
+    )
+    commute_score = (1.0 - (commute.fillna(commute_cap) / commute_cap)).clip(0.0, 1.0)
+    transit_score = (1.0 - (transit.fillna(transit_cap) / transit_cap)).clip(0.0, 1.0)
+    noise_bonus = pd.Series(0.0, index=work.index, dtype=float)
+    if prefs is not None and prefs.oou == OOU_PREFER_OUTSIDE:
+        noise_bonus = (1.0 - _col(work, "in_oou").fillna(0.0).clip(0.0, 1.0)) * 0.15
+    base = (
+        0.50 * bargain + 0.25 * commute_score + 0.20 * transit_score + noise_bonus
+    ).clip(0.0, 1.0)
     counts = (
         work["listing_id"]
         .astype(str)
@@ -140,6 +166,7 @@ def retrain_recommender(
     processed_dir: Path,
     top_n: int,
     demotion_alpha: float,
+    prefs: UserPreferences | None = None,
 ) -> dict[str, float]:
     """Rescore the universe, persist metrics, return summary stats."""
     impressions = load_impressions(impressions_path(processed_dir))
@@ -147,6 +174,7 @@ def retrain_recommender(
         frame,
         demotion_alpha=demotion_alpha,
         impressions=impressions,
+        prefs=prefs,
     )
     top = ranked.head(max(1, int(top_n)))
     unseen = 0
@@ -158,6 +186,7 @@ def retrain_recommender(
         "n_recommended": float(len(top)),
         "mean_confidence": float(top["confidence"].mean()) if not top.empty else 0.0,
         "share_unseen": float(unseen / len(top)) if not top.empty else 0.0,
+        "prefs_enabled": 1.0 if (prefs is not None and prefs.enabled) else 0.0,
         "retrained_at": datetime.now(tz=UTC).timestamp(),
     }
     path = metrics_path(processed_dir)
@@ -168,6 +197,42 @@ def retrain_recommender(
     )
     logger.info("Retrained recommender → %s", metrics)
     return metrics
+
+
+def top_recommendations(
+    frame: pd.DataFrame,
+    *,
+    processed_dir: Path,
+    top_n: int,
+    demotion_alpha: float,
+    prefs: UserPreferences | None = None,
+    record: bool = True,
+) -> pd.DataFrame:
+    """Return top-N ranked listing rows; optionally record impressions + metrics."""
+    impressions = load_impressions(impressions_path(processed_dir))
+    ranked = score_offers(
+        frame,
+        demotion_alpha=demotion_alpha,
+        impressions=impressions,
+        prefs=prefs,
+    )
+    top = ranked.head(max(0, int(top_n)))
+    if top.empty:
+        return frame.iloc[0:0].copy()
+    if record:
+        record_impressions(impressions_path(processed_dir), top["listing_id"].tolist())
+        retrain_recommender(
+            frame,
+            processed_dir=processed_dir,
+            top_n=top_n,
+            demotion_alpha=demotion_alpha,
+            prefs=prefs,
+        )
+    ids = top["listing_id"].tolist()
+    conf_map = dict(zip(top["listing_id"], top["confidence"], strict=True))
+    subset = frame.loc[frame["listing_id"].astype(str).isin(ids)].copy()
+    subset["confidence"] = subset["listing_id"].astype(str).map(conf_map)
+    return subset.sort_values("confidence", ascending=False).reset_index(drop=True)
 
 
 def load_recommender_metrics(processed: Path) -> dict[str, float]:

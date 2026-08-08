@@ -1,4 +1,4 @@
-"""Explore page: sidebar filters + Map / Offer / Board / News tabs."""
+"""Explore page: sidebar filters + Map / Offer / Board / News / Prefs tabs."""
 
 from __future__ import annotations
 
@@ -61,10 +61,25 @@ from happy_housing.app.offer_display import (
     livability_rows,
     offer_fact_rows,
 )
+from happy_housing.app.pref_llm import merge_preferences, translate_preferences_nl
+from happy_housing.app.preferences import (
+    OOU_ANY,
+    OOU_INSIDE_OK,
+    OOU_OUTSIDE_ONLY,
+    OOU_PREFER_OUTSIDE,
+    UserPreferences,
+    apply_preferences,
+    load_preferences,
+    preferences_path,
+    save_preferences,
+)
 from happy_housing.app.recommender import (
     impressions_path,
     load_impressions,
     mark_opened,
+    record_impressions,
+    retrain_recommender,
+    top_recommendations,
 )
 from happy_housing.app.star_news import (
     StarNewsItem,
@@ -631,6 +646,7 @@ def _tab_board(
     starred: frozenset[str],
     app_settings: AppSettings,
     impressions_file: Path,
+    prefs: UserPreferences,
 ) -> None:
     """Tabular offer board; selecting a row opens Offer for that listing."""
     impressions = load_impressions(impressions_file)
@@ -638,6 +654,7 @@ def _tab_board(
         filtered,
         impressions=impressions,
         demotion_alpha=float(app_settings.recommender_demotion_alpha),
+        prefs=prefs,
     )
     labels = [label for _, label in BOARD_SORT_OPTIONS]
     keys = [key for key, _ in BOARD_SORT_OPTIONS]
@@ -703,8 +720,81 @@ def _tab_news(
     starred: frozenset[str],
     items: list[StarNewsItem],
     news_file: Path,
+    scored: pd.DataFrame,
+    prefs: UserPreferences,
+    app_settings: AppSettings,
+    proc: Path,
 ) -> None:
-    """News feed of changes to starred offers since last Explore sync."""
+    """Promising recommendations + starred-offer change feed."""
+    st.subheader("Promising for you")
+    if not prefs.enabled:
+        st.caption(
+            "Enable preferences on the Prefs tab to rank offers by your fit + bargain."
+        )
+    else:
+        st.caption(
+            "Preference-fit + bargain score with soft demotion for already-seen "
+            "listings. Opening an offer marks it seen."
+        )
+        rec_ids_key = "explore_news_rec_ids"
+        previous = st.session_state.get(rec_ids_key)
+        promising = top_recommendations(
+            scored,
+            processed_dir=proc,
+            top_n=int(app_settings.recommender_top_n),
+            demotion_alpha=float(app_settings.recommender_demotion_alpha),
+            prefs=prefs,
+            record=False,
+        )
+        current_ids = (
+            tuple(promising["listing_id"].astype(str).tolist())
+            if not promising.empty
+            else ()
+        )
+        if current_ids and current_ids != previous:
+            record_impressions(impressions_path(proc), list(current_ids))
+            retrain_recommender(
+                scored,
+                processed_dir=proc,
+                top_n=int(app_settings.recommender_top_n),
+                demotion_alpha=float(app_settings.recommender_demotion_alpha),
+                prefs=prefs,
+            )
+            st.session_state[rec_ids_key] = current_ids
+        if promising.empty:
+            st.info("No listings match your enabled preferences.")
+        else:
+            for _, row in promising.iterrows():
+                with st.container(border=True):
+                    head, action = st.columns([3.5, 1], vertical_alignment="center")
+                    with head:
+                        title = str(row.get("title") or row["listing_id"])
+                        st.markdown(f"**{title}**")
+                        conf = row.get("confidence")
+                        try:
+                            conf_txt = f"{float(conf):.2f}"
+                        except (TypeError, ValueError):
+                            conf_txt = "—"
+                        if conf_txt != "—" and conf != conf:  # NaN
+                            conf_txt = "—"
+                        st.caption(
+                            f"{row['listing_id']} · confidence {conf_txt} · "
+                            f"{row.get('district', '—')}"
+                        )
+                    with action:
+                        if st.button(
+                            "Open offer",
+                            key=f"news_rec_open_{row['listing_id']}",
+                            width="stretch",
+                        ):
+                            st.session_state["explore_offer_id"] = str(
+                                row["listing_id"]
+                            )
+                            st.session_state["explore_offer_force"] = True
+                            st.session_state["explore_section"] = "Offer"
+                            st.rerun()
+
+    st.subheader("Starred changes")
     st.caption(
         "Tracks price and listing field changes on starred offers. "
         "Old values are struck through; new values are emphasized. "
@@ -754,8 +844,279 @@ def _tab_news(
                     )
 
 
+def _opt_num(
+    value: float | int | None,
+    *,
+    as_int: bool = False,
+) -> float | int | None:
+    if value is None:
+        return None
+    number = float(value)
+    if number <= 0:
+        return None
+    if as_int:
+        return round(number)
+    return number
+
+
+def _tab_prefs(
+    *,
+    prefs: UserPreferences,
+    prefs_file: Path,
+    frame: pd.DataFrame,
+    lm_model: str,
+    metrics_file: Path,
+) -> None:
+    """Structured preference form + optional LM Studio NL translate."""
+    st.caption(
+        "Hard constraints filter Map and Board when enabled. "
+        "News recommendations use the same lens with bargain/proximity scoring."
+    )
+    enabled = st.checkbox(
+        "Apply preferences to Map/Board",
+        value=prefs.enabled,
+        key="prefs_enabled",
+    )
+    districts_default = sorted({
+        str(d) for d in frame.get("district", pd.Series(dtype=str)).dropna().unique()
+    })
+    sources_default = sorted({
+        str(s) for s in frame.get("source", pd.Series(dtype=str)).dropna().unique()
+    })
+    districts = st.multiselect(
+        "Districts",
+        options=districts_default,
+        default=[d for d in prefs.districts if d in districts_default],
+        key="prefs_districts",
+    )
+    sources = st.multiselect(
+        "Sources",
+        options=sources_default,
+        default=[s for s in prefs.sources if s in sources_default],
+        key="prefs_sources",
+    )
+    oou_labels = {
+        OOU_ANY: "Any noise contour",
+        OOU_PREFER_OUTSIDE: "Prefer outside Lden ≥55",
+        OOU_OUTSIDE_ONLY: "Outside Lden ≥55 only",
+        OOU_INSIDE_OK: "Inside Lden ≥55 OK",
+    }
+    oou_keys = list(oou_labels.keys())
+    oou_idx = oou_keys.index(prefs.oou) if prefs.oou in oou_keys else 0
+    oou_label = st.selectbox(
+        "Aircraft noise",
+        options=[oou_labels[k] for k in oou_keys],
+        index=oou_idx,
+        key="prefs_oou",
+    )
+    oou = oou_keys[[oou_labels[k] for k in oou_keys].index(str(oou_label))]
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        min_price = st.number_input(
+            "Min price PLN",
+            min_value=0.0,
+            value=float(prefs.min_price_pln or 0.0),
+            step=10_000.0,
+            key="prefs_min_price",
+        )
+        max_price = st.number_input(
+            "Max price PLN",
+            min_value=0.0,
+            value=float(prefs.max_price_pln or 0.0),
+            step=10_000.0,
+            key="prefs_max_price",
+        )
+        min_ppm = st.number_input(
+            "Min zł/m²",
+            min_value=0.0,
+            value=float(prefs.min_price_per_m2 or 0.0),
+            step=500.0,
+            key="prefs_min_ppm",
+        )
+        max_ppm = st.number_input(
+            "Max zł/m²",
+            min_value=0.0,
+            value=float(prefs.max_price_per_m2 or 0.0),
+            step=500.0,
+            key="prefs_max_ppm",
+        )
+    with c2:
+        min_area = st.number_input(
+            "Min area m²",
+            min_value=0.0,
+            value=float(prefs.min_area_m2 or 0.0),
+            step=1.0,
+            key="prefs_min_area",
+        )
+        max_area = st.number_input(
+            "Max area m²",
+            min_value=0.0,
+            value=float(prefs.max_area_m2 or 0.0),
+            step=1.0,
+            key="prefs_max_area",
+        )
+        min_rooms = st.number_input(
+            "Min rooms",
+            min_value=0,
+            value=int(prefs.min_rooms or 0),
+            step=1,
+            key="prefs_min_rooms",
+        )
+        max_rooms = st.number_input(
+            "Max rooms",
+            min_value=0,
+            value=int(prefs.max_rooms or 0),
+            step=1,
+            key="prefs_max_rooms",
+        )
+    with c3:
+        min_year = st.number_input(
+            "Min year built",
+            min_value=0,
+            value=int(prefs.min_year_built or 0),
+            step=1,
+            key="prefs_min_year",
+        )
+        max_commute = st.number_input(
+            "Max commute min",
+            min_value=0.0,
+            value=float(prefs.max_commute_min or 0.0),
+            step=1.0,
+            key="prefs_max_commute",
+        )
+        max_transit = st.number_input(
+            "Max transit m",
+            min_value=0.0,
+            value=float(prefs.max_dist_transit_m or 0.0),
+            step=50.0,
+            key="prefs_max_transit",
+        )
+        max_delta = st.number_input(
+            "Max delta zł/m²",
+            min_value=-5_000.0,
+            value=float(
+                prefs.max_delta_price_per_m2
+                if prefs.max_delta_price_per_m2 is not None
+                else 0.0
+            ),
+            step=50.0,
+            key="prefs_max_delta",
+            help="0 = fair or better; leave 0 and uncheck underpriced for no cap.",
+        )
+    require_under = st.checkbox(
+        "Require underpriced (delta < 0)",
+        value=prefs.require_underpriced,
+        key="prefs_require_under",
+    )
+    d1, d2, d3 = st.columns(3)
+    with d1:
+        max_hospital = st.number_input(
+            "Max hospital m",
+            min_value=0.0,
+            value=float(prefs.max_dist_hospital_m or 0.0),
+            step=100.0,
+            key="prefs_max_hospital",
+        )
+        max_fire = st.number_input(
+            "Max fire station m",
+            min_value=0.0,
+            value=float(prefs.max_dist_fire_m or 0.0),
+            step=100.0,
+            key="prefs_max_fire",
+        )
+    with d2:
+        max_police = st.number_input(
+            "Max police m",
+            min_value=0.0,
+            value=float(prefs.max_dist_police_m or 0.0),
+            step=100.0,
+            key="prefs_max_police",
+        )
+        max_air = st.number_input(
+            "Max air station m",
+            min_value=0.0,
+            value=float(prefs.max_dist_air_m or 0.0),
+            step=100.0,
+            key="prefs_max_air",
+        )
+    with d3:
+        max_gunb = st.number_input(
+            "Max GUNB m",
+            min_value=0.0,
+            value=float(prefs.max_dist_gunb_m or 0.0),
+            step=100.0,
+            key="prefs_max_gunb",
+        )
+
+    nl_text = st.text_area(
+        "Natural-language preferences",
+        value=prefs.nl_text,
+        height=100,
+        key="prefs_nl",
+        help="Describe what you want; translate with LM Studio into the form fields.",
+    )
+    b1, b2 = st.columns(2)
+    with b1:
+        if st.button("Save preferences", type="primary", key="prefs_save"):
+            max_delta_val: float | None = (
+                float(max_delta) if abs(float(max_delta)) > 1e-9 else None
+            )
+            updated = UserPreferences(
+                enabled=bool(enabled),
+                districts=list(districts),
+                sources=list(sources),
+                oou=str(oou),
+                min_price_pln=_opt_num(min_price),
+                max_price_pln=_opt_num(max_price),
+                min_price_per_m2=_opt_num(min_ppm),
+                max_price_per_m2=_opt_num(max_ppm),
+                min_area_m2=_opt_num(min_area),
+                max_area_m2=_opt_num(max_area),
+                min_rooms=int(_opt_num(min_rooms, as_int=True) or 0) or None,
+                max_rooms=int(_opt_num(max_rooms, as_int=True) or 0) or None,
+                min_year_built=int(_opt_num(min_year, as_int=True) or 0) or None,
+                max_commute_min=_opt_num(max_commute),
+                max_dist_transit_m=_opt_num(max_transit),
+                max_dist_hospital_m=_opt_num(max_hospital),
+                max_dist_fire_m=_opt_num(max_fire),
+                max_dist_police_m=_opt_num(max_police),
+                max_dist_air_m=_opt_num(max_air),
+                max_dist_gunb_m=_opt_num(max_gunb),
+                max_delta_price_per_m2=max_delta_val,
+                require_underpriced=bool(require_under),
+                nl_text=str(nl_text or ""),
+            )
+            save_preferences(prefs_file, updated)
+            st.success("Preferences saved.")
+            st.rerun()
+    with b2:
+        if st.button("Translate with LM Studio", key="prefs_translate"):
+            try:
+                with st.spinner(f"Asking {lm_model}…"):
+                    parsed = translate_preferences_nl(
+                        str(nl_text or ""),
+                        model=lm_model,
+                        metrics_path=metrics_file,
+                    )
+                current = UserPreferences(
+                    enabled=bool(enabled),
+                    districts=list(districts),
+                    sources=list(sources),
+                    oou=str(oou),
+                    nl_text=str(nl_text or ""),
+                )
+                merged = merge_preferences(current, parsed, nl_text=str(nl_text or ""))
+                merged.enabled = True
+                save_preferences(prefs_file, merged)
+                st.success("Translated and saved — form refreshed.")
+                st.rerun()
+            except Exception as exc:
+                st.error(str(exc))
+
+
 def render_explore() -> None:
-    """Render Explore with sidebar filters and Map / Offer / Board / News."""
+    """Render Explore with sidebar filters and Map / Offer / Board / News / Prefs."""
     logger.info("Rendering Explore")
     st.title("Explore")
     try:
@@ -780,6 +1141,8 @@ def render_explore() -> None:
     stars_file = stars_path(proc)
     starred = load_stars(stars_file)
     app_settings = load_app_settings(settings_path(proc))
+    prefs_file = preferences_path(proc)
+    prefs = load_preferences(prefs_file)
     snaps_file = starred_snapshots_path(proc)
     news_file = starred_news_path(proc)
     # Sync against the full scored universe so sidebar filters never fake removals.
@@ -792,6 +1155,8 @@ def render_explore() -> None:
     )
     news_items = load_news(news_file)
     map_board = apply_starred_only(filtered, starred) if starred_only else filtered
+    if prefs.enabled:
+        map_board = apply_preferences(map_board, prefs)
     config = load_config()
 
     oou = load_aircraft_lden()
@@ -820,15 +1185,20 @@ def render_explore() -> None:
         "commute_lon": float(config.commute_target_lon),
         "commute_lat": float(config.commute_target_lat),
     }
-    tab_map, tab_offer, tab_board, tab_news = st.tabs(
+    tab_map, tab_offer, tab_board, tab_news, tab_prefs = st.tabs(
         list(EXPLORE_SECTIONS),
         key="explore_section",
         on_change="rerun",
     )
     with tab_map:
         if tab_map.open:
+            captions: list[str] = []
             if starred_only:
-                st.caption(f"Starred only · {len(map_board)} offers")
+                captions.append("Starred only")
+            if prefs.enabled:
+                captions.append("Prefs on")
+            if captions:
+                st.caption(f"{' · '.join(captions)} · {len(map_board)} offers")
             _tab_map(map_board, **map_kwargs)
     with tab_offer:
         if tab_offer.open:
@@ -843,14 +1213,37 @@ def render_explore() -> None:
             )
     with tab_board:
         if tab_board.open:
+            captions_b: list[str] = []
             if starred_only:
-                st.caption(f"Starred only · {len(map_board)} offers")
+                captions_b.append("Starred only")
+            if prefs.enabled:
+                captions_b.append("Prefs on")
+            if captions_b:
+                st.caption(f"{' · '.join(captions_b)} · {len(map_board)} offers")
             _tab_board(
                 map_board,
                 starred=starred,
                 app_settings=app_settings,
                 impressions_file=impressions_path(proc),
+                prefs=prefs,
             )
     with tab_news:
         if tab_news.open:
-            _tab_news(starred=starred, items=news_items, news_file=news_file)
+            _tab_news(
+                starred=starred,
+                items=news_items,
+                news_file=news_file,
+                scored=frame,
+                prefs=prefs,
+                app_settings=app_settings,
+                proc=proc,
+            )
+    with tab_prefs:
+        if tab_prefs.open:
+            _tab_prefs(
+                prefs=prefs,
+                prefs_file=prefs_file,
+                frame=frame,
+                lm_model=app_settings.lm_model,
+                metrics_file=llm_metrics_path(proc),
+            )

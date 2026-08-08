@@ -6,6 +6,7 @@ from typing import Any
 
 import pandas as pd
 
+from happy_housing.app.preferences import UserPreferences
 from happy_housing.app.recommender import score_offers
 
 BOARD_SORT_RECOMMENDATION = "recommendation"
@@ -65,6 +66,7 @@ def enrich_board_recommendations(
     *,
     impressions: dict[str, dict[str, Any]],
     demotion_alpha: float,
+    prefs: UserPreferences | None = None,
 ) -> pd.DataFrame:
     """Attach recommender confidence and seen flags for board display/sort."""
     if frame.empty or "listing_id" not in frame.columns:
@@ -80,6 +82,7 @@ def enrich_board_recommendations(
         work,
         demotion_alpha=demotion_alpha,
         impressions=impressions,
+        prefs=prefs,
     )
     conf = ranked.set_index("listing_id")["confidence"]
     work["confidence"] = work["listing_id"].map(conf).astype(float)
