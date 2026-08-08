@@ -9,13 +9,22 @@ import pandas as pd
 import streamlit as st
 
 from happy_housing.app.charts import bar_chart, histogram
-from happy_housing.app.data import load_metadata, load_scored, scored_path
+from happy_housing.app.data import (
+    load_config,
+    load_metadata,
+    load_scored,
+    scored_path,
+)
 from happy_housing.app.home_hero import format_hero_stats, hero_html
 from happy_housing.app.home_stats import counts_frame, market_summary
 from happy_housing.app.metadata import (
     DEFAULT_METHODOLOGY,
     DEFAULT_SOURCE_CATALOG,
     METHODOLOGY_STEPS,
+)
+from happy_housing.app.source_inventory import (
+    SourceInventoryRow,
+    build_source_inventory,
 )
 
 
@@ -154,17 +163,24 @@ def _tab_model(meta_metrics: dict[str, float], feature_columns: list[str]) -> No
         )
 
 
-def _tab_sources() -> None:
-    """Attributed sources with outbound links."""
-    st.caption("Every feed is free / public. Open the source to verify attribution.")
-    for src in DEFAULT_SOURCE_CATALOG:
+def _tab_sources(rows: list[SourceInventoryRow]) -> None:
+    """Attributed sources with live fetch counts and timestamps."""
+    st.caption(
+        "Every feed is free / public. Counts and fetch times come from "
+        "local artifacts (processed / cache / fixtures)."
+    )
+    for row in rows:
         with st.container(border=True):
             left, right = st.columns([3.4, 1], vertical_alignment="center")
             with left:
-                st.markdown(f"**{src.name}**")
-                st.caption(src.role)
+                st.markdown(f"**{row.name}**")
+                st.caption(row.role)
+                st.caption(
+                    f"{row.rows_label} · fetched {row.fetched_label} UTC"
+                    f" · {row.origin_label}"
+                )
             with right:
-                st.link_button("Open source", src.url, width="stretch")
+                st.link_button("Open source", row.url, width="stretch")
 
 
 def render_home() -> None:
@@ -201,4 +217,11 @@ def render_home() -> None:
     with model_tab:
         _tab_model(metrics, features)
     with sources_tab:
-        _tab_sources()
+        config = load_config()
+        inventory = build_source_inventory(
+            DEFAULT_SOURCE_CATALOG,
+            processed_dir=config.data.processed_path(),
+            cache_dir=config.data.cache_path(),
+            fixtures_dir=config.data.fixtures_path(),
+        )
+        _tab_sources(inventory)

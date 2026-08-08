@@ -21,6 +21,10 @@ class DataSource:
     """Canonical https homepage or docs URL."""
     role: str
     """What this source contributes to the model or UI."""
+    key: str
+    """Stable inventory key (``otodom``, ``gtfs``, …)."""
+    unit: str
+    """Count noun for inventory (``listings``, ``stops``, …)."""
 
 
 @dataclass(slots=True)
@@ -93,36 +97,50 @@ DEFAULT_SOURCE_CATALOG: tuple[DataSource, ...] = (
         name="Otodom (public listing pages)",
         url="https://www.otodom.pl/",
         role="Asking prices, photos, and listing URLs for Warsaw flats.",
+        key="otodom",
+        unit="listings",
     ),
     DataSource(
         name="UM Warszawa RCN (transaction GML)",
         url="https://mapa.um.warszawa.pl/",
         role="Notarial transaction prices for fair-value context.",
+        key="rcn",
+        unit="transactions",
     ),
     DataSource(
         name="OpenStreetMap / OSMnx amenities",
         url="https://www.openstreetmap.org/",
         role="Hospital, fire, and police amenity distances.",
+        key="osm",
+        unit="amenities",
     ),
     DataSource(
         name="ZTM Warsaw GTFS via mkuran.pl",
         url="https://mkuran.pl/gtfs/",
         role="Transit stop proximity from the public Warsaw GTFS feed.",
+        key="gtfs",
+        unit="stops",
     ),
     DataSource(
         name="GIOŚ air-quality stations (API v1)",
         url="https://powietrze.gios.gov.pl/",
         role="Nearest air-quality station distance.",
+        key="gios",
+        unit="stations",
     ),
     DataSource(
         name="GUNB building permits (CSV when available)",
         url="https://wyszukiwarka.gunb.gov.pl/",
         role="Nearby construction / permit activity proxy.",
+        key="gunb",
+        unit="permits",
     ),
     DataSource(
         name="Chopin OOU restricted-use zone",
         url="https://www.lotnisko-chopina.pl/",
         role="Aircraft restricted-use zone flag (noise/livability proxy).",
+        key="oou",
+        unit="zones",
     ),
 )
 """Canonical data sources with URLs for the Home page."""

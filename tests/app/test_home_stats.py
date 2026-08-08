@@ -17,6 +17,8 @@ def test_source_catalog_has_names_and_https_urls() -> None:
         assert src.name
         assert src.url.startswith("https://")
         assert src.role
+        assert src.key
+        assert src.unit
 
 
 def test_market_summary_aggregates_key_stats() -> None:

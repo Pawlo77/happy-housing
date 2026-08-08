@@ -137,6 +137,8 @@ module = [
   "numpy.*",
   "pandas",
   "pandas.*",
+  "pyarrow",
+  "pyarrow.*",
   "matplotlib",
   "matplotlib.*",
   "altair",
