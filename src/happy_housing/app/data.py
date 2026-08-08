@@ -14,6 +14,7 @@ import streamlit as st
 
 from happy_housing.app.metadata import RunMetadata, load_run_metadata
 from happy_housing.config import ExperimentConfig, load_experiment_config
+from happy_housing.ingest import build_gtfs_stop_hourly
 
 logger = logging.getLogger(__name__)
 
@@ -155,5 +156,97 @@ def clear_data_caches() -> None:
     _read_scored.clear()
     _read_amenities.clear()
     _read_oou.clear()
+    _read_parquet_frame.clear()
+    _read_json_points.clear()
     _shap_bundle.clear()
     logger.info("Cleared Streamlit app data caches")
+
+
+@st.cache_data(show_spinner=False)  # type: ignore[misc]
+def _read_parquet_frame(path: str, mtime: float) -> pd.DataFrame:
+    """Cached parquet load keyed by path + mtime."""
+    del mtime
+    return pd.read_parquet(path)
+
+
+@st.cache_data(show_spinner=False)  # type: ignore[misc]
+def _read_json_points(path: str, mtime: float) -> pd.DataFrame:
+    """Cached JSON point table (shops / traffic sample)."""
+    del mtime
+    return pd.read_json(path)
+
+
+def _load_parquet_or_empty(
+    path: Path, columns: list[str] | None = None
+) -> pd.DataFrame:
+    if not path.exists():
+        return pd.DataFrame(columns=columns or [])
+    return _read_parquet_frame(str(path), path.stat().st_mtime)
+
+
+def load_gtfs_stops() -> pd.DataFrame:
+    """Load GTFS stop points from processed parquet."""
+    return _load_parquet_or_empty(
+        processed_dir() / "gtfs_stops.parquet",
+        ["stop_id", "stop_name", "stop_lat", "stop_lon"],
+    )
+
+
+def load_gtfs_hourly() -> pd.DataFrame:
+    """Load or build GTFS stop-hour departure counts."""
+    path = processed_dir() / "gtfs_stop_hourly.parquet"
+    if not path.exists():
+        zip_path = load_config().data.raw_path() / "gtfs_warsaw.zip"
+        if not zip_path.exists():
+            return pd.DataFrame(columns=["stop_id", "hour", "n_departures"])
+        build_gtfs_stop_hourly(zip_path, path)
+    frame = _read_parquet_frame(str(path), path.stat().st_mtime)
+    if "n_departures" not in frame.columns and "n" in frame.columns:
+        frame = frame.rename(columns={"n": "n_departures"})
+    return frame
+
+
+def load_gios_stations() -> pd.DataFrame:
+    """Load GIOŚ air-quality station points."""
+    return _load_parquet_or_empty(
+        processed_dir() / "gios_stations.parquet",
+        ["station_id", "lat", "lon", "name", "city"],
+    )
+
+
+def load_gunb_points() -> pd.DataFrame:
+    """Load GUNB permit / construction points."""
+    path = processed_dir() / "gunb_mazowieckie.parquet"
+    if path.exists():
+        return _read_parquet_frame(str(path), path.stat().st_mtime)
+    fixture = load_config().data.fixtures_path() / "gunb_points.json"
+    if fixture.exists():
+        return _read_json_points(str(fixture), fixture.stat().st_mtime)
+    return pd.DataFrame(columns=["lon", "lat", "adres", "numer_decyzji"])
+
+
+def load_shops() -> pd.DataFrame:
+    """Load OSM shop POIs from cache GeoJSON or fixture JSON."""
+    config = load_config()
+    cache = config.data.cache_path() / "osm_shops.geojson"
+    fixture = config.data.fixtures_path() / "shops.json"
+    if cache.exists():
+        gdf = gpd.read_file(cache)
+        out = pd.DataFrame({
+            "name": gdf["name"] if "name" in gdf.columns else "Shop",
+            "shop": gdf["shop"] if "shop" in gdf.columns else "shop",
+            "lon": gdf.geometry.x,
+            "lat": gdf.geometry.y,
+        })
+        return out
+    if fixture.exists():
+        return _read_json_points(str(fixture), fixture.stat().st_mtime)
+    return pd.DataFrame(columns=["name", "shop", "lon", "lat"])
+
+
+def load_traffic_sample() -> pd.DataFrame:
+    """Load corridor sample points for the diurnal traffic-proxy heatmap."""
+    fixture = load_config().data.fixtures_path() / "traffic_sample.json"
+    if not fixture.exists():
+        return pd.DataFrame(columns=["name", "lon", "lat", "base_weight"])
+    return _read_json_points(str(fixture), fixture.stat().st_mtime)

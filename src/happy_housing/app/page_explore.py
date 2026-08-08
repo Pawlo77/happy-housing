@@ -10,13 +10,23 @@ import streamlit as st
 
 from happy_housing.app.data import (
     load_amenities,
+    load_config,
+    load_gios_stations,
+    load_gtfs_hourly,
+    load_gtfs_stops,
+    load_gunb_points,
     load_oou,
     load_scored,
     load_shap_bundle,
+    load_shops,
+    load_traffic_sample,
 )
 from happy_housing.app.filters import FilterState, apply_filters
+from happy_housing.app.map_layers import LayerFlags
 from happy_housing.app.maps import (
     amenity_layers,
+    basemap_style,
+    build_explore_layers,
     focus_marker_layer,
     listings_scatter_layer,
     oou_polygon_layer,
@@ -111,24 +121,114 @@ def _sidebar_filters(frame: pd.DataFrame) -> FilterState:
     )
 
 
-def _tab_map(filtered: pd.DataFrame, oou: gpd.GeoDataFrame | None) -> None:
-    """Market map of filtered offers + OOU overlay."""
-    st.caption(
-        "Colour = listing - model zł/m² (red overpriced, green underpriced). "
-        "OOU polygon = aircraft restricted-use proxy."
+def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
+    """Map basemap, hour-of-day, and per-layer toggles."""
+    st.sidebar.header("Map layers")
+    basemap = (
+        st.sidebar.segmented_control(
+            "Basemap",
+            options=["Streets", "Satellite"],
+            default="Streets",
+            key="explore_basemap",
+        )
+        or "Streets"
     )
-    if filtered.empty:
-        st.warning("No offers match filters.")
+    hour = int(
+        st.sidebar.slider(
+            "Time of day (transit & traffic)",
+            min_value=0,
+            max_value=23,
+            value=8,
+            format="%02d:00",
+            help=(
+                "Filters GTFS departures by hour and scales the traffic-intensity "
+                "proxy (typical diurnal curve — not live vehicle counts)."
+            ),
+        )
+    )
+    st.sidebar.caption("Toggle overlays. Hover any pin for details.")
+    offers = st.sidebar.checkbox("Offers (Δ price)", value=True)
+    oou = st.sidebar.checkbox("OOU / noise proxy zone", value=True)
+    transit = st.sidebar.checkbox("Public transport (GTFS)", value=False)
+    traffic = st.sidebar.checkbox("Traffic intensity proxy", value=False)
+    shops = st.sidebar.checkbox("Shops", value=False)
+    hospitals = st.sidebar.checkbox("Hospitals", value=False)
+    fire_stations = st.sidebar.checkbox("Fire stations", value=False)
+    police = st.sidebar.checkbox("Police", value=False)
+    air = st.sidebar.checkbox("Air-quality stations", value=False)
+    gunb = st.sidebar.checkbox("GUNB permits", value=False)
+    commute_target = st.sidebar.checkbox("Commute target", value=False)
+    flags = LayerFlags(
+        offers=offers,
+        oou=oou,
+        hospitals=hospitals,
+        fire_stations=fire_stations,
+        police=police,
+        shops=shops,
+        transit=transit,
+        traffic=traffic,
+        air=air,
+        gunb=gunb,
+        commute_target=commute_target,
+    )
+    return flags, hour, basemap
+
+
+def _tab_map(
+    filtered: pd.DataFrame,
+    *,
+    oou: gpd.GeoDataFrame | None,
+    amenities: gpd.GeoDataFrame,
+    shops: pd.DataFrame,
+    stops: pd.DataFrame,
+    hourly: pd.DataFrame,
+    traffic_sample: pd.DataFrame,
+    air_stations: pd.DataFrame,
+    gunb: pd.DataFrame,
+    flags: LayerFlags,
+    hour: int,
+    basemap: str,
+    commute_lon: float,
+    commute_lat: float,
+) -> None:
+    """Market map with toggleable livability overlays."""
+    st.caption(
+        "Offers: green = model says underpriced, red = overpriced. "
+        "Transit uses real GTFS departures at the selected hour. "
+        "Traffic is a diurnal mobility proxy (not live sensors). "
+        "OOU = aircraft/noise zone proxy. Hover pins for details."
+    )
+    if filtered.empty and flags.offers:
+        st.warning("No offers match filters — disable Offers or widen filters.")
+    layers = build_explore_layers(
+        listings=filtered,
+        flags=flags,
+        oou=oou,
+        amenities=amenities,
+        shops=shops,
+        stops=stops,
+        hourly=hourly,
+        traffic_sample=traffic_sample,
+        air_stations=air_stations,
+        gunb=gunb,
+        commute_lon=commute_lon,
+        commute_lat=commute_lat,
+        hour=hour,
+    )
+    if not layers:
+        st.info("Enable at least one map layer in the sidebar.")
         return
-    layers = [
-        *oou_polygon_layer(oou),
-        listings_scatter_layer(filtered),
-    ]
+    if not filtered.empty:
+        lat = float(filtered["lat"].mean())
+        lon = float(filtered["lon"].mean())
+    else:
+        lat, lon = commute_lat, commute_lon
     render_deck(
         layers,
-        latitude=float(filtered["lat"].mean()),
-        longitude=float(filtered["lon"].mean()),
+        latitude=lat,
+        longitude=lon,
         zoom=10.5,
+        map_style=basemap_style(basemap),
     )
 
 
@@ -207,9 +307,11 @@ def _tab_offer(
     layers = [
         *oou_polygon_layer(oou),
         *amenity_layers(amenities),
-        listings_scatter_layer(nearby),
-        focus_marker_layer(lat, lon),
     ]
+    offers = listings_scatter_layer(nearby)
+    if offers is not None:
+        layers.append(offers)
+    layers.append(focus_marker_layer(lat, lon))
     render_deck(layers, latitude=lat, longitude=lon, zoom=13.5)
 
     st.subheader("Why this price? (SHAP)")
@@ -247,13 +349,37 @@ def render_explore() -> None:
         st.stop()
 
     state = _sidebar_filters(frame)
+    flags, hour, basemap = _sidebar_map_controls()
     filtered = apply_filters(frame, state)
+    config = load_config()
+
     oou = load_oou()
     amenities = load_amenities()
+    shops = load_shops()
+    stops = load_gtfs_stops()
+    hourly = load_gtfs_hourly()
+    traffic_sample = load_traffic_sample()
+    air_stations = load_gios_stations()
+    gunb = load_gunb_points()
 
     map_tab, offer_tab, board_tab = st.tabs(["Map", "Offer", "Board"])
     with map_tab:
-        _tab_map(filtered, oou)
+        _tab_map(
+            filtered,
+            oou=oou,
+            amenities=amenities,
+            shops=shops,
+            stops=stops,
+            hourly=hourly,
+            traffic_sample=traffic_sample,
+            air_stations=air_stations,
+            gunb=gunb,
+            flags=flags,
+            hour=hour,
+            basemap=basemap,
+            commute_lon=float(config.commute_target_lon),
+            commute_lat=float(config.commute_target_lat),
+        )
     with offer_tab:
         _tab_offer(filtered, oou, amenities)
     with board_tab:

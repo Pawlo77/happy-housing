@@ -5,83 +5,149 @@ from __future__ import annotations
 from typing import Any
 
 import geopandas as gpd
-import numpy as np
 import pandas as pd
 import pydeck as pdk
 import streamlit as st
 
-_AMENITY_COLORS: dict[str, list[int]] = {
-    "hospital": [220, 50, 50, 200],
-    "fire_station": [230, 120, 20, 200],
-    "police": [40, 90, 200, 200],
+from happy_housing.app.map_layers import (
+    LayerFlags,
+    prepare_listings_for_map,
+    prepare_point_layer,
+    prepare_shops_for_map,
+    prepare_transit_for_hour,
+    traffic_weights_for_hour,
+)
+
+_STREETS_STYLE = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
+"""Carto positron GL basemap URL."""
+
+# Token-free satellite tiles via Esri World Imagery (MapLibre style dict).
+_SATELLITE_STYLE: dict[str, Any] = {
+    "version": 8,
+    "sources": {
+        "esri-world": {
+            "type": "raster",
+            "tiles": [
+                "https://server.arcgisonline.com/ArcGIS/rest/services/"
+                "World_Imagery/MapServer/tile/{z}/{y}/{x}"
+            ],
+            "tileSize": 256,
+            "attribution": "Tiles © Esri",
+        }
+    },
+    "layers": [{"id": "esri-world", "type": "raster", "source": "esri-world"}],
 }
-"""RGBA colours for amenity scatter layers."""
+"""Esri World Imagery style for satellite basemap without Mapbox token."""
 
-_DEFAULT_MAP_STYLE = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
-"""Carto positron GL basemap URL for pydeck."""
-
-_DEFAULT_TOOLTIP: dict[str, Any] = {
-    "html": ("<b>{listing_id}</b><br/>{district}<br/>Δ {delta_price_per_m2} zł/m²"),
-    "style": {"backgroundColor": "#111", "color": "white"},
+_HOVER_TOOLTIP: dict[str, Any] = {
+    "html": "<b>{tooltip_name}</b><br/>{tooltip_detail}",
+    "style": {"backgroundColor": "#111827", "color": "#F9FAFB", "fontSize": "12px"},
 }
-"""Default listing hover tooltip for Explore maps."""
+"""Shared hover card — layers fill tooltip_name / tooltip_detail."""
+
+_AMENITY_RGBA: dict[str, list[int]] = {
+    "hospital": [185, 28, 28, 210],
+    "fire_station": [194, 65, 12, 210],
+    "police": [29, 78, 216, 210],
+}
+"""RGBA fills for amenity scatters."""
 
 
-def _listing_colors(frame: pd.DataFrame) -> pd.DataFrame:
-    """Attach map styling columns (vectorized) without mutating ``frame``."""
-    out = frame.copy()
-    out["lat"] = out["lat"].astype(float)
-    out["lon"] = out["lon"].astype(float)
-    delta = out["delta_price_per_m2"].astype(float)
-    over = delta.to_numpy() > 0
-    out["color_r"] = np.where(over, 220, 30)
-    out["color_g"] = np.where(over, 40, 170)
-    out["radius"] = (out["area_m2"].fillna(50).astype(float) * 2.5).clip(60, 280)
-    return out
+def basemap_style(mode: str) -> str | dict[str, Any]:
+    """Resolve streets vs satellite basemap style."""
+    if mode == "Satellite":
+        return _SATELLITE_STYLE
+    return _STREETS_STYLE
 
 
-def listings_scatter_layer(frame: pd.DataFrame) -> pdk.Layer:
-    """Scatterplot of filtered offers coloured by listing-model delta."""
-    map_df = _listing_colors(frame)
+def _scatter(
+    data: pd.DataFrame,
+    *,
+    layer_id: str,
+    fill_color: list[int] | str,
+    radius: float | str = 90,
+    radius_min_pixels: int = 5,
+    radius_max_pixels: int = 18,
+) -> pdk.Layer | None:
+    if data.empty:
+        return None
     return pdk.Layer(
         "ScatterplotLayer",
-        data=map_df,
+        data=data,
         get_position="[lon, lat]",
-        get_radius="radius",
-        get_fill_color="[color_r, color_g, 70, 190]",
+        get_radius=radius,
+        radius_min_pixels=radius_min_pixels,
+        radius_max_pixels=radius_max_pixels,
+        get_fill_color=fill_color,
         pickable=True,
-        id="listings",
+        stroked=True,
+        get_line_color=[255, 255, 255, 160],
+        line_width_min_pixels=1,
+        id=layer_id,
     )
 
 
-def amenity_layers(amenities: gpd.GeoDataFrame) -> list[pdk.Layer]:
-    """One scatter layer per amenity type."""
+def listings_scatter_layer(frame: pd.DataFrame) -> pdk.Layer | None:
+    """Scatterplot of filtered offers coloured by listing-model delta."""
+    map_df = prepare_listings_for_map(frame)
+    if map_df.empty:
+        return None
+    return _scatter(
+        map_df,
+        layer_id="listings",
+        fill_color="[color_r, color_g, color_b, color_a]",
+        radius="radius",
+        radius_min_pixels=6,
+        radius_max_pixels=22,
+    )
+
+
+def amenity_layers(
+    amenities: gpd.GeoDataFrame,
+    *,
+    show_hospital: bool = True,
+    show_fire: bool = True,
+    show_police: bool = True,
+) -> list[pdk.Layer]:
+    """Toggleable OSM amenity scatters with readable pixel radii."""
     if amenities.empty or "amenity" not in amenities.columns:
         return []
     pts = amenities.copy()
     pts["lon"] = pts.geometry.x
     pts["lat"] = pts.geometry.y
+    enabled = {
+        "hospital": show_hospital,
+        "fire_station": show_fire,
+        "police": show_police,
+    }
     layers: list[pdk.Layer] = []
-    for kind, rgba in _AMENITY_COLORS.items():
-        subset = pts.loc[pts["amenity"] == kind]
+    for kind, rgba in _AMENITY_RGBA.items():
+        if not enabled.get(kind, False):
+            continue
+        subset = pts.loc[pts["amenity"] == kind].copy()
         if subset.empty:
             continue
-        layers.append(
-            pdk.Layer(
-                "ScatterplotLayer",
-                data=subset,
-                get_position="[lon, lat]",
-                get_radius=45,
-                get_fill_color=rgba,
-                pickable=True,
-                id=f"amenity-{kind}",
-            )
+        subset["tooltip_name"] = (
+            subset["name"].fillna(kind).astype(str)
+            if "name" in subset.columns
+            else kind
         )
+        subset["tooltip_detail"] = f"Amenity · {kind.replace('_', ' ')}"
+        layer = _scatter(
+            subset,
+            layer_id=f"amenity-{kind}",
+            fill_color=rgba,
+            radius=110,
+            radius_min_pixels=7,
+            radius_max_pixels=16,
+        )
+        if layer is not None:
+            layers.append(layer)
     return layers
 
 
 def oou_polygon_layer(oou: gpd.GeoDataFrame | None) -> list[pdk.Layer]:
-    """Semi-transparent OOU polygon (aircraft restricted-use proxy)."""
+    """Semi-transparent OOU polygon (aircraft / noise proxy)."""
     if oou is None or oou.empty:
         return []
     records: list[dict[str, Any]] = []
@@ -96,7 +162,11 @@ def oou_polygon_layer(oou: gpd.GeoDataFrame | None) -> list[pdk.Layer]:
             continue
         for poly in polys:
             coords = [[float(x), float(y)] for x, y in poly.exterior.coords]
-            records.append({"coordinates": [coords]})
+            records.append({
+                "coordinates": [coords],
+                "tooltip_name": "Chopin OOU",
+                "tooltip_detail": "Aircraft restricted-use / noise proxy (not dB)",
+            })
     if not records:
         return []
     return [
@@ -104,26 +174,235 @@ def oou_polygon_layer(oou: gpd.GeoDataFrame | None) -> list[pdk.Layer]:
             "PolygonLayer",
             data=records,
             get_polygon="coordinates",
-            get_fill_color=[180, 40, 40, 60],
-            get_line_color=[160, 20, 20, 180],
-            line_width_min_pixels=1,
-            pickable=False,
+            get_fill_color=[180, 40, 40, 55],
+            get_line_color=[160, 20, 20, 200],
+            line_width_min_pixels=2,
+            pickable=True,
             id="oou",
         )
     ]
 
 
+def shops_layer(shops: pd.DataFrame) -> pdk.Layer | None:
+    """Retail / supermarket points."""
+    prepared = prepare_shops_for_map(shops)
+    return _scatter(
+        prepared,
+        layer_id="shops",
+        fill_color=[124, 58, 237, 200],
+        radius=95,
+        radius_min_pixels=6,
+        radius_max_pixels=14,
+    )
+
+
+def transit_layers(
+    stops: pd.DataFrame,
+    hourly: pd.DataFrame,
+    *,
+    hour: int,
+) -> list[pdk.Layer]:
+    """Heatmap + top active stops for the selected hour."""
+    prepared = prepare_transit_for_hour(stops, hourly, hour=hour)
+    if prepared.empty:
+        return []
+    layers: list[pdk.Layer] = [
+        pdk.Layer(
+            "HeatmapLayer",
+            data=prepared,
+            get_position="[lon, lat]",
+            get_weight="weight",
+            radiusPixels=42,
+            intensity=1.2,
+            threshold=0.05,
+            opacity=0.55,
+            pickable=False,
+            id="transit-heat",
+        )
+    ]
+    top = prepared.head(180)
+    scatter = _scatter(
+        top,
+        layer_id="transit-stops",
+        fill_color=[14, 116, 144, 210],
+        radius="radius",
+        radius_min_pixels=5,
+        radius_max_pixels=20,
+    )
+    if scatter is not None:
+        layers.append(scatter)
+    return layers
+
+
+def traffic_heatmap_layer(sample: pd.DataFrame, *, hour: int) -> pdk.Layer | None:
+    """Diurnal road-activity proxy heatmap (not live vehicle counts)."""
+    prepared = traffic_weights_for_hour(sample, hour=hour)
+    if prepared.empty:
+        return None
+    return pdk.Layer(
+        "HeatmapLayer",
+        data=prepared,
+        get_position="[lon, lat]",
+        get_weight="weight",
+        radiusPixels=48,
+        intensity=1.4,
+        threshold=0.04,
+        opacity=0.5,
+        pickable=False,
+        id="traffic-heat",
+    )
+
+
+def air_stations_layer(stations: pd.DataFrame) -> pdk.Layer | None:
+    """GIOŚ air-quality station markers."""
+    prepared = prepare_point_layer(
+        stations,
+        lat_col="lat",
+        lon_col="lon",
+        name_col="name",
+        detail="air station (distance feature in model)",
+        layer_label="Air",
+    )
+    return _scatter(
+        prepared,
+        layer_id="air",
+        fill_color=[22, 163, 74, 220],
+        radius=140,
+        radius_min_pixels=8,
+        radius_max_pixels=18,
+    )
+
+
+def gunb_layer(points: pd.DataFrame) -> pdk.Layer | None:
+    """GUNB construction / permit markers."""
+    name_col = (
+        "adres"
+        if "adres" in points.columns
+        else ("numer_decyzji" if "numer_decyzji" in points.columns else "lon")
+    )
+    work = points.copy()
+    if name_col not in work.columns:
+        work["label"] = "GUNB"
+        name_col = "label"
+    prepared = prepare_point_layer(
+        work,
+        lat_col="lat",
+        lon_col="lon",
+        name_col=name_col,
+        detail="construction / permit proxy",
+        layer_label="GUNB",
+    )
+    return _scatter(
+        prepared,
+        layer_id="gunb",
+        fill_color=[161, 98, 7, 210],
+        radius=120,
+        radius_min_pixels=7,
+        radius_max_pixels=16,
+    )
+
+
+def commute_target_layer(lon: float, lat: float) -> pdk.Layer:
+    """Single commute-target pin (Rondo Daszyńskiego)."""
+    data = pd.DataFrame([
+        {
+            "lon": lon,
+            "lat": lat,
+            "tooltip_name": "Rondo Daszyńskiego",
+            "tooltip_detail": "Commute target used by the model",
+        }
+    ])
+    layer = _scatter(
+        data,
+        layer_id="commute-target",
+        fill_color=[15, 23, 42, 230],
+        radius=160,
+        radius_min_pixels=9,
+        radius_max_pixels=20,
+    )
+    if layer is None:
+        msg = "commute target scatter unexpectedly empty"
+        raise RuntimeError(msg)
+    return layer
+
+
 def focus_marker_layer(lat: float, lon: float) -> pdk.Layer:
     """Highlight the selected offer."""
-    return pdk.Layer(
-        "ScatterplotLayer",
-        data=[{"lat": lat, "lon": lon}],
-        get_position="[lon, lat]",
-        get_radius=120,
-        get_fill_color=[20, 20, 20, 230],
-        pickable=False,
-        id="focus",
+    data = pd.DataFrame([
+        {
+            "lat": lat,
+            "lon": lon,
+            "tooltip_name": "Selected offer",
+            "tooltip_detail": "Focus pin",
+        }
+    ])
+    layer = _scatter(
+        data,
+        layer_id="focus",
+        fill_color=[15, 15, 15, 240],
+        radius=150,
+        radius_min_pixels=8,
+        radius_max_pixels=18,
     )
+    if layer is None:
+        msg = "focus marker scatter unexpectedly empty"
+        raise RuntimeError(msg)
+    return layer
+
+
+def build_explore_layers(
+    *,
+    listings: pd.DataFrame,
+    flags: LayerFlags,
+    oou: gpd.GeoDataFrame | None,
+    amenities: gpd.GeoDataFrame,
+    shops: pd.DataFrame,
+    stops: pd.DataFrame,
+    hourly: pd.DataFrame,
+    traffic_sample: pd.DataFrame,
+    air_stations: pd.DataFrame,
+    gunb: pd.DataFrame,
+    commute_lon: float,
+    commute_lat: float,
+    hour: int,
+) -> list[pdk.Layer]:
+    """Assemble enabled Explore map layers in draw order."""
+    layers: list[pdk.Layer] = []
+    if flags.oou:
+        layers.extend(oou_polygon_layer(oou))
+    if flags.traffic:
+        heat = traffic_heatmap_layer(traffic_sample, hour=hour)
+        if heat is not None:
+            layers.append(heat)
+    if flags.transit:
+        layers.extend(transit_layers(stops, hourly, hour=hour))
+    if flags.shops:
+        shop_layer = shops_layer(shops)
+        if shop_layer is not None:
+            layers.append(shop_layer)
+    layers.extend(
+        amenity_layers(
+            amenities,
+            show_hospital=flags.hospitals,
+            show_fire=flags.fire_stations,
+            show_police=flags.police,
+        )
+    )
+    if flags.air:
+        air = air_stations_layer(air_stations)
+        if air is not None:
+            layers.append(air)
+    if flags.gunb:
+        gunb_pts = gunb_layer(gunb)
+        if gunb_pts is not None:
+            layers.append(gunb_pts)
+    if flags.commute_target:
+        layers.append(commute_target_layer(commute_lon, commute_lat))
+    if flags.offers:
+        offers = listings_scatter_layer(listings)
+        if offers is not None:
+            layers.append(offers)
+    return layers
 
 
 def render_deck(
@@ -132,6 +411,7 @@ def render_deck(
     latitude: float,
     longitude: float,
     zoom: float = 11.0,
+    map_style: str | dict[str, Any] | None = None,
     tooltip: dict[str, Any] | None = None,
 ) -> None:
     """Render a pydeck chart or fall back with a warning."""
@@ -139,10 +419,10 @@ def render_deck(
     try:
         st.pydeck_chart(
             pdk.Deck(
-                map_style=_DEFAULT_MAP_STYLE,
+                map_style=map_style or _STREETS_STYLE,
                 layers=layers,
                 initial_view_state=view,
-                tooltip=tooltip or _DEFAULT_TOOLTIP,
+                tooltip=tooltip or _HOVER_TOOLTIP,
             )
         )
     except Exception as exc:
