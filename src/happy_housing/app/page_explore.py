@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 import altair as alt
 import geopandas as gpd
@@ -37,7 +38,7 @@ from happy_housing.app.explore_nav import (
     EXPLORE_SECTIONS,
     listing_id_from_board_selection,
 )
-from happy_housing.app.filters import FilterState, apply_filters
+from happy_housing.app.filters import FilterState, apply_filters, apply_starred_only
 from happy_housing.app.map_layers import LayerFlags
 from happy_housing.app.maps import (
     basemap_style,
@@ -50,12 +51,20 @@ from happy_housing.app.offer_display import (
     livability_rows,
     offer_fact_rows,
 )
+from happy_housing.app.stars import (
+    is_starred,
+    load_stars,
+    star_marker,
+    stars_path,
+    toggle_star,
+)
 from happy_housing.ingest.otodom import fetch_listing_detail, otodom_session
 from happy_housing.models.train import build_feature_matrix
 
 logger = logging.getLogger(__name__)
 
 _BOARD_COLUMNS: tuple[str, ...] = (
+    "starred",
     "listing_id",
     "title",
     "district",
@@ -74,8 +83,8 @@ _BOARD_COLUMNS: tuple[str, ...] = (
 """Column order for the Explore board table when present."""
 
 
-def _sidebar_filters(frame: pd.DataFrame) -> FilterState:
-    """Render Explore filters in the sidebar and return state."""
+def _sidebar_filters(frame: pd.DataFrame) -> tuple[FilterState, bool]:
+    """Render Explore filters in the sidebar; return state + starred-only flag."""
     st.sidebar.header("Filters")
     districts = sorted(
         frame["district"].dropna().astype(str).unique().tolist()
@@ -120,12 +129,24 @@ def _sidebar_filters(frame: pd.DataFrame) -> FilterState:
             options=["(all)", *months],
             value="(all)",
         )
-    return FilterState(
-        district=district,
-        source=source,
-        oou=oou,
-        max_price_per_m2=float(max_ppm),
-        month=month,
+    starred_only = st.sidebar.checkbox(
+        "Starred only",
+        value=False,
+        key="explore_starred_only",
+        help=(
+            "Map and Board show only starred offers. "
+            "Offer tab stays unfiltered by star."
+        ),
+    )
+    return (
+        FilterState(
+            district=district,
+            source=source,
+            oou=oou,
+            max_price_per_m2=float(max_ppm),
+            month=month,
+        ),
+        starred_only,
     )
 
 
@@ -336,6 +357,8 @@ def _render_shap(row_frame: pd.DataFrame) -> None:
 def _tab_offer(
     filtered: pd.DataFrame,
     *,
+    starred: frozenset[str],
+    stars_file: Path,
     oou: gpd.GeoDataFrame | None,
     amenities: gpd.GeoDataFrame,
     shops: pd.DataFrame,
@@ -356,28 +379,36 @@ def _tab_offer(
         return
     labels = filtered["listing_id"].astype(str).tolist()
     preferred = st.session_state.get("explore_offer_id")
-    if "title" in filtered.columns:
-        options = {
-            f"{lid} — {title}" if isinstance(title, str) and title else lid: lid
-            for lid, title in zip(
-                filtered["listing_id"],
-                filtered["title"],
-                strict=True,
-            )
-        }
-        keys = list(options.keys())
-        index = 0
-        if preferred in labels:
-            for i, key in enumerate(keys):
-                if options[key] == preferred:
-                    index = i
-                    break
-        choice = st.selectbox("Offer", keys, index=index)
-        selected_id = options[choice]
-    else:
-        index = labels.index(preferred) if preferred in labels else 0
-        selected_id = st.selectbox("Offer", labels, index=index)
+    pick, star_col = st.columns([4.2, 1], vertical_alignment="bottom")
+    with pick:
+        if "title" in filtered.columns:
+            options = {
+                f"{lid} — {title}" if isinstance(title, str) and title else lid: lid
+                for lid, title in zip(
+                    filtered["listing_id"],
+                    filtered["title"],
+                    strict=True,
+                )
+            }
+            keys = list(options.keys())
+            index = 0
+            if preferred in labels:
+                for i, key in enumerate(keys):
+                    if options[key] == preferred:
+                        index = i
+                        break
+            choice = st.selectbox("Offer", keys, index=index)
+            selected_id = options[choice]
+        else:
+            index = labels.index(preferred) if preferred in labels else 0
+            selected_id = st.selectbox("Offer", labels, index=index)
     st.session_state["explore_offer_id"] = selected_id
+    starred_now = is_starred(starred, selected_id)
+    with star_col:
+        label = "★ Starred" if starred_now else "☆ Star"
+        if st.button(label, key=f"star_btn_{selected_id}", width="stretch"):
+            toggle_star(stars_file, selected_id)
+            st.rerun()
 
     row = filtered.loc[filtered["listing_id"] == selected_id].iloc[0].copy()
     description = _ensure_description(row)
@@ -479,11 +510,20 @@ def _tab_offer(
                     st.error(str(exc))
 
 
-def _tab_board(filtered: pd.DataFrame) -> None:
+def _tab_board(filtered: pd.DataFrame, *, starred: frozenset[str]) -> None:
     """Tabular offer board; selecting a row opens Offer for that listing."""
-    cols = [c for c in _BOARD_COLUMNS if c in filtered.columns]
-    board = filtered[cols].reset_index(drop=True)
-    st.caption(f"{len(board)} offers after filters · click a row to open Offer")
+    board = filtered.copy().reset_index(drop=True)
+    board.insert(
+        0,
+        "starred",
+        board["listing_id"].astype(str).map(lambda lid: star_marker(lid, starred)),
+    )
+    cols = [c for c in _BOARD_COLUMNS if c in board.columns]
+    board = board[cols]
+    st.caption(
+        f"{len(board)} offers after filters · click a row to open Offer · "
+        "star offers on the Offer tab"
+    )
     event = st.dataframe(
         board,
         width="stretch",
@@ -509,9 +549,12 @@ def render_explore() -> None:
         st.error(str(exc))
         st.stop()
 
-    state = _sidebar_filters(frame)
+    state, starred_only = _sidebar_filters(frame)
     flags, hour, basemap = _sidebar_map_controls()
     filtered = apply_filters(frame, state)
+    stars_file = stars_path(processed_dir())
+    starred = load_stars(stars_file)
+    map_board = apply_starred_only(filtered, starred) if starred_only else filtered
     config = load_config()
 
     oou = load_oou()
@@ -549,8 +592,17 @@ def render_explore() -> None:
         "commute_lat": float(config.commute_target_lat),
     }
     if section == "Map":
-        _tab_map(filtered, **map_kwargs)
+        if starred_only:
+            st.caption(f"Starred only · {len(map_board)} offers")
+        _tab_map(map_board, **map_kwargs)
     elif section == "Offer":
-        _tab_offer(filtered, **map_kwargs)
+        _tab_offer(
+            filtered,
+            starred=starred,
+            stars_file=stars_file,
+            **map_kwargs,
+        )
     else:
-        _tab_board(filtered)
+        if starred_only:
+            st.caption(f"Starred only · {len(map_board)} offers")
+        _tab_board(map_board, starred=starred)

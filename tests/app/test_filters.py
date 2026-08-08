@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import pandas as pd
 
-from happy_housing.app.filters import FilterState, apply_filters
+from happy_housing.app.filters import (
+    FilterState,
+    apply_filters,
+    apply_starred_only,
+)
 
 
 def test_apply_filters_district_source_oou() -> None:
@@ -26,3 +30,14 @@ def test_apply_filters_district_source_oou() -> None:
     )
     out = apply_filters(frame, state)
     assert list(out["listing_id"]) == ["c"]
+
+
+def test_apply_starred_only_keeps_starred_ids() -> None:
+    frame = pd.DataFrame({"listing_id": ["a", "b", "c"], "x": [1, 2, 3]})
+    out = apply_starred_only(frame, frozenset({"b", "c"}))
+    assert list(out["listing_id"]) == ["b", "c"]
+
+
+def test_apply_starred_only_empty_stars() -> None:
+    frame = pd.DataFrame({"listing_id": ["a"], "x": [1]})
+    assert apply_starred_only(frame, frozenset()).empty

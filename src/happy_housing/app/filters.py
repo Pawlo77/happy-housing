@@ -41,3 +41,15 @@ def apply_filters(frame: pd.DataFrame, state: FilterState) -> pd.DataFrame:
     if state.month != "(all)" and "listed_month" in frame.columns:
         mask &= frame["listed_month"].astype(str).eq(state.month)
     return frame.loc[mask].reset_index(drop=True)
+
+
+def apply_starred_only(
+    frame: pd.DataFrame,
+    starred_ids: frozenset[str] | set[str],
+) -> pd.DataFrame:
+    """Keep only rows whose ``listing_id`` is starred."""
+    if frame.empty or "listing_id" not in frame.columns:
+        return frame.copy()
+    ids = {str(x) for x in starred_ids}
+    mask = frame["listing_id"].astype(str).isin(ids)
+    return frame.loc[mask].reset_index(drop=True)
