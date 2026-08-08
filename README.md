@@ -45,9 +45,19 @@ Sidebar filters + map overlays. **Map / Offer / Board / News**:
 
 ### Stats
 
-Unconventional market cuts (“bargain dens”, ask vs ink, place/shape/time games) — not a generic KPI wall.
+Filterable market analytics for decisions — not a vanity dashboard:
 
-![Stats — market oddities](docs/screenshots/08-stats.png)
+- **Filters** — districts, sources, months, valuation side, OOU, price / area / rooms
+- **Trends** — listing vs model medians over time, residual distribution
+- **Value** — district value board, ask vs RCN ink, hunt / watch lists
+- **Place** — Chopin/OOU premium, commute & transit price curves, district mood
+- **Stock** — size / rooms / build-era mix
+
+Tunables: Admin → Stats.
+
+![Stats — Trends](docs/screenshots/08-stats.png)
+
+![Stats — Value](docs/screenshots/08b-stats-value.png)
 
 ### Admin
 

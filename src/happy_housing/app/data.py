@@ -55,9 +55,15 @@ def _with_listed_month(frame: pd.DataFrame) -> pd.DataFrame:
     if "listed_at" not in frame.columns:
         frame["listed_month"] = "unknown"
         return frame
-    parsed = pd.to_datetime(frame["listed_at"], errors="coerce", utc=True)
+    raw = frame["listed_at"].astype(str)
+    parsed = pd.to_datetime(raw, errors="coerce", utc=True, format="mixed")
+    # RCN GML ids embed a timestamp suffix: …_YYYY-MM-DDTHH-MM-SS
+    missing = parsed.isna()
+    if missing.any():
+        extracted = raw.loc[missing].str.extract(r"_(\d{4}-\d{2}-\d{2})T", expand=False)
+        parsed.loc[missing] = pd.to_datetime(extracted, errors="coerce", utc=True)
     frame["listed_month"] = (
-        parsed.dt.tz_localize(None).dt.strftime("%Y-%m").fillna("unknown")
+        parsed.dt.tz_convert(None).dt.strftime("%Y-%m").fillna("unknown")
     )
     return frame
 

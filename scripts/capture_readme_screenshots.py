@@ -66,18 +66,29 @@ def main() -> None:
             print(f"skip offer Context: {exc}")
 
         _nav(page, "Stats")
-        page.get_by_text("Market oddities", exact=False).first.wait_for(timeout=60_000)
-        page.wait_for_timeout(3000)
+        page.get_by_text("Market analytics", exact=False).first.wait_for(timeout=60_000)
+        page.wait_for_timeout(4000)
         _shot(page, "08-stats.png")
+        try:
+            page.get_by_role("tab", name="Value").click()
+            page.wait_for_timeout(3000)
+            _shot(page, "08b-stats-value.png")
+        except Exception as exc:
+            print(f"skip Stats Value: {exc}")
 
         _nav(page, "Admin")
         page.wait_for_timeout(3000)
         _shot(page, "09-admin.png")
         try:
-            _tab(page, "AI / LM Studio")
+            _tab(page, "Stats")
             _shot(page, "10-admin-settings.png")
         except Exception as exc:
-            print(f"skip Admin AI: {exc}")
+            print(f"skip Admin Stats: {exc}")
+            try:
+                _tab(page, "AI / LM Studio")
+                _shot(page, "10-admin-settings.png")
+            except Exception as exc2:
+                print(f"skip Admin AI: {exc2}")
 
         browser.close()
     print("done:", sorted(p.name for p in OUT.glob("*.png")))

@@ -1,4 +1,4 @@
-"""Unconventional market insight tables for the Stats page."""
+"""Business-oriented market analytics helpers for the Stats page."""
 
 from __future__ import annotations
 
@@ -6,10 +6,22 @@ import numpy as np
 import pandas as pd
 
 
+def normalize_district(value: object) -> str:
+    """Casefold and strip a district label for stable grouping."""
+    return str(value).strip().casefold()
+
+
 def _num(frame: pd.DataFrame, col: str) -> pd.Series:
     if col not in frame.columns:
         return pd.Series(dtype=float, index=frame.index)
     return pd.to_numeric(frame[col], errors="coerce")
+
+
+def _with_district(frame: pd.DataFrame) -> pd.DataFrame:
+    out = frame.copy()
+    if "district" in out.columns:
+        out["district"] = out["district"].map(normalize_district)
+    return out
 
 
 def chopin_surcharge(frame: pd.DataFrame) -> dict[str, float]:
@@ -42,15 +54,16 @@ def bargain_density(frame: pd.DataFrame, min_offers: int = 5) -> pd.DataFrame:
     )
     if frame.empty or "district" not in frame.columns:
         return empty
-    delta = _num(frame, "delta_price_per_m2")
-    work = pd.DataFrame({
-        "district": frame["district"].astype(str),
+    work = _with_district(frame)
+    delta = _num(work, "delta_price_per_m2")
+    table = pd.DataFrame({
+        "district": work["district"].astype(str),
         "delta": delta,
-        "ppm": _num(frame, "price_per_m2"),
+        "ppm": _num(work, "price_per_m2"),
         "is_bargain": np.where(delta.isna(), np.nan, (delta < 0).astype(float)),
     })
     grouped = (
-        work
+        table
         .groupby("district", dropna=True)
         .agg(
             n=("delta", "size"),
@@ -64,6 +77,127 @@ def bargain_density(frame: pd.DataFrame, min_offers: int = 5) -> pd.DataFrame:
     if out.empty:
         return empty
     return out.sort_values("bargain_share", ascending=False).reset_index(drop=True)
+
+
+def district_scoreboard(frame: pd.DataFrame, min_offers: int = 5) -> pd.DataFrame:
+    """District value board: ask vs model medians, bargain share, volume."""
+    empty = pd.DataFrame(
+        columns=[
+            "district",
+            "n",
+            "median_ppm",
+            "median_model",
+            "median_delta",
+            "bargain_share",
+            "share_overpriced",
+        ]
+    )
+    if frame.empty or "district" not in frame.columns:
+        return empty
+    work = _with_district(frame)
+    table = pd.DataFrame({
+        "district": work["district"].astype(str),
+        "ppm": _num(work, "price_per_m2"),
+        "model": _num(work, "model_price_per_m2"),
+        "delta": _num(work, "delta_price_per_m2"),
+    })
+    table["is_bargain"] = np.where(
+        table["delta"].isna(), np.nan, (table["delta"] < 0).astype(float)
+    )
+    table["is_over"] = np.where(
+        table["delta"].isna(), np.nan, (table["delta"] >= 0).astype(float)
+    )
+    grouped = (
+        table
+        .groupby("district", dropna=True)
+        .agg(
+            n=("delta", "size"),
+            median_ppm=("ppm", "median"),
+            median_model=("model", "median"),
+            median_delta=("delta", "median"),
+            bargain_share=("is_bargain", "mean"),
+            share_overpriced=("is_over", "mean"),
+        )
+        .reset_index()
+    )
+    out = grouped.loc[grouped["n"] >= min_offers].copy()
+    if out.empty:
+        return empty
+    return out.sort_values("median_delta", ascending=True).reset_index(drop=True)
+
+
+def monthly_trends(frame: pd.DataFrame) -> pd.DataFrame:
+    """Median listing/model/delta and volume by listed month."""
+    empty = pd.DataFrame(
+        columns=[
+            "listed_month",
+            "n",
+            "median_price_per_m2",
+            "median_model",
+            "median_delta",
+        ]
+    )
+    if frame.empty or "listed_month" not in frame.columns:
+        return empty
+    table = pd.DataFrame({
+        "listed_month": frame["listed_month"].astype(str),
+        "ppm": _num(frame, "price_per_m2"),
+        "model": _num(frame, "model_price_per_m2"),
+        "delta": _num(frame, "delta_price_per_m2"),
+    })
+    table = table.loc[table["listed_month"].ne("unknown")].copy()
+    if table.empty:
+        return empty
+    return (
+        table
+        .groupby("listed_month", dropna=True)
+        .agg(
+            n=("ppm", "size"),
+            median_price_per_m2=("ppm", "median"),
+            median_model=("model", "median"),
+            median_delta=("delta", "median"),
+        )
+        .reset_index()
+        .sort_values("listed_month")
+        .reset_index(drop=True)
+    )
+
+
+def top_value_offers(
+    frame: pd.DataFrame,
+    n: int = 15,
+    side: str = "underpriced",
+) -> pd.DataFrame:
+    """Rank offers by residual for a hunt / avoid list."""
+    cols = [
+        "listing_id",
+        "district",
+        "source",
+        "price_per_m2",
+        "model_price_per_m2",
+        "delta_price_per_m2",
+        "area_m2",
+        "rooms",
+        "commute_min",
+    ]
+    empty = pd.DataFrame(columns=cols)
+    if frame.empty or "delta_price_per_m2" not in frame.columns:
+        return empty
+    work = frame.copy()
+    work["delta_price_per_m2"] = _num(work, "delta_price_per_m2")
+    work = work.dropna(subset=["delta_price_per_m2"])
+    if side == "underpriced":
+        work = work.loc[work["delta_price_per_m2"] < 0].sort_values(
+            "delta_price_per_m2", ascending=True
+        )
+    else:
+        work = work.loc[work["delta_price_per_m2"] >= 0].sort_values(
+            "delta_price_per_m2", ascending=False
+        )
+    if "district" in work.columns:
+        work["district"] = work["district"].map(normalize_district)
+    keep = [c for c in cols if c in work.columns]
+    return work.loc[:, keep].head(max(1, int(n))).reset_index(drop=True)
 
 
 def commute_cost_curve(frame: pd.DataFrame) -> pd.DataFrame:
@@ -90,6 +224,30 @@ def commute_cost_curve(frame: pd.DataFrame) -> pd.DataFrame:
     return grouped.reset_index(drop=True)
 
 
+def transit_price_curve(frame: pd.DataFrame) -> pd.DataFrame:
+    """Median zł/m² by distance to nearest GTFS stop."""
+    work = pd.DataFrame({
+        "ppm": _num(frame, "price_per_m2"),
+        "dist": _num(frame, "dist_transit_stop_m"),
+    }).dropna()
+    if work.empty:
+        return pd.DataFrame(columns=["transit_band", "n", "median_price_per_m2"])
+    bins = [0, 150, 300, 500, 800, 1500, 50000]
+    labels = ["<150m", "150-300m", "300-500m", "500-800m", "800m-1.5km", "1.5km+"]
+    work["transit_band"] = pd.cut(
+        work["dist"], bins=bins, labels=labels, include_lowest=True, right=False
+    )
+    return (
+        work
+        .groupby("transit_band", observed=False)
+        .agg(n=("ppm", "size"), median_price_per_m2=("ppm", "median"))
+        .reset_index()
+        .loc[lambda d: d["n"] > 0]
+        .assign(transit_band=lambda d: d["transit_band"].astype(str))
+        .reset_index(drop=True)
+    )
+
+
 def ask_vs_ink(frame: pd.DataFrame, min_offers: int = 3) -> pd.DataFrame:
     """Otodom ask vs RCN ink medians by district — listing premium over deals."""
     empty = pd.DataFrame(
@@ -104,20 +262,21 @@ def ask_vs_ink(frame: pd.DataFrame, min_offers: int = 3) -> pd.DataFrame:
     )
     if frame.empty or "district" not in frame.columns or "source" not in frame.columns:
         return empty
-    work = pd.DataFrame({
-        "district": frame["district"].astype(str),
-        "source": frame["source"].astype(str).str.casefold(),
-        "ppm": _num(frame, "price_per_m2"),
+    work = _with_district(frame)
+    table = pd.DataFrame({
+        "district": work["district"].astype(str),
+        "source": work["source"].astype(str).str.casefold(),
+        "ppm": _num(work, "price_per_m2"),
     }).dropna(subset=["ppm"])
     ask = (
-        work
-        .loc[work["source"].eq("otodom")]
+        table
+        .loc[table["source"].eq("otodom")]
         .groupby("district", dropna=True)["ppm"]
         .agg(ask_median="median", n_ask="size")
     )
     ink = (
-        work
-        .loc[work["source"].eq("rcn")]
+        table
+        .loc[table["source"].eq("rcn")]
         .groupby("district", dropna=True)["ppm"]
         .agg(ink_median="median", n_ink="size")
     )
@@ -261,13 +420,14 @@ def market_temperature(frame: pd.DataFrame) -> pd.DataFrame:
     )
     if frame.empty or "district" not in frame.columns:
         return empty
-    work = pd.DataFrame({
-        "district": frame["district"].astype(str),
-        "ppm": _num(frame, "price_per_m2"),
-        "delta": _num(frame, "delta_price_per_m2"),
+    work = _with_district(frame)
+    table = pd.DataFrame({
+        "district": work["district"].astype(str),
+        "ppm": _num(work, "price_per_m2"),
+        "delta": _num(work, "delta_price_per_m2"),
     })
     grouped = (
-        work
+        table
         .groupby("district", dropna=True)
         .agg(
             n=("delta", "size"),
@@ -304,3 +464,23 @@ def delta_volcano(frame: pd.DataFrame) -> pd.DataFrame:
         "delta": values,
         "side": np.where(values >= 0, "overpriced", "underpriced"),
     })
+
+
+def market_kpis(frame: pd.DataFrame) -> dict[str, float]:
+    """Headline KPIs for the filtered Stats universe."""
+    ppm = _num(frame, "price_per_m2")
+    delta = _num(frame, "delta_price_per_m2")
+    model = _num(frame, "model_price_per_m2")
+    n = float(len(frame))
+    share_over = (
+        float((delta.dropna() >= 0).mean()) if delta.notna().any() else float("nan")
+    )
+    return {
+        "n_offers": n,
+        "median_price_per_m2": float(ppm.median())
+        if ppm.notna().any()
+        else float("nan"),
+        "median_model": float(model.median()) if model.notna().any() else float("nan"),
+        "median_delta": float(delta.median()) if delta.notna().any() else float("nan"),
+        "share_overpriced": share_over,
+    }

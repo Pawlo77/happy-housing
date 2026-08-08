@@ -9,7 +9,7 @@ import pandas as pd
 import streamlit as st
 
 from happy_housing.app.attribution import render_attribution_footer
-from happy_housing.app.charts import bar_chart, histogram
+from happy_housing.app.charts import PRIMARY, SECONDARY, bar_chart, histogram
 from happy_housing.app.data import (
     load_config,
     load_metadata,
@@ -119,13 +119,13 @@ def _tab_overview(
             histogram(
                 filtered.get("price_per_m2", pd.Series(dtype=float)),
                 title="Listing zł/m²",
-                color="#1B5E52",
+                color=PRIMARY,
             )
         with right:
             histogram(
                 filtered.get("delta_price_per_m2", pd.Series(dtype=float)),
                 title="Delta (listing - model)",
-                color="#2F6F7E",
+                color=SECONDARY,
             )
 
     # Offer board lives on Explore → Board (row opens Offer).

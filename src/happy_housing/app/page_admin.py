@@ -195,6 +195,31 @@ def _tab_recommender(settings: AppSettings, settings_file: Path, proc: Path) -> 
         st.rerun()
 
 
+def _tab_stats(settings: AppSettings, settings_file: Path) -> None:
+    """Stats page aggregation thresholds."""
+    st.caption("Controls district scoreboards and hunt/watch list length.")
+    min_offers = st.number_input(
+        "Min offers per district",
+        min_value=1,
+        max_value=200,
+        value=int(settings.stats_min_district_offers),
+        key="settings_stats_min_offers",
+        help="Districts below this count are hidden on Stats → Value.",
+    )
+    top_n = st.number_input(
+        "Hunt / watch list size",
+        min_value=1,
+        max_value=100,
+        value=int(settings.stats_top_n),
+        key="settings_stats_top_n",
+    )
+    if st.button("Save Stats settings", type="primary", key="save_stats_settings"):
+        settings.stats_min_district_offers = int(min_offers)
+        settings.stats_top_n = int(top_n)
+        save_app_settings(settings_file, settings)
+        st.success("Stats settings saved.")
+
+
 def _tab_pipeline() -> None:
     """Otodom scrape and full remodel triggers."""
     st.caption(
@@ -294,11 +319,12 @@ def render_admin() -> None:
     settings_file = settings_path(proc)
     settings = load_app_settings(settings_file)
 
-    general, ai_tab, stars_tab, rec_tab, pipeline_tab = st.tabs([
+    general, ai_tab, stars_tab, rec_tab, stats_tab, pipeline_tab = st.tabs([
         "General",
         "AI / LM Studio",
         "Stars & News",
         "Recommendations",
+        "Stats",
         "Pipeline",
     ])
     with general:
@@ -309,6 +335,8 @@ def render_admin() -> None:
         _tab_stars_news(settings, settings_file, proc)
     with rec_tab:
         _tab_recommender(settings, settings_file, proc)
+    with stats_tab:
+        _tab_stats(settings, settings_file)
     with pipeline_tab:
         _tab_pipeline()
 

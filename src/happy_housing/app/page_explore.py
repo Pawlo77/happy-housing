@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-import altair as alt
 import geopandas as gpd
 import matplotlib.pyplot as plt
 import numpy as np
@@ -21,6 +20,7 @@ from happy_housing.app.ai_review import (
 )
 from happy_housing.app.app_settings import load_app_settings, settings_path
 from happy_housing.app.attribution import render_attribution_footer
+from happy_housing.app.charts import OVERPRICED, UNDERPRICED, diverging_bar_chart
 from happy_housing.app.data import (
     load_amenities,
     load_config,
@@ -341,26 +341,16 @@ def _render_shap(row_frame: pd.DataFrame) -> None:
             "shap": values[order],
             "side": ["raises ask" if values[i] >= 0 else "lowers ask" for i in order],
         })
-        chart = (
-            alt
-            .Chart(chart_df)
-            .mark_bar(cornerRadiusEnd=3)
-            .encode(
-                x=alt.X("shap:Q", title="SHAP contribution to predicted zł/m²"),
-                y=alt.Y("feature:N", sort="-x", title=None),
-                color=alt.Color(
-                    "side:N",
-                    scale=alt.Scale(
-                        domain=["raises ask", "lowers ask"],
-                        range=["#B91C1C", "#15803D"],
-                    ),
-                    legend=alt.Legend(title=None),
-                ),
-                tooltip=["feature", "shap", "side"],
-            )
-            .properties(height=max(280, 28 * len(chart_df)))
+        diverging_bar_chart(
+            chart_df,
+            feature="feature",
+            value="shap",
+            category="side",
+            title="Feature contributions (SHAP)",
+            color_domain=["raises ask", "lowers ask"],
+            color_range=[OVERPRICED, UNDERPRICED],
+            x_title="SHAP contribution to predicted zł/m²",
         )
-        st.altair_chart(chart, width="stretch")
         with st.expander("Classic waterfall", expanded=False):
             fig, _ax = plt.subplots(figsize=(9, 5.5))
             shap.plots.waterfall(explanation[0], show=False, max_display=12)

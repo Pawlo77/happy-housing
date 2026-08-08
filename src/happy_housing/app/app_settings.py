@@ -27,6 +27,10 @@ class AppSettings:
     """How many promising offers to surface after retrain."""
     recommender_demotion_alpha: float = 1.0
     """Soft-demotion strength for already-seen recommendations."""
+    stats_min_district_offers: int = 5
+    """Minimum offers before a district appears on Stats scoreboards."""
+    stats_top_n: int = 15
+    """How many hunt / watch offers to list on Stats → Value."""
 
 
 def settings_path(processed: Path) -> Path:
@@ -67,6 +71,16 @@ def load_app_settings(path: Path) -> AppSettings:
                 )
             ),
         ),
+        stats_min_district_offers=max(
+            1,
+            int(
+                payload.get(
+                    "stats_min_district_offers",
+                    defaults.stats_min_district_offers,
+                )
+            ),
+        ),
+        stats_top_n=max(1, int(payload.get("stats_top_n", defaults.stats_top_n))),
     )
 
 
