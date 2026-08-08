@@ -156,19 +156,48 @@ def nearest_distance_meters(
     points: gpd.GeoDataFrame,
     projected_crs: str,
     out_col: str,
+    *,
+    attr_cols: tuple[str, ...] | list[str] = (),
+    attr_rename: dict[str, str] | None = None,
 ) -> gpd.GeoDataFrame:
-    """Distance from each listing to nearest point geometry (meters)."""
+    """Distance from each listing to nearest point; optionally copy attributes."""
+    rename = dict(attr_rename or {})
+    wanted = [c for c in attr_cols if c in points.columns]
     if points.empty:
         result = listings.copy()
         result[out_col] = float("nan")
+        for col in wanted:
+            result[rename.get(col, col)] = float("nan")
         return result
     left = listings.to_crs(projected_crs)
-    right = points.to_crs(projected_crs)
-    matched = left.sjoin_nearest(right[["geometry"]], how="left", distance_col=out_col)
+    right_cols = ["geometry", *wanted]
+    right = points.to_crs(projected_crs)[right_cols]
+    matched = left.sjoin_nearest(right, how="left", distance_col=out_col)
     matched = matched[~matched.index.duplicated(keep="first")]
+    aligned = matched.reindex(listings.index)
     out = listings.copy()
-    out[out_col] = matched.reindex(listings.index)[out_col].to_numpy()
+    out[out_col] = aligned[out_col].to_numpy()
+    for col in wanted:
+        dest = rename.get(col, col)
+        out[dest] = aligned[col].to_numpy()
     return out
+
+
+_GIOS_AQ_ATTRS: tuple[str, ...] = (
+    "aq_index",
+    "pm10_ug_m3",
+    "pm25_ug_m3",
+    "no2_ug_m3",
+)
+"""Station AQ columns copied onto listings from the nearest GIOŚ station."""
+
+_GIOS_AQ_RENAME: dict[str, str] = {
+    "aq_index": "air_aq_index",
+    "pm10_ug_m3": "air_pm10_ug_m3",
+    "pm25_ug_m3": "air_pm25_ug_m3",
+    "no2_ug_m3": "air_no2_ug_m3",
+}
+"""Listing feature names for nearest-station air quality."""
 
 
 def load_amenity_points(path: Path) -> gpd.GeoDataFrame:
@@ -373,9 +402,18 @@ def enrich_listings(
             geometry=gpd.points_from_xy(gios_stations["lon"], gios_stations["lat"]),
             crs="EPSG:4326",
         )
-        gdf = nearest_distance_meters(gdf, air, projected_crs, "dist_air_station_m")
+        gdf = nearest_distance_meters(
+            gdf,
+            air,
+            projected_crs,
+            "dist_air_station_m",
+            attr_cols=_GIOS_AQ_ATTRS,
+            attr_rename=_GIOS_AQ_RENAME,
+        )
     else:
         gdf["dist_air_station_m"] = float("nan")
+        for col in _GIOS_AQ_RENAME.values():
+            gdf[col] = float("nan")
 
     if not gtfs_stops.empty:
         stops = gpd.GeoDataFrame(

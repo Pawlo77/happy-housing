@@ -59,9 +59,9 @@ LAYER_HELP: dict[str, str] = {
         "dist_police_m is a model feature and Prefs can require a max distance."
     ),
     "air": (
-        "GIOŚ monitoring stations (not pollution levels themselves). "
-        "Shows where air is measured; closer to a station ≠ cleaner air. "
-        "dist_air_station_m is a model feature; Prefs can cap distance."
+        "GIOŚ monitoring stations with nearest-station AQI and PM10/PM2.5/NO2. "
+        "Model uses dist_air_station_m plus air_aq_index / air_pm*_ug_m3 / "
+        "air_no2_ug_m3 — distance alone is not enough."
     ),
     "gunb": (
         "GUNB / GUGiK building-permit points (Warsaw sample on the map — full "

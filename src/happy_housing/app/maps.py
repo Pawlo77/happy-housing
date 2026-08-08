@@ -421,7 +421,7 @@ def air_stations_layer(stations: pd.DataFrame) -> pdk.Layer | None:
         lat_col="lat",
         lon_col="lon",
         name_col="name",
-        detail="air station (distance feature in model)",
+        detail="air station (AQI + PM/NO₂ + distance in model)",
         layer_label="Air",
     )
     return _icon(

@@ -42,6 +42,10 @@ from happy_housing.ingest import (
     fetch_gios_stations,
     load_listings_json,
 )
+from happy_housing.ingest.gios_aq import (
+    AIR_QUALITY_COLUMNS,
+    enrich_stations_with_air_quality,
+)
 from happy_housing.ingest.gunb import download_gunb_mazowieckie, gunb_points_gdf
 from happy_housing.ingest.otodom import scrape_otodom_warsaw
 from happy_housing.ingest.rcn import extract_rcn_transactions
@@ -231,6 +235,13 @@ def run_pipeline(
     if not hourly_path.exists() and gtfs_zip.exists():
         build_gtfs_stop_hourly(gtfs_zip, hourly_path)
     gios_stations = pd.read_parquet(gios_parquet)
+    aq_missing = any(col not in gios_stations.columns for col in AIR_QUALITY_COLUMNS)
+    if download_remote or aq_missing:
+        gios_stations = enrich_stations_with_air_quality(
+            gios_stations,
+            fixture_path=fixtures / "gios_air_quality.json",
+        )
+        gios_stations.to_parquet(gios_parquet, index=False)
     gunb = gunb_points_gdf(pd.read_parquet(gunb_parquet))
 
     if use_osm:

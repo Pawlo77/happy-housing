@@ -1,0 +1,22 @@
+[
+  {
+    "station_id": 1,
+    "aq_index": 1,
+    "aq_pm10_index": 0,
+    "aq_pm25_index": 0,
+    "aq_no2_index": 0,
+    "pm10_ug_m3": 12.0,
+    "pm25_ug_m3": 8.0,
+    "no2_ug_m3": 15.0
+  },
+  {
+    "station_id": 2,
+    "aq_index": 2,
+    "aq_pm10_index": 1,
+    "aq_pm25_index": 1,
+    "aq_no2_index": 1,
+    "pm10_ug_m3": 35.0,
+    "pm25_ug_m3": 22.0,
+    "no2_ug_m3": 40.0
+  }
+]

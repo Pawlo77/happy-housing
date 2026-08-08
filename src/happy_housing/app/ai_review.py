@@ -79,6 +79,10 @@ _PROXIMITY_KEYS: tuple[tuple[str, str], ...] = (
     ("dist_fire_station_m", "Nearest fire station (m)"),
     ("dist_police_m", "Nearest police (m)"),
     ("dist_air_station_m", "Nearest air-quality station (m)"),
+    ("air_aq_index", "Nearest station AQI (0-5)"),
+    ("air_pm10_ug_m3", "Nearest PM10 (µg/m³)"),
+    ("air_pm25_ug_m3", "Nearest PM2.5 (µg/m³)"),
+    ("air_no2_ug_m3", "Nearest NO2 (µg/m³)"),
     ("dist_gunb_m", "Nearest GUNB permit (m)"),
 )
 """Livability / proximity fields stored on scored offers."""

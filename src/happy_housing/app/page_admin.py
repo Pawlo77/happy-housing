@@ -709,8 +709,10 @@ def _tab_pipeline() -> None:
     )
     st.caption(
         "Pipeline also downloads UM Warszawa PLACE_SKWERY parks "
-        "(testmapa WFS → dist_park_m). Strategic road/rail noise on testmapa "
-        "is WMS-only for now — aircraft Lden still from EEA END."
+        "(testmapa WFS → dist_park_m), and GIOŚ v1 AQI + PM10/PM2.5/NO2 "
+        "for Warsaw stations (model features with dist_air_station_m). "
+        "Strategic road/rail noise on testmapa is WMS-only for now — "
+        "aircraft Lden still from EEA END."
     )
     if st.button(
         "Run pipeline (enrich + train + score)", type="primary", key="run_pipe"

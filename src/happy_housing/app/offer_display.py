@@ -79,6 +79,10 @@ def livability_rows(
         ("dist_fire_station_m", "Nearest fire station", "m"),
         ("dist_police_m", "Nearest police", "m"),
         ("dist_air_station_m", "Nearest air station", "m"),
+        ("air_aq_index", "Nearest station AQI", "aq"),
+        ("air_pm10_ug_m3", "Nearest PM10", "ug"),
+        ("air_pm25_ug_m3", "Nearest PM2.5", "ug"),
+        ("air_no2_ug_m3", "Nearest NO₂", "ug"),
         ("dist_gunb_m", "Nearest GUNB permit", "m"),
         ("dist_park_m", "Nearest park / square", "m"),
         ("dist_daszynskiego_m", f"Distance to {short}", "m"),
@@ -99,6 +103,22 @@ def livability_rows(
                 display = "below band / 0"
             else:
                 display = f"≥ {metres_proxy} dB"
+        elif kind == "aq":
+            number = pd.to_numeric(raw, errors="coerce")
+            try:
+                as_float = float(number)
+            except (TypeError, ValueError):
+                display = "—"
+            else:
+                display = "—" if as_float != as_float else f"{as_float:.0f}"
+        elif kind == "ug":
+            number = pd.to_numeric(raw, errors="coerce")
+            try:
+                as_float = float(number)
+            except (TypeError, ValueError):
+                display = "—"
+            else:
+                display = "—" if as_float != as_float else f"{as_float:.1f} µg/m³"
         else:
             display = format_meters(raw)
         out.append({"signal": label, "value": display})

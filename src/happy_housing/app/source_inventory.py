@@ -47,7 +47,10 @@ _SOURCE_ARTIFACTS: dict[str, tuple[ArtifactRef, ...]] = {
         ArtifactRef("fixtures", "parks.geojson"),
     ),
     "gtfs": (ArtifactRef("processed", "gtfs_stops.parquet"),),
-    "gios": (ArtifactRef("processed", "gios_stations.parquet"),),
+    "gios": (
+        ArtifactRef("processed", "gios_stations.parquet"),
+        ArtifactRef("fixtures", "gios_air_quality.json"),
+    ),
     "gunb": (
         ArtifactRef("processed", "gunb_mazowieckie.parquet"),
         ArtifactRef("fixtures", "gunb_points.json"),

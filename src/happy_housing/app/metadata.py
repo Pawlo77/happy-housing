@@ -136,7 +136,10 @@ DEFAULT_SOURCE_CATALOG: tuple[DataSource, ...] = (
     DataSource(
         name="GIOŚ air-quality stations (API v1)",
         url="https://powietrze.gios.gov.pl/",
-        role="Nearest air-quality station distance.",
+        role=(
+            "Nearest air-quality station distance plus station AQI and "
+            "latest PM10/PM2.5/NO2 (µg/m³) from GIOŚ API v1."
+        ),
         key="gios",
         unit="stations",
     ),
@@ -170,7 +173,9 @@ DEFAULT_METHODOLOGY: str = (
     "LightGBM regresses asking/transaction zł/m² from property traits "
     "(area, rooms, year) and livability distances (hospital, fire, police, "
     "transit, air station, GUNB permits, commute to Rondo Daszyńskiego) plus "
-    "an aircraft Lden/Lnight feature from EEA END contours. SHAP TreeExplainer "
+    "an aircraft Lden/Lnight feature from EEA END contours and nearest-station "
+    "GIOŚ air quality (AQI + PM10/PM2.5/NO2, not distance alone). SHAP "
+    "TreeExplainer "
     "explains each offer. "
     "Commute minutes use local OSRM when available, else a 30 km/h distance proxy."
 )
