@@ -254,7 +254,10 @@ def _tab_overview(frame: pd.DataFrame) -> None:
         "New-build share vs resale — useful when comparing ask premiums.",
     )
     if seg.empty:
-        st.info("No market_primary flag in the scored frame.")
+        st.info(
+            "No known primary/secondary market flag yet — "
+            "re-run pipeline so Otodom market / RCN rodzaj_rynku are scored."
+        )
     else:
         bar_chart(
             seg,

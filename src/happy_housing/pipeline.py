@@ -47,6 +47,7 @@ from happy_housing.ingest.gios_aq import (
     enrich_stations_with_air_quality,
 )
 from happy_housing.ingest.gunb import download_gunb_mazowieckie, gunb_points_gdf
+from happy_housing.ingest.market import ensure_market_primary
 from happy_housing.ingest.otodom import scrape_otodom_warsaw
 from happy_housing.ingest.rcn import extract_rcn_transactions
 from happy_housing.ingest.warsaw_map import fetch_warsaw_parks
@@ -109,6 +110,7 @@ def _rcn_as_listings(rcn: pd.DataFrame) -> pd.DataFrame:
     ):
         if col in frame.columns:
             out[col] = frame[col].to_numpy()
+    out = ensure_market_primary(out)
     return out.reset_index(drop=True)
 
 
@@ -223,6 +225,7 @@ def run_pipeline(
 
     listings = pd.concat(listings_parts, ignore_index=True, sort=False)
     listings = listings.drop_duplicates(subset=["listing_id"], keep="last")
+    listings = ensure_market_primary(listings)
     logger.info(
         "Training/scoring universe size=%s sources=%s",
         len(listings),

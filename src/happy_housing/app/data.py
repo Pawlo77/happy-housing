@@ -15,6 +15,7 @@ from happy_housing.app.io_cache import clear_io_caches, file_mtime, read_geojson
 from happy_housing.app.metadata import RunMetadata, load_run_metadata
 from happy_housing.config import ExperimentConfig, load_experiment_config
 from happy_housing.ingest import build_gtfs_stop_hourly
+from happy_housing.ingest.market import backfill_market_primary
 
 logger = logging.getLogger(__name__)
 
@@ -78,21 +79,33 @@ def _with_listed_month(frame: pd.DataFrame) -> pd.DataFrame:
 
 
 @st.cache_data(show_spinner=False)  # type: ignore[misc]
-def _read_scored(path: str, mtime: float) -> pd.DataFrame:
-    """Cached parquet read keyed by path + mtime."""
-    del mtime  # cache key only
+def _read_scored(
+    path: str, mtime: float, otodom_path: str, otodom_mtime: float
+) -> pd.DataFrame:
+    """Cached parquet read keyed by path + mtime (+ Otodom for market backfill)."""
+    del mtime, otodom_mtime  # cache keys only
     frame = pd.read_parquet(path)
+    frame = backfill_market_primary(
+        frame,
+        otodom_path=Path(otodom_path) if otodom_path else None,
+    )
     return _with_listed_month(frame)
 
 
 def load_scored() -> pd.DataFrame:
-    """Load scored listings with listed_month derived."""
+    """Load scored listings with listed_month and market_primary derived."""
     path = scored_path()
     if not path.exists():
         raise FileNotFoundError(
             f"Missing {path}. Run pipeline from Admin or: make pipeline"
         )
-    return _read_scored(str(path), path.stat().st_mtime)
+    oto = processed_dir() / "otodom_listings.parquet"
+    return _read_scored(
+        str(path),
+        path.stat().st_mtime,
+        str(oto) if oto.exists() else "",
+        oto.stat().st_mtime if oto.exists() else 0.0,
+    )
 
 
 def load_metadata() -> RunMetadata | None:

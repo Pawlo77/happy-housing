@@ -5,6 +5,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from happy_housing.ingest.market import ensure_market_primary
+
 
 def normalize_district(value: object) -> str:
     """Casefold and strip a district label for stable grouping."""
@@ -682,12 +684,18 @@ def affordability_bands(frame: pd.DataFrame) -> pd.DataFrame:
 def market_segment_mix(frame: pd.DataFrame) -> pd.DataFrame:
     """Primary vs secondary market share and median zł/m²."""
     empty = pd.DataFrame(columns=["segment", "n", "share", "median_ppm"])
-    if frame.empty or "market_primary" not in frame.columns:
+    if frame.empty:
         return empty
-    flag = _num(frame, "market_primary")
+    work_frame = frame
+    if "market_primary" not in work_frame.columns:
+        work_frame = ensure_market_primary(work_frame)
+    flag = _num(work_frame, "market_primary")
+    known = flag.notna()
+    if not bool(known.any()):
+        return empty
     work = pd.DataFrame({
-        "segment": np.where(flag.fillna(0) >= 0.5, "primary", "secondary"),
-        "ppm": _num(frame, "price_per_m2"),
+        "segment": np.where(flag.loc[known] >= 0.5, "primary", "secondary"),
+        "ppm": _num(work_frame, "price_per_m2").loc[known],
     })
     grouped = (
         work

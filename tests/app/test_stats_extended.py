@@ -58,3 +58,13 @@ def test_affordability_and_segment_mix() -> None:
     seg = market_segment_mix(_frame())
     assert set(seg["segment"]) <= {"primary", "secondary"}
     assert int(seg["n"].sum()) == 5
+
+
+def test_market_segment_mix_derives_from_market_and_skips_unknown() -> None:
+    frame = pd.DataFrame({
+        "market": ["primary", "secondary", None],
+        "price_per_m2": [10_000.0, 12_000.0, 9_000.0],
+    })
+    seg = market_segment_mix(frame)
+    assert set(seg["segment"]) == {"primary", "secondary"}
+    assert int(seg["n"].sum()) == 2
