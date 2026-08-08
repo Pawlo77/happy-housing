@@ -268,18 +268,18 @@ def sample_rcn_from_zip(
     url: str,
     raw_dir: Path,
     output_parquet: Path,
-    max_rows: int = 2000,
+    max_rows: int | None = None,
 ) -> pd.DataFrame:
-    """Download RCN zip and sample WGS84-like points from GML/CSV members.
+    """Download RCN zip and extract WGS84-like points from GML/CSV members.
 
     Args:
         url: RCN zip URL.
         raw_dir: Directory for the zip archive.
         output_parquet: Destination parquet path.
-        max_rows: Maximum sampled feature rows.
+        max_rows: Optional cap; ``None`` keeps every parsed feature.
 
     Returns:
-        Sampled transactions frame (best-effort column mapping).
+        Transactions frame (best-effort column mapping).
     """
     zip_path = download_file(url, raw_dir / "rcn_warsaw.zip", timeout_s=1800.0)
     records: list[dict[str, Any]] = []
@@ -289,7 +289,11 @@ def sample_rcn_from_zip(
         gml_members = [m for m in members if m.lower().endswith(".gml")]
         if csv_members:
             with archive.open(csv_members[0]) as handle:
-                frame = pd.read_csv(handle, nrows=max_rows)
+                frame = (
+                    pd.read_csv(handle)
+                    if max_rows is None
+                    else pd.read_csv(handle, nrows=max_rows)
+                )
             output_parquet.parent.mkdir(parents=True, exist_ok=True)
             frame.to_parquet(output_parquet, index=False)
             return frame
@@ -336,7 +340,7 @@ def sample_rcn_from_zip(
                         "area_m2": area,
                     })
                 elem.clear()
-                if len(records) >= max_rows:
+                if max_rows is not None and len(records) >= max_rows:
                     break
     frame = pd.DataFrame(records)
     if frame.empty:

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
+from typing import Any
 
 import geopandas as gpd
 import pandas as pd
@@ -13,6 +15,71 @@ logger = logging.getLogger(__name__)
 
 AIRCRAFT_LDEN_EXPOSURE_DB: float = 55.0
 """END reporting threshold used as binary high-exposure flag (``in_oou``)."""
+
+OSM_CACHE_SCHEMA_VERSION: int = 1
+"""Bump when default OSM tag scope or cache layout changes."""
+
+DEFAULT_OSM_AMENITY_TAGS: dict[str, bool | str | list[str]] = {
+    "amenity": True,
+    "station": "subway",
+}
+"""Overpass tags: every ``amenity=*`` plus subway stations in the bbox."""
+
+DEFAULT_OSM_SHOP_TAGS: dict[str, bool | str | list[str]] = {
+    "shop": True,
+}
+"""Overpass tags: every ``shop=*`` POI in the bbox."""
+
+_OSM_OVERPASS_TIMEOUT_S: int = 300
+"""Overpass / OSMnx timeout for city-wide amenity and shop queries."""
+
+
+def _osm_meta_path(cache_path: Path) -> Path:
+    """Sidecar JSON path that fingerprints tag filter + schema version."""
+    return cache_path.with_name(cache_path.stem + ".meta.json")
+
+
+def _tags_fingerprint(tags: dict[str, bool | str | list[str]]) -> str:
+    """Stable JSON fingerprint for an OSMnx tag filter."""
+    return json.dumps(tags, sort_keys=True, separators=(",", ":"))
+
+
+def _osm_cache_is_current(
+    cache_path: Path,
+    tags: dict[str, bool | str | list[str]],
+) -> bool:
+    """True when GeoJSON exists and meta matches current tags + schema."""
+    if not cache_path.exists():
+        return False
+    meta_path = _osm_meta_path(cache_path)
+    if not meta_path.exists():
+        return False
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return int(meta.get("schema_version", -1)) == OSM_CACHE_SCHEMA_VERSION and str(
+        meta.get("tags_fingerprint", "")
+    ) == _tags_fingerprint(tags)
+
+
+def _write_osm_cache_meta(
+    cache_path: Path,
+    tags: dict[str, bool | str | list[str]],
+    *,
+    row_count: int,
+) -> None:
+    """Persist cache fingerprint next to a GeoJSON artifact."""
+    payload: dict[str, Any] = {
+        "schema_version": OSM_CACHE_SCHEMA_VERSION,
+        "tags_fingerprint": _tags_fingerprint(tags),
+        "tags": tags,
+        "row_count": int(row_count),
+    }
+    _osm_meta_path(cache_path).write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
 
 
 def listings_to_gdf(
@@ -117,19 +184,20 @@ def load_amenity_points(path: Path) -> gpd.GeoDataFrame:
 def fetch_osm_amenities(
     bbox: tuple[float, float, float, float],
     cache_dir: Path,
-    tags: dict[str, str | list[str]] | None = None,
+    tags: dict[str, bool | str | list[str]] | None = None,
     fixture_path: Path | None = None,
+    *,
+    force_refresh: bool = False,
 ) -> gpd.GeoDataFrame:
-    """Download amenities via OSMnx; fall back to fixture if Overpass fails."""
+    """Download all amenities (plus subway) via OSMnx; fixture on Overpass failure."""
     cache_dir.mkdir(parents=True, exist_ok=True)
     cache_path = cache_dir / "osm_amenities.geojson"
-    if cache_path.exists():
+    tag_filter: dict[str, bool | str | list[str]] = dict(
+        tags if tags is not None else DEFAULT_OSM_AMENITY_TAGS
+    )
+    if not force_refresh and _osm_cache_is_current(cache_path, tag_filter):
         return gpd.read_file(cache_path)
 
-    tag_filter: dict[str, str | list[str]] = tags or {
-        "amenity": ["hospital", "fire_station", "police"],
-        "station": "subway",
-    }
     west, south, east, north = bbox
     frame = gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
     try:
@@ -137,7 +205,7 @@ def fetch_osm_amenities(
 
         ox.settings.use_cache = True
         ox.settings.cache_folder = str(cache_dir / "osmnx")
-        ox.settings.timeout = 90
+        ox.settings.timeout = _OSM_OVERPASS_TIMEOUT_S
         features = ox.features_from_bbox(
             bbox=(west, south, east, north),
             tags=tag_filter,
@@ -177,6 +245,7 @@ def fetch_osm_amenities(
 
     if not frame.empty:
         frame.to_file(cache_path, driver="GeoJSON")
+        _write_osm_cache_meta(cache_path, tag_filter, row_count=len(frame))
         logger.info("Cached %s amenities to %s", len(frame), cache_path)
     return frame
 
@@ -185,11 +254,17 @@ def fetch_osm_shops(
     bbox: tuple[float, float, float, float],
     cache_dir: Path,
     fixture_path: Path | None = None,
+    tags: dict[str, bool | str | list[str]] | None = None,
+    *,
+    force_refresh: bool = False,
 ) -> gpd.GeoDataFrame:
-    """Download retail POIs via OSMnx; fall back to fixture if Overpass fails."""
+    """Download all shop POIs via OSMnx; fall back to fixture if Overpass fails."""
     cache_dir.mkdir(parents=True, exist_ok=True)
     cache_path = cache_dir / "osm_shops.geojson"
-    if cache_path.exists():
+    tag_filter: dict[str, bool | str | list[str]] = dict(
+        tags if tags is not None else DEFAULT_OSM_SHOP_TAGS
+    )
+    if not force_refresh and _osm_cache_is_current(cache_path, tag_filter):
         return gpd.read_file(cache_path)
 
     west, south, east, north = bbox
@@ -199,18 +274,10 @@ def fetch_osm_shops(
 
         ox.settings.use_cache = True
         ox.settings.cache_folder = str(cache_dir / "osmnx")
-        ox.settings.timeout = 90
+        ox.settings.timeout = _OSM_OVERPASS_TIMEOUT_S
         features = ox.features_from_bbox(
             bbox=(west, south, east, north),
-            tags={
-                "shop": [
-                    "supermarket",
-                    "convenience",
-                    "mall",
-                    "bakery",
-                    "chemist",
-                ]
-            },
+            tags=tag_filter,
         )
         if not features.empty:
             frame = features.reset_index(drop=False)
@@ -230,6 +297,8 @@ def fetch_osm_shops(
                 if c in frame.columns
             ]
             frame = frame[keep]
+            if "shop" in frame.columns:
+                frame = frame[frame["shop"].notna()]
     except Exception as exc:
         logger.warning("OSMnx shop fetch failed: %s", exc)
 
@@ -244,6 +313,7 @@ def fetch_osm_shops(
 
     if not frame.empty:
         frame.to_file(cache_path, driver="GeoJSON")
+        _write_osm_cache_meta(cache_path, tag_filter, row_count=len(frame))
         logger.info("Cached %s shops to %s", len(frame), cache_path)
     return frame
 
