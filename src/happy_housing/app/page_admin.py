@@ -925,6 +925,7 @@ def _apply_pipeline_widgets(
     gunb_zip_url: str,
     use_osm: bool,
     scrape_in_pipe: bool,
+    snap_out_of_parks: bool,
 ) -> None:
     """Copy Pipeline tab widget values onto ``settings`` (overrides on)."""
     settings.pipeline_overrides_enabled = True
@@ -942,6 +943,7 @@ def _apply_pipeline_widgets(
     settings.gunb_zip_url = str(gunb_zip_url).strip()
     settings.use_osm = bool(use_osm)
     settings.scrape_otodom_in_pipeline = bool(scrape_in_pipe)
+    settings.snap_listings_out_of_parks = bool(snap_out_of_parks)
 
 
 def _tab_pipeline(settings: AppSettings, settings_file: Path) -> None:
@@ -1107,6 +1109,15 @@ def _tab_pipeline(settings: AppSettings, settings_file: Path) -> None:
         value=bool(flags.use_osm),
         key="pipe_use_osm",
     )
+    snap_out_of_parks = st.checkbox(
+        "Snap listing pins out of parks (OSM buildings)",
+        value=bool(settings.snap_listings_out_of_parks),
+        help=(
+            "Otodom/fixture/RCN pins that land inside UM park polygons move to "
+            "the nearest OpenStreetMap building centroid outside the park."
+        ),
+        key="pipe_snap_out_of_parks",
+    )
 
     st.subheader("Remodel")
     scrape_in_pipe = st.checkbox(
@@ -1135,6 +1146,7 @@ def _tab_pipeline(settings: AppSettings, settings_file: Path) -> None:
                 gunb_zip_url=gunb_zip_url,
                 use_osm=use_osm,
                 scrape_in_pipe=scrape_in_pipe,
+                snap_out_of_parks=snap_out_of_parks,
             )
             save_app_settings(settings_file, settings)
             st.success("Pipeline settings saved (overrides YAML ingest).")
@@ -1162,6 +1174,7 @@ def _tab_pipeline(settings: AppSettings, settings_file: Path) -> None:
                 gunb_zip_url=gunb_zip_url,
                 use_osm=use_osm,
                 scrape_in_pipe=scrape_in_pipe,
+                snap_out_of_parks=snap_out_of_parks,
             )
             save_app_settings(settings_file, settings)
             cmd = [

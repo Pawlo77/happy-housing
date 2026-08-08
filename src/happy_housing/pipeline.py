@@ -41,6 +41,7 @@ from happy_housing.gis import (
     load_amenity_points,
     load_shop_points,
 )
+from happy_housing.gis.location_fix import snap_listings_out_of_parks
 from happy_housing.gis.routing import (
     attach_commute_minutes,
     attach_transit_commute_minutes,
@@ -333,6 +334,15 @@ def run_pipeline(
         fixture_path=fixtures / "traffic_sample.json",
         force_refresh=force_gis_refresh,
     )
+
+    if app_settings.snap_listings_out_of_parks:
+        listings = snap_listings_out_of_parks(
+            listings,
+            parks=parks,
+            cache_dir=cache,
+            bbox=config.bbox.as_tuple(),
+            force_refresh_buildings=force_gis_refresh,
+        )
 
     commute = resolve_commute_target(app_settings, config)
     logger.info(

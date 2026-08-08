@@ -144,6 +144,8 @@ class AppSettings:
     """Scrape Otodom when running the full pipeline."""
     use_osm: bool = True
     """Fetch OSM amenities + shops during pipeline."""
+    snap_listings_out_of_parks: bool = True
+    """Snap park-interior listing pins to nearest OSM building."""
     download_gtfs: bool = True
     """Re-download GTFS during pipeline."""
     download_gios: bool = True
@@ -438,6 +440,12 @@ def load_app_settings(path: Path) -> AppSettings:
             )
         ),
         use_osm=bool(payload.get("use_osm", defaults.use_osm)),
+        snap_listings_out_of_parks=bool(
+            payload.get(
+                "snap_listings_out_of_parks",
+                defaults.snap_listings_out_of_parks,
+            )
+        ),
         download_gtfs=bool(payload.get("download_gtfs", defaults.download_gtfs)),
         download_gios=bool(payload.get("download_gios", defaults.download_gios)),
         download_rcn=bool(payload.get("download_rcn", defaults.download_rcn)),
