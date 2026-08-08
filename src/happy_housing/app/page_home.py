@@ -25,15 +25,14 @@ def _hero(refreshed: str | None, n_offers: int, r2: float | None) -> None:
 
 
 def _kpi_strip(summary: dict[str, Any], duration_s: float | None) -> None:
-    """Primary KPI row without nested cards."""
+    """Primary KPI row — equal-height metrics (no delta subtitle line)."""
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Median zł/m²", f"{summary['median_price_per_m2']:,.0f}")
     delta = summary["median_delta"]
     c2.metric(
         "Median delta",
         f"{delta:,.0f}",
-        delta="listing - model",
-        delta_color="off",
+        help="Listing zł/m² minus model zł/m²",
     )
     share = summary["share_overpriced"]
     c3.metric(
