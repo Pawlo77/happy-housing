@@ -135,6 +135,10 @@ module = [
   "numpy.*",
   "pandas",
   "pandas.*",
+  "pyproj",
+  "pyproj.*",
+  "requests",
+  "requests.*",
 ]
 ignore_missing_imports = true
 

@@ -1,0 +1,11 @@
+[
+  {"amenity": "hospital", "name": "Szpital MSWiA", "lon": 20.981, "lat": 52.218},
+  {"amenity": "hospital", "name": "Szpital Dzieciątka Jezus", "lon": 21.005, "lat": 52.221},
+  {"amenity": "hospital", "name": "Centrum Onkologii", "lon": 20.958, "lat": 52.203},
+  {"amenity": "fire_station", "name": "JRG 3", "lon": 20.990, "lat": 52.230},
+  {"amenity": "fire_station", "name": "JRG 10", "lon": 21.040, "lat": 52.210},
+  {"amenity": "fire_station", "name": "JRG 15", "lon": 20.950, "lat": 52.250},
+  {"amenity": "police", "name": "KSP Warszawa", "lon": 21.012, "lat": 52.232},
+  {"amenity": "police", "name": "Komisariat Mokotów", "lon": 21.020, "lat": 52.200},
+  {"amenity": "police", "name": "Komisariat Wola", "lon": 20.970, "lat": 52.235}
+]

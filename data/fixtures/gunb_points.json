@@ -1,0 +1,5 @@
+[
+  {"lon": 21.01, "lat": 52.22, "adres": "fixture-construction-1", "numer_decyzji": "F-1"},
+  {"lon": 20.98, "lat": 52.24, "adres": "fixture-construction-2", "numer_decyzji": "F-2"},
+  {"lon": 21.05, "lat": 52.20, "adres": "fixture-construction-3", "numer_decyzji": "F-3"}
+]
