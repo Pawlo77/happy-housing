@@ -29,11 +29,11 @@ def test_sport_osrid_maps_gym_and_pool() -> None:
     assert sport_key_for_osrid("ODKRYTE") == "outdoor_ice_rink"
 
 
-def test_default_map_types_are_gyms_and_pools() -> None:
-    assert "gym" in DEFAULT_MAP_OBJECT_TYPES
-    assert "fitness" in DEFAULT_MAP_OBJECT_TYPES
-    assert "indoor_pool" in DEFAULT_MAP_OBJECT_TYPES
-    assert "outdoor_pool" in DEFAULT_MAP_OBJECT_TYPES
+def test_default_map_types_exclude_sports() -> None:
+    assert "gym" not in DEFAULT_MAP_OBJECT_TYPES
+    assert "fitness" not in DEFAULT_MAP_OBJECT_TYPES
+    assert "indoor_pool" not in DEFAULT_MAP_OBJECT_TYPES
+    assert DEFAULT_MAP_OBJECT_TYPES == ()
 
 
 def test_coerce_amenity_weights_clips_and_fills() -> None:

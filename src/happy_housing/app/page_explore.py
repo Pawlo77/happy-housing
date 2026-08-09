@@ -693,7 +693,7 @@ def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
         help_text=(
             "UM sports (mapa.um.warszawa.pl/obiekty-sportowe) plus OSM "
             "commercial fitness clubs under Gym / fitness club. "
-            "Default: gyms, fitness studios, swimming pools."
+            "Default: none selected."
         ),
         widget_key="explore_ly_city_pois_sports",
     )

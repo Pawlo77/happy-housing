@@ -19,13 +19,13 @@ from happy_housing.gis.amenity_catalog import DEFAULT_MAP_OBJECT_TYPES, amenity_
 from happy_housing.ingest.warsaw_map import fetch_warsaw_city_pois
 
 
-def test_default_map_includes_fitness_studio() -> None:
-    """UM sala fitness + gyms should be on by default (commercial clubs via OSM)."""
-    assert "gym" in DEFAULT_MAP_OBJECT_TYPES
-    assert "fitness" in DEFAULT_MAP_OBJECT_TYPES
+def test_default_map_excludes_sports_facilities() -> None:
+    """Sports/gym POIs stay off until the user opts in on Explore."""
+    assert "gym" not in DEFAULT_MAP_OBJECT_TYPES
+    assert "fitness" not in DEFAULT_MAP_OBJECT_TYPES
     fit = amenity_type("fitness")
     assert fit is not None
-    assert fit.default_map_visible is True
+    assert fit.default_map_visible is False
 
 
 def test_osm_fitness_tags_target_commercial_clubs() -> None:

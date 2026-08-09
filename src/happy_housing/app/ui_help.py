@@ -137,8 +137,8 @@ LAYER_HELP: dict[str, str] = {
         "WFS POIs (libraries, pharmacies, bike-share, …) and OSM commercial "
         "fitness clubs under Gym. OSM hospitals / police / fire / shops / EV / "
         "gas stations are separate checkboxes (not duplicated here). "
-        "Multiselect filters which types draw; default gyms, fitness studios, "
-        "swimming pools. Admin -> Recommendations sets +/- weights that nudge "
+        "Multiselect filters which types draw; default none (opt in). "
+        "Admin -> Recommendations sets +/- weights that nudge "
         "the bargain recommender by proximity."
     ),
     "city_boundary": (
