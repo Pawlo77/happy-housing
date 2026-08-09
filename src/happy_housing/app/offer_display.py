@@ -269,7 +269,12 @@ def livability_rows(
         ("dist_military_m", "Nearest military area", "m"),
         ("dist_airport_area_m", "Nearest airport footprint", "m"),
         ("dist_traffic_road_m", "Nearest drive road (sample)", "m"),
-        ("traffic_weight_nearby", "Local traffic weight (proxy)", "aq"),
+        ("dist_major_road_m", "Nearest major road (sample)", "m"),
+        ("traffic_weight_nearby", "Traffic weight nearby", "aq"),
+        ("major_traffic_weight_nearby", "Major-road traffic weight nearby", "aq"),
+        ("nearest_highway", "Nearest highway class", "text"),
+        ("street_facing_hint", "Street-facing (description hint)", "flag"),
+        ("quiet_side_hint", "Quiet / courtyard side (description hint)", "flag"),
         ("dist_daszynskiego_m", f"Distance to {short}", "m"),
     )
     out: list[dict[str, Any]] = []
@@ -277,6 +282,8 @@ def livability_rows(
         raw = row.get(col)
         if kind == "flag":
             display = flag_yes_no(raw)
+        elif kind == "text":
+            display = str(raw).strip() if raw is not None and str(raw).strip() else "—"
         elif kind == "min":
             metres_proxy = round_meters(raw)
             display = "—" if metres_proxy is None else f"{metres_proxy} min"

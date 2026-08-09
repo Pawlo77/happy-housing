@@ -34,6 +34,21 @@ _OOU_VALUES: frozenset[str] = frozenset({
     OOU_INSIDE_OK,
 })
 
+FRONTAGE_ANY: str = "(any)"
+"""No street-facing / quiet-side hard filter."""
+
+FRONTAGE_STREET: str = "street"
+"""Keep listings with street_facing_hint == 1."""
+
+FRONTAGE_QUIET: str = "quiet"
+"""Keep listings with quiet_side_hint == 1."""
+
+_FRONTAGE_VALUES: frozenset[str] = frozenset({
+    FRONTAGE_ANY,
+    FRONTAGE_STREET,
+    FRONTAGE_QUIET,
+})
+
 
 @dataclass(slots=True)
 class UserPreferences:
@@ -85,6 +100,12 @@ class UserPreferences:
     """Max metres to nearest OSM bike path."""
     max_noise_total_lden_db: float | None = None
     """Max energy-sum total Lden (dB) from UM strategic noise maps."""
+    max_traffic_weight_nearby: float | None = None
+    """Max OSM traffic-proxy weight sum in the neighbourhood radius."""
+    max_major_traffic_weight_nearby: float | None = None
+    """Max major-road traffic-proxy weight sum nearby."""
+    frontage: str = "(any)"
+    """Street-facing / quiet-side text hint: (any) / street / quiet."""
     max_delta_price_per_m2: float | None = None
     """Max listing - model delta (e.g. 0 = fair or better)."""
     require_underpriced: bool = False
@@ -95,6 +116,8 @@ class UserPreferences:
     def __post_init__(self) -> None:
         if self.oou not in _OOU_VALUES:
             self.oou = OOU_ANY
+        if self.frontage not in _FRONTAGE_VALUES:
+            self.frontage = FRONTAGE_ANY
         self.districts = [str(d).strip() for d in self.districts if str(d).strip()]
         self.sources = [str(s).strip() for s in self.sources if str(s).strip()]
 
@@ -136,6 +159,8 @@ class UserPreferences:
             "max_dist_park_m",
             "max_dist_bike_path_m",
             "max_noise_total_lden_db",
+            "max_traffic_weight_nearby",
+            "max_major_traffic_weight_nearby",
             "max_delta_price_per_m2",
         ):
             if float_key in data:
@@ -262,6 +287,18 @@ def apply_preferences(frame: pd.DataFrame, prefs: UserPreferences) -> pd.DataFra
         mask &= _numeric(frame, "noise_total_lden_db").le(
             float(prefs.max_noise_total_lden_db)
         )
+    if prefs.max_traffic_weight_nearby is not None:
+        mask &= _numeric(frame, "traffic_weight_nearby").le(
+            float(prefs.max_traffic_weight_nearby)
+        )
+    if prefs.max_major_traffic_weight_nearby is not None:
+        mask &= _numeric(frame, "major_traffic_weight_nearby").le(
+            float(prefs.max_major_traffic_weight_nearby)
+        )
+    if prefs.frontage == FRONTAGE_STREET:
+        mask &= _numeric(frame, "street_facing_hint").eq(1.0)
+    elif prefs.frontage == FRONTAGE_QUIET:
+        mask &= _numeric(frame, "quiet_side_hint").eq(1.0)
     if prefs.max_delta_price_per_m2 is not None:
         mask &= _numeric(frame, "delta_price_per_m2").le(
             float(prefs.max_delta_price_per_m2)

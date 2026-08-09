@@ -52,6 +52,7 @@ from happy_housing.gis.routing import (
     attach_commute_minutes,
     attach_transit_commute_minutes,
 )
+from happy_housing.gis.street_frontage import attach_street_frontage_hints
 from happy_housing.gis.traffic import fetch_traffic_road_sample
 from happy_housing.gis.warsaw_noise import (
     attach_warsaw_noise_features,
@@ -403,6 +404,8 @@ def run_pipeline(
             force_refresh_buildings=force_gis_refresh,
         )
 
+    listings = attach_street_frontage_hints(listings)
+
     commute = resolve_commute_target(app_settings, config)
     logger.info(
         "Commute target %s (%.5f, %.5f)", commute.label, commute.lon, commute.lat
@@ -430,6 +433,9 @@ def run_pipeline(
         military=military,
         airport_areas=airport_areas,
         traffic_sample=traffic_sample,
+        traffic_neighbourhood_radius_m=float(
+            app_settings.traffic_neighbourhood_radius_m
+        ),
         aircraft_lden_path=fixtures / "chopin_aircraft_lden.geojson",
         aircraft_lnight_path=fixtures / "chopin_aircraft_lnight.geojson",
         road_lden_path=road_lden_path if road_lden_path.exists() else None,

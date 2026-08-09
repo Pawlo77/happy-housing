@@ -26,6 +26,12 @@ class FilterState:
     """IDW AQI ≥3: ``(all)``, ``inside``, or ``outside``."""
     max_noise_total_lden_db: float | None = None
     """Upper bound on energy-sum total Lden (dB); ``None`` = no cap."""
+    max_traffic_weight_nearby: float | None = None
+    """Upper bound on OSM traffic-proxy weight sum; ``None`` = no cap."""
+    max_major_traffic_weight_nearby: float | None = None
+    """Upper bound on major-road traffic weight sum; ``None`` = no cap."""
+    frontage: str = "(all)"
+    """``(all)``, ``street`` (street_facing_hint), or ``quiet`` (quiet_side_hint)."""
     max_price_per_m2: float | None = None
     """Upper bound on listing zł/m²."""
     max_age_months: int | None = None
@@ -123,6 +129,24 @@ def apply_filters(
         mask &= pd.to_numeric(frame["noise_total_lden_db"], errors="coerce").le(
             float(state.max_noise_total_lden_db)
         )
+    if (
+        state.max_traffic_weight_nearby is not None
+        and "traffic_weight_nearby" in frame.columns
+    ):
+        mask &= pd.to_numeric(frame["traffic_weight_nearby"], errors="coerce").le(
+            float(state.max_traffic_weight_nearby)
+        )
+    if (
+        state.max_major_traffic_weight_nearby is not None
+        and "major_traffic_weight_nearby" in frame.columns
+    ):
+        mask &= pd.to_numeric(frame["major_traffic_weight_nearby"], errors="coerce").le(
+            float(state.max_major_traffic_weight_nearby)
+        )
+    if state.frontage == "street" and "street_facing_hint" in frame.columns:
+        mask &= pd.to_numeric(frame["street_facing_hint"], errors="coerce").eq(1)
+    elif state.frontage == "quiet" and "quiet_side_hint" in frame.columns:
+        mask &= pd.to_numeric(frame["quiet_side_hint"], errors="coerce").eq(1)
     if state.max_price_per_m2 is not None and "price_per_m2" in frame.columns:
         mask &= pd.to_numeric(frame["price_per_m2"], errors="coerce").le(
             float(state.max_price_per_m2)

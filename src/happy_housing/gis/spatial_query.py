@@ -11,13 +11,30 @@ def balltree_nearest_distances(
     data_xy: np.ndarray,
 ) -> np.ndarray:
     """Nearest-neighbour Euclidean distances (metres in projected CRS)."""
+    dist, _ = balltree_nearest(query_xy, data_xy)
+    return dist
+
+
+def balltree_nearest(
+    query_xy: np.ndarray,
+    data_xy: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Nearest-neighbour distances and data indices (projected metres)."""
     if query_xy.size == 0:
-        return np.array([], dtype=float)
+        empty = np.array([], dtype=float)
+        return empty, np.array([], dtype=int)
     if data_xy.size == 0:
-        return np.full(query_xy.shape[0], np.nan, dtype=float)
+        n = int(query_xy.shape[0])
+        return (
+            np.full(n, np.nan, dtype=float),
+            np.full(n, -1, dtype=int),
+        )
     tree = BallTree(data_xy, metric="euclidean")
-    dist, _ = tree.query(query_xy, k=1)
-    return np.asarray(dist[:, 0], dtype=float)
+    dist, idx = tree.query(query_xy, k=1)
+    return (
+        np.asarray(dist[:, 0], dtype=float),
+        np.asarray(idx[:, 0], dtype=int),
+    )
 
 
 def balltree_radius_weight_sums(

@@ -152,6 +152,8 @@ class AppSettings:
     """Snap park/road/misplaced listing pins to nearest OSM building."""
     bike_path_coverage_radius_m: float = 500.0
     """Neighbourhood radius (m) for ``bike_path_coverage_m`` feature."""
+    traffic_neighbourhood_radius_m: float = 300.0
+    """Neighbourhood radius (m) for traffic weight sums around a listing."""
     download_gtfs: bool = True
     """Re-download GTFS during pipeline."""
     download_gios: bool = True
@@ -477,6 +479,15 @@ def load_app_settings(path: Path) -> AppSettings:
                 payload.get(
                     "bike_path_coverage_radius_m",
                     defaults.bike_path_coverage_radius_m,
+                )
+            ),
+        ),
+        traffic_neighbourhood_radius_m=max(
+            50.0,
+            float(
+                payload.get(
+                    "traffic_neighbourhood_radius_m",
+                    defaults.traffic_neighbourhood_radius_m,
                 )
             ),
         ),

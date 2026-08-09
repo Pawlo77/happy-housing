@@ -97,3 +97,37 @@ def test_fetch_traffic_road_sample_uses_fixture(tmp_path: Path, monkeypatch) -> 
     assert not out.empty
     assert {"lon", "lat", "base_weight"}.issubset(out.columns)
     assert (tmp_path / "traffic_roads.parquet").exists()
+
+
+def test_attach_traffic_features_adds_major_and_nearest_highway() -> None:
+    from shapely.geometry import Point
+
+    from happy_housing.gis.traffic import attach_traffic_features
+
+    listings = gpd.GeoDataFrame(
+        {"listing_id": ["near-primary", "near-res"]},
+        geometry=[Point(21.0, 52.23), Point(21.02, 52.24)],
+        crs="EPSG:4326",
+    )
+    sample = pd.DataFrame({
+        "lon": [21.0001, 21.02],
+        "lat": [52.23, 52.24],
+        "base_weight": [7.0, 1.6],
+        "name": ["Aleja", "Boczna"],
+        "highway": ["primary", "residential"],
+    })
+    out = attach_traffic_features(
+        listings,
+        sample,
+        projected_crs="EPSG:2180",
+        neighbourhood_radius_m=500.0,
+    )
+    assert out.loc[0, "nearest_highway"] == "primary"
+    assert out.loc[1, "nearest_highway"] == "residential"
+    assert float(out.loc[0, "dist_major_road_m"]) < float(
+        out.loc[1, "dist_major_road_m"]
+    )
+    assert float(out.loc[0, "major_traffic_weight_nearby"]) >= float(
+        out.loc[1, "major_traffic_weight_nearby"]
+    )
+    assert float(out.loc[0, "traffic_weight_nearby"]) > 0.0

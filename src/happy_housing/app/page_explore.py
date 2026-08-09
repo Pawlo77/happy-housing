@@ -268,6 +268,28 @@ def _sidebar_filters(frame: pd.DataFrame) -> tuple[FilterState, bool]:
         help=FILTER_HELP["max_noise_total"],
         key="explore_max_noise_total",
     )
+    traffic_cap = st.number_input(
+        "Max traffic weight nearby (0 = off)",
+        min_value=0.0,
+        value=0.0,
+        step=10.0,
+        help=FILTER_HELP["max_traffic_weight"],
+        key="explore_max_traffic_weight",
+    )
+    major_traffic_cap = st.number_input(
+        "Max major-road traffic weight (0 = off)",
+        min_value=0.0,
+        value=0.0,
+        step=5.0,
+        help=FILTER_HELP["max_major_traffic_weight"],
+        key="explore_max_major_traffic_weight",
+    )
+    frontage = st.selectbox(
+        "Street / quiet side (text hint)",
+        ["(all)", "street", "quiet"],
+        help=FILTER_HELP["frontage"],
+        key="explore_frontage",
+    )
     max_ppm = st.slider(
         "Max listing zł/m²",
         min_value=ppm_min,
@@ -306,6 +328,13 @@ def _sidebar_filters(frame: pd.DataFrame) -> tuple[FilterState, bool]:
             high_noise=high_noise,
             poor_air=poor_air,
             max_noise_total_lden_db=float(noise_cap) if float(noise_cap) > 0 else None,
+            max_traffic_weight_nearby=(
+                float(traffic_cap) if float(traffic_cap) > 0 else None
+            ),
+            max_major_traffic_weight_nearby=(
+                float(major_traffic_cap) if float(major_traffic_cap) > 0 else None
+            ),
+            frontage=str(frontage),
             max_price_per_m2=float(max_ppm),
             max_age_months=max_age_months,
             **prop,
@@ -1928,6 +1957,33 @@ def _tab_prefs(
             key="prefs_max_noise_total",
             help=PREF_HELP["max_noise_total"],
         )
+        max_traffic_weight = st.number_input(
+            "Max traffic weight nearby",
+            min_value=0.0,
+            value=float(prefs.max_traffic_weight_nearby or 0.0),
+            step=10.0,
+            key="prefs_max_traffic_weight",
+            help=PREF_HELP["max_traffic_weight"],
+        )
+        max_major_traffic_weight = st.number_input(
+            "Max major-road traffic weight",
+            min_value=0.0,
+            value=float(prefs.max_major_traffic_weight_nearby or 0.0),
+            step=5.0,
+            key="prefs_max_major_traffic_weight",
+            help=PREF_HELP["max_major_traffic_weight"],
+        )
+        frontage_pref = st.selectbox(
+            "Street / quiet side hint",
+            ["(any)", "street", "quiet"],
+            index=["(any)", "street", "quiet"].index(
+                prefs.frontage
+                if prefs.frontage in {"(any)", "street", "quiet"}
+                else "(any)"
+            ),
+            key="prefs_frontage",
+            help=PREF_HELP["frontage"],
+        )
 
     nl_text = st.text_area(
         "Natural-language preferences",
@@ -1966,6 +2022,9 @@ def _tab_prefs(
                 max_dist_park_m=_opt_num(max_park),
                 max_dist_bike_path_m=_opt_num(max_bike_path),
                 max_noise_total_lden_db=_opt_num(max_noise_total),
+                max_traffic_weight_nearby=_opt_num(max_traffic_weight),
+                max_major_traffic_weight_nearby=_opt_num(max_major_traffic_weight),
+                frontage=str(frontage_pref),
                 max_delta_price_per_m2=max_delta_val,
                 require_underpriced=bool(require_under),
                 nl_text=str(nl_text or ""),

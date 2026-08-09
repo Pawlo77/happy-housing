@@ -57,6 +57,15 @@ FEATURE_DESCRIPTIONS: dict[str, str] = {
     "dist_airport_area_m": "Distance to nearest airport footprint (m)",
     "dist_traffic_road_m": "Distance to nearest drive-road sample (m)",
     "traffic_weight_nearby": "Local traffic-proxy weight sum nearby",
+    "dist_major_road_m": "Distance to nearest major road sample (m)",
+    "major_traffic_weight_nearby": ("Major-road traffic-proxy weight sum nearby"),
+    "nearest_highway": "Nearest OSM highway class (drive sample)",
+    "street_facing_hint": (
+        "Listing text suggests street-facing windows (Otodom description)"
+    ),
+    "quiet_side_hint": (
+        "Listing text suggests courtyard / quiet side (Otodom description)"
+    ),
     "crime_rate_per_1000": "District crimes per 1,000 residents",
     "crime_criminal_rate_per_1000": "District criminal offences per 1,000 residents",
     "crime_detectability_pct": "District crime detectability (%)",

@@ -62,8 +62,8 @@ LAYER_HELP: dict[str, str] = {
     "traffic": (
         "Continuous diurnal street-activity field along densified OSM drive "
         "roads (BitmapLayer). Warm corridors ≈ busier; scales with the "
-        "sidebar hour — not live vehicle counts. Model uses dist_traffic_road_m "
-        "and traffic_weight_nearby (local sample weight sum)."
+        "sidebar hour — not live vehicle counts. Model uses dist_traffic_road_m, "
+        "traffic_weight_nearby, major-road variants, and nearest_highway."
     ),
     "bike_paths": (
         "OSM bicycle infrastructure (cycleways / designated bike routes) as "
@@ -202,6 +202,19 @@ FILTER_HELP: dict[str, str] = {
         "Cap energy-sum total Lden (dB). 0 = no cap. Quieter homes usually "
         "command stronger willingness-to-pay; model uses noise_total_lden_db."
     ),
+    "max_traffic_weight": (
+        "Cap OSM traffic-proxy weight sum near the listing (0 = off). "
+        "Higher = denser / heavier roads nearby (class x sample proxy)."
+    ),
+    "max_major_traffic_weight": (
+        "Cap major-road-only traffic weight nearby (0 = off). "
+        "Filters arterial / primary corridors more than quiet residential."
+    ),
+    "frontage": (
+        "Filter by Otodom description hints: street = phrases like "
+        "'od ulicy'; quiet = 'od podwórza' / courtyard. Unknown when "
+        "neither phrase appears — not geometric facade orientation."
+    ),
     "max_ppm": (
         "Cap asking zł/m². Hard budget filter on price attractiveness; "
         "does not change livability overlays."
@@ -299,6 +312,17 @@ PREF_HELP: dict[str, str] = {
     "max_noise_total": (
         "Max energy-sum total Lden (dB) from UM 2022 maps (road+rail+tram+"
         "aircraft+industry). 0 = no cap. Hard filter when Prefs enabled."
+    ),
+    "max_traffic_weight": (
+        "Max OSM traffic-proxy weight sum nearby. 0 = no cap. "
+        "Hard filter when Prefs enabled."
+    ),
+    "max_major_traffic_weight": (
+        "Max major-road traffic-proxy weight nearby. 0 = no cap."
+    ),
+    "frontage": (
+        "Prefer street-facing or quiet/courtyard side based on Otodom "
+        "description phrases (not surveyed facade orientation)."
     ),
 }
 """Explore Prefs form field help texts."""

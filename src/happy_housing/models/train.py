@@ -87,6 +87,11 @@ _STRUCTURAL_FEATURE_COLUMNS: tuple[str, ...] = (
     "dist_airport_area_m",
     "dist_traffic_road_m",
     "traffic_weight_nearby",
+    "dist_major_road_m",
+    "major_traffic_weight_nearby",
+    "nearest_highway",
+    "street_facing_hint",
+    "quiet_side_hint",
     "crime_rate_per_1000",
     "crime_criminal_rate_per_1000",
     "crime_detectability_pct",
@@ -104,6 +109,7 @@ CATEGORICAL_FEATURE_COLUMNS: tuple[str, ...] = (
     "construction_status",
     "building_material",
     "district",
+    "nearest_highway",
 )
 """Otodom string attributes encoded as LightGBM categories."""
 

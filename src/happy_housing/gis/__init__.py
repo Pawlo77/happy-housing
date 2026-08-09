@@ -16,7 +16,10 @@ from happy_housing.gis.bike_paths import (
     BIKE_PATH_COVERAGE_RADIUS_M,
     attach_bike_path_features,
 )
-from happy_housing.gis.traffic import attach_traffic_features
+from happy_housing.gis.traffic import (
+    TRAFFIC_NEIGHBOURHOOD_RADIUS_M,
+    attach_traffic_features,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -520,6 +523,7 @@ def enrich_listings(
     military: gpd.GeoDataFrame | None = None,
     airport_areas: gpd.GeoDataFrame | None = None,
     traffic_sample: pd.DataFrame | None = None,
+    traffic_neighbourhood_radius_m: float = TRAFFIC_NEIGHBOURHOOD_RADIUS_M,
     aircraft_lden_path: Path | None = None,
     aircraft_lnight_path: Path | None = None,
     road_lden_path: Path | None = None,
@@ -632,7 +636,11 @@ def enrich_listings(
 
     traffic = traffic_sample if traffic_sample is not None else pd.DataFrame()
     gdf = attach_traffic_features(
-        gdf, traffic, projected_crs=projected_crs, left_projected=left_proj
+        gdf,
+        traffic,
+        projected_crs=projected_crs,
+        neighbourhood_radius_m=float(traffic_neighbourhood_radius_m),
+        left_projected=left_proj,
     )
 
     school_src: gpd.GeoDataFrame | None = None

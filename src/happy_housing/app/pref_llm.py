@@ -36,6 +36,8 @@ def preferences_system_prompt() -> str:
         "max_commute_min, max_dist_transit_m, max_dist_hospital_m,\n"
         "max_dist_fire_m, max_dist_police_m, max_dist_air_m, max_dist_gunb_m,\n"
         "max_dist_park_m, max_dist_bike_path_m, max_noise_total_lden_db, "
+        "max_traffic_weight_nearby, max_major_traffic_weight_nearby, "
+        "frontage one of: (any), street, quiet, "
         "max_delta_price_per_m2, "
         "require_underpriced (bool), "
         "nl_text (string).\n"

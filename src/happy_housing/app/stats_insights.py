@@ -762,6 +762,67 @@ def distance_price_curve(
     )
 
 
+def highway_class_price_table(frame: pd.DataFrame) -> pd.DataFrame:
+    """Median zł/m² and Δ by nearest OSM highway class."""
+    empty = pd.DataFrame(
+        columns=["nearest_highway", "n", "median_price_per_m2", "median_delta"]
+    )
+    if "nearest_highway" not in frame.columns:
+        return empty
+    work = pd.DataFrame({
+        "nearest_highway": frame["nearest_highway"].astype(str).fillna("unknown"),
+        "ppm": _num(frame, "price_per_m2"),
+        "delta": _num(frame, "delta_price_per_m2"),
+    }).dropna(subset=["ppm"])
+    if work.empty:
+        return empty
+    return (
+        work
+        .groupby("nearest_highway", observed=False)
+        .agg(
+            n=("ppm", "size"),
+            median_price_per_m2=("ppm", "median"),
+            median_delta=("delta", "median"),
+        )
+        .reset_index()
+        .loc[lambda d: d["n"] > 0]
+        .sort_values("n", ascending=False)
+        .reset_index(drop=True)
+    )
+
+
+def frontage_hint_price_table(frame: pd.DataFrame) -> pd.DataFrame:
+    """Median zł/m² / Δ for street-facing vs quiet-side description hints."""
+    empty = pd.DataFrame(
+        columns=["frontage", "n", "median_price_per_m2", "median_delta"]
+    )
+    rows: list[dict[str, float | str]] = []
+    for label, col in (
+        ("street_facing", "street_facing_hint"),
+        ("quiet_side", "quiet_side_hint"),
+    ):
+        if col not in frame.columns:
+            continue
+        flagged = frame.loc[pd.to_numeric(frame[col], errors="coerce").eq(1)]
+        if flagged.empty:
+            continue
+        ppm = _num(flagged, "price_per_m2").dropna()
+        delta = _num(flagged, "delta_price_per_m2")
+        if ppm.empty:
+            continue
+        rows.append({
+            "frontage": label,
+            "n": float(len(ppm)),
+            "median_price_per_m2": float(ppm.median()),
+            "median_delta": float(delta.dropna().median())
+            if delta.notna().any()
+            else float("nan"),
+        })
+    if not rows:
+        return empty
+    return pd.DataFrame(rows)
+
+
 def air_quality_ladder(frame: pd.DataFrame) -> pd.DataFrame:
     """Median zł/m² by nearest-station AQI index."""
     empty = pd.DataFrame(columns=["aqi_band", "n", "median_price_per_m2"])

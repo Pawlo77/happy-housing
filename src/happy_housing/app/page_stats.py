@@ -41,7 +41,9 @@ from happy_housing.app.stats_insights import (
     delta_volcano,
     distance_price_curve,
     district_scoreboard,
+    frontage_hint_price_table,
     high_noise_surcharge,
+    highway_class_price_table,
     market_kpis,
     market_segment_mix,
     market_temperature,
@@ -669,6 +671,22 @@ def _tab_livability(frame: pd.DataFrame) -> None:
             title="Median zł/m² by drive-road distance",
             y_title="zł/m²",
         )
+        hwy = highway_class_price_table(frame)
+        if not hwy.empty:
+            bar_chart(
+                hwy.head(12),
+                x="nearest_highway",
+                y="median_price_per_m2",
+                title="Median zł/m² by nearest highway class",
+            )
+        frontage = frontage_hint_price_table(frame)
+        if not frontage.empty:
+            bar_chart(
+                frontage,
+                x="frontage",
+                y="median_price_per_m2",
+                title="Median zł/m² by street/quiet description hint",
+            )
         line_chart(
             distance_price_curve(
                 frame,
