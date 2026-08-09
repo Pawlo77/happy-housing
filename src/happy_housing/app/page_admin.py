@@ -430,6 +430,15 @@ def _panel_run(settings: AppSettings, settings_file: Path, proc: Path) -> None:
         value=bool(flags.scrape_otodom),
         key="pipe_scrape_otodom",
     )
+    force_refresh = st.checkbox(
+        "Force full recompute (ignore step cache)",
+        value=bool(settings.pipeline_force_refresh),
+        help=(
+            "Re-run enrich, train, score, and recommender even when inputs "
+            "are unchanged. Leave off for incremental pipelines."
+        ),
+        key="pipe_force_refresh",
+    )
 
     r1, r2 = st.columns(2)
     with r1:
@@ -488,11 +497,12 @@ def _panel_run(settings: AppSettings, settings_file: Path, proc: Path) -> None:
                         st.error(f"Scrape failed (exit {code})")
     with r2:
         if st.button(
-            "Run pipeline (enrich + train + score)",
+            "Run pipeline (enrich + train + score + recommend)",
             type="primary",
             key="run_pipe",
         ):
             settings.scrape_otodom_in_pipeline = bool(scrape_in_pipe)
+            settings.pipeline_force_refresh = bool(force_refresh)
             settings.pipeline_overrides_enabled = True
             save_app_settings(settings_file, settings)
             cmd = [

@@ -1,7 +1,12 @@
-"""End-to-end pipeline: Otodom/RCN ingest → GIS → store → train → score."""
+"""End-to-end pipeline: ingest → GIS enrich → train → score → recommend.
+
+Expensive steps (RCN extract, enrich, train/score, recommender) skip when
+input fingerprints match ``pipeline_steps.json`` unless force refresh is set.
+"""
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -34,6 +39,14 @@ from happy_housing.app.pipeline_ingest import (
     resolve_ingest_limits,
     resolve_ingest_urls,
 )
+from happy_housing.app.preferences import load_preferences, preferences_path
+from happy_housing.app.recommender import (
+    impressions_path,
+    retrain_recommender,
+)
+from happy_housing.app.recommender import (
+    metrics_path as recommender_metrics_path,
+)
 from happy_housing.config import load_experiment_config
 from happy_housing.gis import (
     enrich_listings,
@@ -42,6 +55,7 @@ from happy_housing.gis import (
     load_amenity_points,
     load_shop_points,
 )
+from happy_housing.gis.amenity_catalog import coerce_amenity_weights
 from happy_housing.gis.bike_paths import fetch_bike_paths, load_bike_path_sample
 from happy_housing.gis.gios_aq_field import (
     attach_gios_aq_field_features,
@@ -87,14 +101,60 @@ from happy_housing.ingest.warsaw_map import (
 from happy_housing.models.metrics import coerce_opt_metric
 from happy_housing.models.neighborhood import attach_neighborhood_rcn_features
 from happy_housing.models.train import (
+    FEATURE_COLUMNS,
     TrainSettings,
     oof_predict_price_per_m2,
     predict_price_per_m2,
     run_training_with_mlflow,
 )
+from happy_housing.pipeline_cache import (
+    StepManifest,
+    file_token,
+    fingerprint,
+    payload_token,
+    pipeline_steps_path,
+)
 from happy_housing.storage import write_geoparquet
 
 logger = logging.getLogger(__name__)
+
+
+def _listings_fingerprint(frame: pd.DataFrame) -> str:
+    """Cheap content token for listing universe changes."""
+    if frame.empty or "listing_id" not in frame.columns:
+        return "empty"
+    ids = frame["listing_id"].astype(str)
+    if "price_pln" in frame.columns:
+        price = pd.to_numeric(frame["price_pln"], errors="coerce").fillna(0.0)
+    else:
+        price = pd.Series(0.0, index=frame.index)
+    token = int(pd.util.hash_pandas_object(ids).sum()) ^ round(float(price.sum()))
+    return f"n={len(frame)};t={token}"
+
+
+def _load_prior_run_metrics(
+    path: Path,
+) -> tuple[dict[str, float], list[str]]:
+    """Read model metrics / feature list from a prior ``run_metadata.json``."""
+    if not path.exists():
+        return {}, []
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}, []
+    if not isinstance(payload, dict):
+        return {}, []
+    metrics_raw = payload.get("model_metrics") or {}
+    metrics: dict[str, float] = {}
+    if isinstance(metrics_raw, dict):
+        for key, value in metrics_raw.items():
+            try:
+                metrics[str(key)] = float(value)
+            except (TypeError, ValueError):
+                continue
+    features_raw = payload.get("feature_columns") or []
+    features = [str(x) for x in features_raw] if isinstance(features_raw, list) else []
+    return metrics, features
 
 
 def _rcn_as_listings(rcn: pd.DataFrame) -> pd.DataFrame:
@@ -158,6 +218,7 @@ def run_pipeline(
     otodom_max_listings: int | None = None,
     rcn_max_rows: int | None = None,
     force_gis_refresh: bool = False,
+    force_pipeline: bool | None = None,
 ) -> dict[str, Path]:
     """Run the full local pipeline and return key output paths.
 
@@ -165,6 +226,8 @@ def run_pipeline(
     uses Admin Pipeline overrides when saved, else downloads everything.
     Explicit ``otodom_max_*`` / ``rcn_max_rows`` kwargs override resolved caps.
     ``force_gis_refresh`` ignores OSM / Warsaw map caches and re-downloads.
+    ``force_pipeline`` (or Admin ``pipeline_force_refresh``) ignores enrich /
+    train / score / recommender step fingerprints.
     """
     from happy_housing.logging_config import configure_logging
 
@@ -173,6 +236,13 @@ def run_pipeline(
     configure_logging(config.logging.level, force=False)
     processed = config.data.processed_path()
     app_settings = load_app_settings(settings_path(processed))
+    force = bool(
+        force_pipeline
+        if force_pipeline is not None
+        else app_settings.pipeline_force_refresh
+    ) or bool(force_gis_refresh)
+    manifest = StepManifest.load(pipeline_steps_path(processed))
+    skipped_steps: list[str] = []
     limits = resolve_ingest_limits(app_settings, config)
     urls = resolve_ingest_urls(app_settings, config)
     flags = resolve_ingest_flags(
@@ -183,7 +253,8 @@ def run_pipeline(
         scrape_otodom=scrape_otodom,
     )
     logger.info(
-        "Pipeline start (gtfs=%s gios=%s rcn=%s gunb=%s crime=%s osm=%s otodom=%s)",
+        "Pipeline start (gtfs=%s gios=%s rcn=%s gunb=%s crime=%s osm=%s "
+        "otodom=%s force=%s)",
         flags.download_gtfs,
         flags.download_gios,
         flags.download_rcn,
@@ -191,6 +262,7 @@ def run_pipeline(
         flags.download_crime,
         flags.use_osm,
         flags.scrape_otodom,
+        force,
     )
     page_cap = (
         otodom_max_pages if otodom_max_pages is not None else limits.otodom_max_pages
@@ -255,12 +327,18 @@ def run_pipeline(
             pd.DataFrame(columns=cols).to_parquet(path, index=False)
 
     if flags.download_gtfs:
-        download_gtfs_stops(urls.gtfs_zip, raw, gtfs_parquet)
+        download_gtfs_stops(
+            urls.gtfs_zip, raw, gtfs_parquet, force=force_gis_refresh or force
+        )
     else:
         _ensure_empty(gtfs_parquet, ["stop_id", "stop_lat", "stop_lon"])
 
     if flags.download_gios:
-        fetch_gios_stations(urls.gios_stations, gios_parquet)
+        fetch_gios_stations(
+            urls.gios_stations,
+            gios_parquet,
+            force=force_gis_refresh or force,
+        )
     else:
         _ensure_empty(gios_parquet, ["station_id", "lat", "lon", "name", "city"])
 
@@ -270,13 +348,21 @@ def run_pipeline(
             raw / "rcn_warsaw.zip",
             timeout_s=1800.0,
         )
-        try:
-            extract_rcn_transactions(zip_path, rcn_parquet, max_rows=rcn_cap)
-        except Exception as exc:
-            logger.warning("RCN extract failed: %s", exc)
-            pd.DataFrame(columns=["lon", "lat", "price_pln", "area_m2"]).to_parquet(
-                rcn_parquet, index=False
-            )
+        rcn_fp = fingerprint(file_token(zip_path), f"max_rows={rcn_cap}")
+        if manifest.should_skip(
+            "extract_rcn", rcn_fp, [rcn_parquet], force=force_gis_refresh or force
+        ):
+            logger.info("Skip RCN extract (unchanged zip / max_rows)")
+            skipped_steps.append("extract_rcn")
+        else:
+            try:
+                extract_rcn_transactions(zip_path, rcn_parquet, max_rows=rcn_cap)
+                manifest.mark("extract_rcn", rcn_fp)
+            except Exception as exc:
+                logger.warning("RCN extract failed: %s", exc)
+                pd.DataFrame(columns=["lon", "lat", "price_pln", "area_m2"]).to_parquet(
+                    rcn_parquet, index=False
+                )
     else:
         _ensure_empty(rcn_parquet, ["lon", "lat", "price_pln", "area_m2"])
 
@@ -404,129 +490,170 @@ def run_pipeline(
     rail_areas = _zone_fixture("rail_areas.geojson")
     airport_areas = _zone_fixture("airport_areas.geojson")
 
-    if app_settings.snap_listings_out_of_parks:
-        listings = snap_listings_out_of_parks(
-            listings,
-            parks=parks,
-            cache_dir=cache,
-            bbox=config.bbox.as_tuple(),
-            force_refresh_buildings=force_gis_refresh,
-        )
-
-    listings = attach_street_frontage_hints(listings)
-
     commute = resolve_commute_target(app_settings, config)
     logger.info(
         "Commute target %s (%.5f, %.5f)", commute.label, commute.lon, commute.lat
     )
 
-    road_lden_path = fixtures / "road_lden.geojson"
-    rail_lden_path = fixtures / "rail_lden.geojson"
-    enriched = enrich_listings(
-        listings,
-        projected_crs=config.bbox.projected_crs,
-        amenities=amenities,
-        gios_stations=gios_stations,
-        gtfs_stops=gtfs_stops,
-        commute_lon=commute.lon,
-        commute_lat=commute.lat,
-        gunb_points=gunb,
-        parks=parks,
-        schools=schools,
-        shops=shops,
-        city_pois=city_pois,
-        bike_paths=bike_paths,
-        bike_path_coverage_radius_m=float(app_settings.bike_path_coverage_radius_m),
-        bike_path_sample=bike_path_sample if not bike_path_sample.empty else None,
-        rail_areas=rail_areas,
-        military=military,
-        airport_areas=airport_areas,
-        traffic_sample=traffic_sample,
-        traffic_neighbourhood_radius_m=float(
-            app_settings.traffic_neighbourhood_radius_m
-        ),
-        aircraft_lden_path=fixtures / "chopin_aircraft_lden.geojson",
-        aircraft_lnight_path=fixtures / "chopin_aircraft_lnight.geojson",
-        road_lden_path=road_lden_path if road_lden_path.exists() else None,
-        rail_lden_path=rail_lden_path if rail_lden_path.exists() else None,
+    enriched_path = processed / "listings_enriched.parquet"
+    scored_path = processed / "listings_scored.parquet"
+    model_path = processed / "lightgbm_price_per_m2.txt"
+    metadata_path = processed / "run_metadata.json"
+
+    enrich_settings = {
+        "snap": bool(app_settings.snap_listings_out_of_parks),
+        "bike_r": float(app_settings.bike_path_coverage_radius_m),
+        "traffic_r": float(app_settings.traffic_neighbourhood_radius_m),
+        "aq": bool(app_settings.aq_field_enabled),
+        "aq_power": float(app_settings.aq_idw_power),
+        "extract": bool(app_settings.extract_attrs_enabled),
+        "photo": bool(app_settings.photo_cv_enabled),
+        "photo_n": int(app_settings.photo_cv_max_photos),
+        "photo_model": str(app_settings.photo_cv_model_id),
+        "nbhd": bool(app_settings.model_use_neighborhood),
+        "nbhd_r": float(app_settings.model_nbhd_radius_m),
+        "otp": bool(config.routing.use_otp_transit),
+        "osrm": str(config.routing.osrm_url),
+        "n_features": len(FEATURE_COLUMNS),
+    }
+    enrich_fp = fingerprint(
+        _listings_fingerprint(listings),
+        file_token(otodom_parquet),
+        file_token(rcn_parquet),
+        file_token(gtfs_parquet),
+        file_token(gios_parquet),
+        file_token(gunb_parquet),
+        file_token(crime_parquet),
+        f"commute={commute.lon:.6f},{commute.lat:.6f}",
+        payload_token(enrich_settings),
     )
-    noise_rasters = fetch_warsaw_noise_rasters(
-        cache,
-        bbox=config.bbox.as_tuple(),
-        force_refresh=force_gis_refresh,
-    )
-    if noise_rasters:
-        enriched = attach_warsaw_noise_features(enriched, noise_rasters)
-    if app_settings.aq_field_enabled and not gios_stations.empty:
-        aq_rasters = fetch_gios_aq_field_rasters(
+
+    if manifest.should_skip("enrich", enrich_fp, [enriched_path], force=force):
+        logger.info("Skip enrich (inputs unchanged)")
+        skipped_steps.append("enrich")
+        train_frame = pd.read_parquet(enriched_path)
+        train_frame = train_frame.drop(columns=["geometry"], errors="ignore")
+    else:
+        if app_settings.snap_listings_out_of_parks:
+            listings = snap_listings_out_of_parks(
+                listings,
+                parks=parks,
+                cache_dir=cache,
+                bbox=config.bbox.as_tuple(),
+                force_refresh_buildings=force_gis_refresh,
+            )
+
+        listings = attach_street_frontage_hints(listings)
+
+        road_lden_path = fixtures / "road_lden.geojson"
+        rail_lden_path = fixtures / "rail_lden.geojson"
+        enriched = enrich_listings(
+            listings,
+            projected_crs=config.bbox.projected_crs,
+            amenities=amenities,
+            gios_stations=gios_stations,
+            gtfs_stops=gtfs_stops,
+            commute_lon=commute.lon,
+            commute_lat=commute.lat,
+            gunb_points=gunb,
+            parks=parks,
+            schools=schools,
+            shops=shops,
+            city_pois=city_pois,
+            bike_paths=bike_paths,
+            bike_path_coverage_radius_m=float(app_settings.bike_path_coverage_radius_m),
+            bike_path_sample=bike_path_sample if not bike_path_sample.empty else None,
+            rail_areas=rail_areas,
+            military=military,
+            airport_areas=airport_areas,
+            traffic_sample=traffic_sample,
+            traffic_neighbourhood_radius_m=float(
+                app_settings.traffic_neighbourhood_radius_m
+            ),
+            aircraft_lden_path=fixtures / "chopin_aircraft_lden.geojson",
+            aircraft_lnight_path=fixtures / "chopin_aircraft_lnight.geojson",
+            road_lden_path=road_lden_path if road_lden_path.exists() else None,
+            rail_lden_path=rail_lden_path if rail_lden_path.exists() else None,
+        )
+        noise_rasters = fetch_warsaw_noise_rasters(
             cache,
-            gios_stations,
-            bbox_wgs84=config.bbox.as_tuple(),
-            power=float(app_settings.aq_idw_power),
+            bbox=config.bbox.as_tuple(),
             force_refresh=force_gis_refresh,
         )
-        if aq_rasters:
-            enriched = attach_gios_aq_field_features(enriched, aq_rasters)
-    train_frame = pd.DataFrame(enriched.drop(columns=["geometry"], errors="ignore"))
-    train_frame = promote_listing_flags(train_frame)
-    train_frame = attach_crime_features(train_frame, crime_by_district)
-    if app_settings.extract_attrs_enabled:
-        cap = int(app_settings.extract_max_listings) or None
-        train_frame = enrich_frame_listing_attrs(
-            train_frame,
-            model=app_settings.extract_lm_model,
-            max_chars=int(app_settings.extract_max_chars),
-            max_tokens=int(app_settings.extract_max_tokens),
-            use_llm=True,
-            metrics_path=llm_metrics_path(processed),
-            max_llm_calls=cap,
-        )
-    train_frame = attach_commute_minutes(
-        train_frame,
-        dest_lon=commute.lon,
-        dest_lat=commute.lat,
-        osrm_url=config.routing.osrm_url,
-    )
-    if config.routing.use_otp_transit:
-        train_frame = attach_transit_commute_minutes(
+        if noise_rasters:
+            enriched = attach_warsaw_noise_features(enriched, noise_rasters)
+        if app_settings.aq_field_enabled and not gios_stations.empty:
+            aq_rasters = fetch_gios_aq_field_rasters(
+                cache,
+                gios_stations,
+                bbox_wgs84=config.bbox.as_tuple(),
+                power=float(app_settings.aq_idw_power),
+                force_refresh=force_gis_refresh,
+            )
+            if aq_rasters:
+                enriched = attach_gios_aq_field_features(enriched, aq_rasters)
+        train_frame = pd.DataFrame(enriched.drop(columns=["geometry"], errors="ignore"))
+        train_frame = promote_listing_flags(train_frame)
+        train_frame = attach_crime_features(train_frame, crime_by_district)
+        if app_settings.extract_attrs_enabled:
+            cap = int(app_settings.extract_max_listings) or None
+            train_frame = enrich_frame_listing_attrs(
+                train_frame,
+                model=app_settings.extract_lm_model,
+                max_chars=int(app_settings.extract_max_chars),
+                max_tokens=int(app_settings.extract_max_tokens),
+                use_llm=True,
+                metrics_path=llm_metrics_path(processed),
+                max_llm_calls=cap,
+            )
+        train_frame = attach_commute_minutes(
             train_frame,
             dest_lon=commute.lon,
             dest_lat=commute.lat,
-            otp_url=config.routing.otp_url,
+            osrm_url=config.routing.osrm_url,
         )
-    if "transit_commute_min" not in train_frame.columns:
-        train_frame["transit_commute_min"] = float("nan")
-    if app_settings.photo_cv_enabled:
-        from happy_housing.vision.photo_features import attach_photo_features
+        if config.routing.use_otp_transit:
+            train_frame = attach_transit_commute_minutes(
+                train_frame,
+                dest_lon=commute.lon,
+                dest_lat=commute.lat,
+                otp_url=config.routing.otp_url,
+            )
+        if "transit_commute_min" not in train_frame.columns:
+            train_frame["transit_commute_min"] = float("nan")
+        if app_settings.photo_cv_enabled:
+            from happy_housing.vision.photo_features import attach_photo_features
 
-        train_frame = attach_photo_features(
-            train_frame,
-            max_photos=int(app_settings.photo_cv_max_photos),
-            model_id=str(app_settings.photo_cv_model_id),
+            train_frame = attach_photo_features(
+                train_frame,
+                max_photos=int(app_settings.photo_cv_max_photos),
+                model_id=str(app_settings.photo_cv_model_id),
+            )
+
+        def _write_enriched_geoparquet(frame: pd.DataFrame) -> None:
+            """Persist attribute frame with Hilbert-sorted GeoParquet geometry."""
+            geo = enriched.copy()
+            for col in frame.columns:
+                geo[col] = frame[col].to_numpy()
+            write_geoparquet(geo, enriched_path)
+
+        _write_enriched_geoparquet(train_frame)
+
+        rcn_for_model = (
+            pd.read_parquet(rcn_parquet) if rcn_parquet.exists() else pd.DataFrame()
         )
-
-    enriched_path = processed / "listings_enriched.parquet"
-
-    def _write_enriched_geoparquet(frame: pd.DataFrame) -> None:
-        """Persist attribute frame with Hilbert-sorted GeoParquet geometry."""
-        geo = enriched.copy()
-        for col in frame.columns:
-            geo[col] = frame[col].to_numpy()
-        write_geoparquet(geo, enriched_path)
-
-    _write_enriched_geoparquet(train_frame)
+        if app_settings.model_use_neighborhood and not rcn_for_model.empty:
+            train_frame = attach_neighborhood_rcn_features(
+                train_frame,
+                rcn_for_model,
+                radius_m=float(app_settings.model_nbhd_radius_m),
+            )
+            _write_enriched_geoparquet(train_frame)
+        manifest.mark("enrich", enrich_fp)
 
     rcn_for_model = (
         pd.read_parquet(rcn_parquet) if rcn_parquet.exists() else pd.DataFrame()
     )
-    if app_settings.model_use_neighborhood and not rcn_for_model.empty:
-        train_frame = attach_neighborhood_rcn_features(
-            train_frame,
-            rcn_for_model,
-            radius_m=float(app_settings.model_nbhd_radius_m),
-        )
-        _write_enriched_geoparquet(train_frame)
-
     train_settings = TrainSettings(
         opt_metric=coerce_opt_metric(app_settings.model_opt_metric),
         val_size=float(app_settings.model_val_size),
@@ -538,42 +665,121 @@ def run_pipeline(
         log_target=bool(app_settings.model_log_target),
         district_calibration=bool(app_settings.model_district_calibration),
     )
-    model_path = processed / "lightgbm_price_per_m2.txt"
-    result = run_training_with_mlflow(
-        train_frame,
-        config,
-        model_path,
-        train_settings=train_settings,
-        rcn=rcn_for_model if app_settings.model_use_neighborhood else None,
+    train_score_fp = fingerprint(
+        file_token(enriched_path),
+        payload_token({
+            "opt": train_settings.opt_metric,
+            "val": train_settings.val_size,
+            "test": train_settings.test_size,
+            "hpo": train_settings.hpo_trials,
+            "nbhd": train_settings.use_neighborhood,
+            "seed": train_settings.random_state,
+            "oto_only": train_settings.train_otodom_labels_only,
+            "log": train_settings.log_target,
+            "district_cal": train_settings.district_calibration,
+            "n_features": len(FEATURE_COLUMNS),
+        }),
     )
-    try:
-        train_frame["model_price_per_m2"] = oof_predict_price_per_m2(
+    model_metrics: dict[str, float]
+    feature_names: list[str]
+    if manifest.should_skip(
+        "train_score",
+        train_score_fp,
+        [model_path, scored_path],
+        force=force,
+    ):
+        logger.info("Skip train+score (enriched + settings unchanged)")
+        skipped_steps.append("train_score")
+        train_frame = pd.read_parquet(scored_path)
+        model_metrics, feature_names = _load_prior_run_metrics(metadata_path)
+        if not feature_names:
+            feature_names = list(FEATURE_COLUMNS)
+    else:
+        result = run_training_with_mlflow(
             train_frame,
-            config.model,
-            train_settings,
-            n_splits=5,
-            params=result.best_params or None,
+            config,
+            model_path,
+            train_settings=train_settings,
+            rcn=rcn_for_model if app_settings.model_use_neighborhood else None,
         )
-    except Exception as exc:
-        logger.warning("OOF scoring failed (%s); falling back to in-sample", exc)
-        train_frame["model_price_per_m2"] = predict_price_per_m2(
-            result.model,
-            train_frame,
-            use_neighborhood=bool(app_settings.model_use_neighborhood),
-            log_target=result.log_target,
-            district_offsets=result.district_offsets,
+        try:
+            train_frame["model_price_per_m2"] = oof_predict_price_per_m2(
+                train_frame,
+                config.model,
+                train_settings,
+                n_splits=5,
+                params=result.best_params or None,
+            )
+        except Exception as exc:
+            logger.warning("OOF scoring failed (%s); falling back to in-sample", exc)
+            train_frame["model_price_per_m2"] = predict_price_per_m2(
+                result.model,
+                train_frame,
+                use_neighborhood=bool(app_settings.model_use_neighborhood),
+                log_target=result.log_target,
+                district_offsets=result.district_offsets,
+            )
+        train_frame["delta_price_per_m2"] = (
+            train_frame["price_per_m2"] - train_frame["model_price_per_m2"]
         )
-    train_frame["delta_price_per_m2"] = (
-        train_frame["price_per_m2"] - train_frame["model_price_per_m2"]
+        train_frame.to_parquet(scored_path, index=False)
+        model_metrics = dict(result.metrics)
+        feature_names = list(result.feature_names)
+        manifest.mark("train_score", train_score_fp)
+
+    prefs = load_preferences(preferences_path(processed))
+    rec_settings = {
+        "top_n": int(app_settings.recommender_top_n),
+        "alpha": float(app_settings.recommender_demotion_alpha),
+        "w_bargain": float(app_settings.recommender_w_bargain),
+        "w_commute": float(app_settings.recommender_w_commute),
+        "w_transit": float(app_settings.recommender_w_transit),
+        "w_overprice": float(app_settings.recommender_w_overprice),
+        "otodom_pool": bool(app_settings.recommender_otodom_pool_default),
+        "amenity": coerce_amenity_weights(app_settings.recommender_amenity_weights),
+        "prefs_enabled": bool(prefs.enabled),
+    }
+    rec_fp = fingerprint(
+        file_token(scored_path),
+        file_token(impressions_path(processed)),
+        payload_token(rec_settings),
     )
-    scored_path = processed / "listings_scored.parquet"
-    train_frame.to_parquet(scored_path, index=False)
+    rec_metrics_file = recommender_metrics_path(processed)
+    if manifest.should_skip("recommender", rec_fp, [rec_metrics_file], force=force):
+        logger.info("Skip recommender (scored + settings unchanged)")
+        skipped_steps.append("recommender")
+    else:
+        if "model_price_per_m2" not in train_frame.columns:
+            train_frame = pd.read_parquet(scored_path)
+        retrain_recommender(
+            train_frame,
+            processed_dir=processed,
+            top_n=int(app_settings.recommender_top_n),
+            demotion_alpha=float(app_settings.recommender_demotion_alpha),
+            prefs=prefs,
+            amenity_weights=coerce_amenity_weights(
+                app_settings.recommender_amenity_weights
+            ),
+            w_bargain=float(app_settings.recommender_w_bargain),
+            w_commute=float(app_settings.recommender_w_commute),
+            w_transit=float(app_settings.recommender_w_transit),
+            w_overprice=float(app_settings.recommender_w_overprice),
+            otodom_pool_default=bool(app_settings.recommender_otodom_pool_default),
+        )
+        manifest.mark("recommender", rec_fp)
+
+    manifest.save()
+    if skipped_steps:
+        logger.info("Incremental skips: %s", ", ".join(skipped_steps))
 
     mark_commute_features_applied(app_settings, commute)
     if app_settings.commute_target_lon is None:
         app_settings.commute_target_lon = float(commute.lon)
         app_settings.commute_target_lat = float(commute.lat)
         app_settings.commute_target_label = commute.label
+    # Clear one-shot force flag after a forced run so next make pipeline is incremental.
+    if app_settings.pipeline_force_refresh and force_pipeline is not False:
+        app_settings.pipeline_force_refresh = False
     save_app_settings(settings_path(processed), app_settings)
 
     duration_s = time.perf_counter() - started
@@ -583,15 +789,15 @@ def run_pipeline(
         else {}
     )
     write_run_metadata(
-        processed / "run_metadata.json",
+        metadata_path,
         RunMetadata(
             refreshed_at=datetime.now(tz=UTC).isoformat(),
             duration_s=float(duration_s),
             n_offers=len(train_frame),
             n_by_source={str(k): int(v) for k, v in n_by_source.items()},
-            model_metrics=dict(result.metrics),
+            model_metrics=model_metrics,
             model_path=str(model_path),
-            feature_columns=list(result.feature_names),
+            feature_columns=feature_names,
             sources=list(DEFAULT_SOURCES),
             methodology=format_methodology_note(commute.label),
         ),
@@ -606,7 +812,9 @@ def run_pipeline(
         "rcn": rcn_parquet,
         "otodom": otodom_parquet,
         "gunb": gunb_parquet,
-        "metadata": processed / "run_metadata.json",
+        "metadata": metadata_path,
+        "recommender": rec_metrics_file,
+        "steps": pipeline_steps_path(processed),
     }
 
 

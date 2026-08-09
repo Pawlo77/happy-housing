@@ -77,7 +77,7 @@ osrm-prepare: ## Download Mazowieckie PBF and build OSRM MLD graph into docker/d
 	@echo "Then: docker run --rm -v \"$$(pwd)/docker/data/osrm:/data\" ghcr.io/project-osrm/osrm-backend:latest osrm-customize /data/mazowieckie-latest.osrm"
 	@echo "Start: docker compose -f docker/docker-compose.osrm.yml up"
 
-pipeline: ## Full ingest → GIS → score → MLflow train
+pipeline: ## Full ingest → GIS → train/score → recommend (incremental step cache)
 	uv run python -m happy_housing.pipeline
 
 app: ## Launch Streamlit GUI (requires pipeline outputs; settings in .streamlit/config.toml)

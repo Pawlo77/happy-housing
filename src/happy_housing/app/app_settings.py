@@ -156,6 +156,8 @@ class AppSettings:
     """Lat last baked into scored dist/commute features."""
     pipeline_overrides_enabled: bool = False
     """When True, Admin Pipeline ingest fields override experiment.yaml."""
+    pipeline_force_refresh: bool = False
+    """When True, ignore step fingerprints and re-run enrich/train/score."""
     otodom_max_pages: int | None = None
     """Otodom search-page cap; None = unlimited (when overrides enabled)."""
     otodom_max_listings: int | None = None
@@ -519,6 +521,12 @@ def load_app_settings(path: Path) -> AppSettings:
             payload.get(
                 "pipeline_overrides_enabled",
                 defaults.pipeline_overrides_enabled,
+            )
+        ),
+        pipeline_force_refresh=bool(
+            payload.get(
+                "pipeline_force_refresh",
+                defaults.pipeline_force_refresh,
             )
         ),
         otodom_max_pages=_opt_positive_int(payload.get("otodom_max_pages")),
