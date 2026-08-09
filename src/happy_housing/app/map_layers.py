@@ -61,6 +61,18 @@ class LayerFlags:
     """OSM fuel / petrol stations."""
     shops: bool = False
     """OSM retail / supermarket points."""
+    shop_show_grocery: bool = True
+    """Include grocery / food shops when Shops is on."""
+    shop_show_health_beauty: bool = True
+    """Include chemist / beauty / salon shops when Shops is on."""
+    shop_show_fashion: bool = True
+    """Include clothes / shoes / jewelry when Shops is on."""
+    shop_show_home: bool = True
+    """Include furniture / electronics / DIY when Shops is on."""
+    shop_show_mobility: bool = True
+    """Include car / bike shops when Shops is on."""
+    shop_show_other: bool = True
+    """Include remaining shop=* tags when Shops is on."""
     transit_intensity: bool = False
     """GTFS stop-hour departure heatmap (popularity)."""
     transit_network: bool = False
@@ -163,6 +175,124 @@ MAX_GUNB_MAP_POINTS = 3000
 
 MAX_SHOP_MAP_POINTS = 5000
 """Hard cap for OSM shop markers on the map."""
+
+SHOP_CATEGORY_LABELS: dict[str, str] = {
+    "grocery": "Groceries",
+    "health_beauty": "Health & beauty",
+    "fashion": "Fashion",
+    "home": "Home & electronics",
+    "mobility": "Car & bike",
+    "other": "Other shops",
+}
+"""Stable shop subcategory id → Explore checkbox label."""
+
+_SHOP_CATEGORY_TAGS: dict[str, frozenset[str]] = {
+    "grocery": frozenset({
+        "supermarket",
+        "convenience",
+        "greengrocer",
+        "bakery",
+        "butcher",
+        "pastry",
+        "deli",
+        "alcohol",
+        "wine",
+        "beverages",
+        "cheese",
+        "seafood",
+        "farm",
+        "kiosk",
+        "newsagent",
+        "tobacco",
+        "tea",
+        "coffee",
+        "confectionery",
+        "chocolate",
+        "ice_cream",
+    }),
+    "health_beauty": frozenset({
+        "chemist",
+        "beauty",
+        "hairdresser",
+        "optician",
+        "cosmetics",
+        "perfume",
+        "massage",
+        "laundry",
+        "dry_cleaning",
+        "hearing_aids",
+        "medical_supply",
+        "herbalist",
+    }),
+    "fashion": frozenset({
+        "clothes",
+        "shoes",
+        "jewelry",
+        "jewellery",
+        "tailor",
+        "bag",
+        "fashion_accessories",
+        "watches",
+        "leather",
+        "fabric",
+    }),
+    "home": frozenset({
+        "furniture",
+        "electronics",
+        "mobile_phone",
+        "computer",
+        "appliance",
+        "doityourself",
+        "hardware",
+        "houseware",
+        "interior_decoration",
+        "carpet",
+        "curtain",
+        "lighting",
+        "kitchen",
+        "bathroom_furnishing",
+    }),
+    "mobility": frozenset({
+        "car",
+        "car_repair",
+        "car_parts",
+        "bicycle",
+        "motorcycle",
+        "tyres",
+        "tires",
+    }),
+}
+"""OSM ``shop=*`` tags grouped into Explore subcategories (remainder → other)."""
+
+_TAG_TO_CATEGORY: dict[str, str] = {
+    tag: category for category, tags in _SHOP_CATEGORY_TAGS.items() for tag in tags
+}
+"""Flat ``shop`` tag → category lookup."""
+
+
+def shop_category_for_tag(tag: object) -> str:
+    """Map an OSM ``shop=*`` value to a stable Explore subcategory id."""
+    raw = str(tag or "").strip().lower()
+    if not raw or raw in {"nan", "none"}:
+        return "other"
+    return _TAG_TO_CATEGORY.get(raw, "other")
+
+
+def filter_shops_by_categories(
+    frame: pd.DataFrame,
+    *,
+    categories: set[str] | frozenset[str],
+) -> pd.DataFrame:
+    """Keep shop rows whose ``shop`` tag maps into ``categories``."""
+    if frame is None or getattr(frame, "empty", True) or not categories:
+        return pd.DataFrame()
+    out = frame.copy()
+    if "shop" not in out.columns:
+        # Untyped shops only show under ``other``.
+        return out if "other" in categories else pd.DataFrame()
+    cats = out["shop"].map(shop_category_for_tag)
+    return out.loc[cats.isin(set(categories))].reset_index(drop=True)
+
 
 MAX_CITY_POI_MAP_POINTS = 4000
 """Hard cap for UM city / sports POI markers on the map."""
@@ -405,7 +535,7 @@ def prepare_city_pois_for_map(
 
 
 def prepare_shops_for_map(frame: pd.DataFrame) -> pd.DataFrame:
-    """Shop POIs with type in the hover detail."""
+    """Shop POIs with category + OSM tag in the hover detail."""
     if frame.empty:
         return pd.DataFrame()
     out = frame.copy()
@@ -424,9 +554,12 @@ def prepare_shops_for_map(frame: pd.DataFrame) -> pd.DataFrame:
         name = out["name"].fillna("Shop").astype(str)
     else:
         name = pd.Series("Shop", index=out.index)
+    category = shop.map(shop_category_for_tag)
+    label = category.map(lambda c: SHOP_CATEGORY_LABELS.get(c, "Other shops"))
+    out["shop_category"] = category
     out["tooltip_name"] = name.str.slice(0, 80)
-    out["tooltip_detail"] = "Shop · " + shop
-    out["layer_label"] = "Shop"
+    out["tooltip_detail"] = label.astype(str) + " · " + shop
+    out["layer_label"] = label
     return slim_map_frame(out)
 
 

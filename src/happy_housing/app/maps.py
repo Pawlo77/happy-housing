@@ -13,7 +13,11 @@ import streamlit as st
 
 from happy_housing.app.commute_target import CommuteTarget, commute_compare_points
 from happy_housing.app.map_layers import (
+    MAX_SHOP_MAP_POINTS,
+    SHOP_CATEGORY_LABELS,
     LayerFlags,
+    filter_shops_by_categories,
+    limit_map_points,
     prepare_city_pois_for_map,
     prepare_gunb_for_map,
     prepare_listings_for_map,
@@ -22,6 +26,7 @@ from happy_housing.app.map_layers import (
     prepare_transit_for_hour,
     prepare_transit_paths,
     prepare_transit_stops_network,
+    shop_category_for_tag,
     slim_map_frame,
     traffic_weights_for_hour,
 )
@@ -381,18 +386,86 @@ def airport_areas_layer(frame: gpd.GeoDataFrame | None) -> pdk.Layer | None:
     )
 
 
+_SHOP_CATEGORY_COLORS: dict[str, list[int]] = {
+    "grocery": [22, 163, 74, 200],
+    "health_beauty": [219, 39, 119, 200],
+    "fashion": [124, 58, 237, 200],
+    "home": [180, 83, 9, 200],
+    "mobility": [37, 99, 235, 200],
+    "other": [100, 116, 139, 200],
+}
+"""RGBA fills for shop subcategory IconLayers."""
+
+
+def shops_layers(
+    shops: pd.DataFrame,
+    *,
+    show_grocery: bool = True,
+    show_health_beauty: bool = True,
+    show_fashion: bool = True,
+    show_home: bool = True,
+    show_mobility: bool = True,
+    show_other: bool = True,
+) -> list[pdk.Layer]:
+    """One IconLayer per enabled shop subcategory (square markers)."""
+    enabled: set[str] = set()
+    if show_grocery:
+        enabled.add("grocery")
+    if show_health_beauty:
+        enabled.add("health_beauty")
+    if show_fashion:
+        enabled.add("fashion")
+    if show_home:
+        enabled.add("home")
+    if show_mobility:
+        enabled.add("mobility")
+    if show_other:
+        enabled.add("other")
+    if not enabled:
+        return []
+    filtered = filter_shops_by_categories(shops, categories=enabled)
+    if filtered.empty:
+        return []
+    work = filtered.copy()
+    if "lat" not in work.columns and "geometry" in work.columns:
+        work["lon"] = work.geometry.x
+        work["lat"] = work.geometry.y
+    work["lat"] = pd.to_numeric(work["lat"], errors="coerce")
+    work["lon"] = pd.to_numeric(work["lon"], errors="coerce")
+    work = work.dropna(subset=["lat", "lon"])
+    # Cap once across categories so the map payload stays bounded.
+    work = limit_map_points(work, MAX_SHOP_MAP_POINTS)
+    if work.empty:
+        return []
+    if "shop" not in work.columns:
+        work["shop"] = "shop"
+    work["shop_category"] = work["shop"].map(shop_category_for_tag)
+    layers: list[pdk.Layer] = []
+    for category in SHOP_CATEGORY_LABELS:
+        if category not in enabled:
+            continue
+        subset = work.loc[work["shop_category"] == category]
+        if subset.empty:
+            continue
+        prepared = prepare_shops_for_map(subset)
+        layer = _icon(
+            prepared,
+            layer_id=f"shops-{category}",
+            kind="shop",
+            fill_color=_SHOP_CATEGORY_COLORS.get(category, [100, 116, 139, 200]),
+            size=22,
+            size_min_pixels=12,
+            size_max_pixels=28,
+        )
+        if layer is not None:
+            layers.append(layer)
+    return layers
+
+
 def shops_layer(shops: pd.DataFrame) -> pdk.Layer | None:
-    """Retail / supermarket points (square markers)."""
-    prepared = prepare_shops_for_map(shops)
-    return _icon(
-        prepared,
-        layer_id="shops",
-        kind="shop",
-        fill_color=[124, 58, 237, 200],
-        size=22,
-        size_min_pixels=12,
-        size_max_pixels=28,
-    )
+    """First shop subcategory layer (legacy helper for marker-shape tests)."""
+    layers = shops_layers(shops)
+    return layers[0] if layers else None
 
 
 def transit_intensity_layers(
@@ -958,9 +1031,17 @@ def build_explore_layers(
             modes.add("rail")
         layers.extend(transit_network_layers(route_shapes, stops, modes=modes))
     if flags.shops:
-        shop_layer = shops_layer(shops)
-        if shop_layer is not None:
-            layers.append(shop_layer)
+        layers.extend(
+            shops_layers(
+                shops,
+                show_grocery=flags.shop_show_grocery,
+                show_health_beauty=flags.shop_show_health_beauty,
+                show_fashion=flags.shop_show_fashion,
+                show_home=flags.shop_show_home,
+                show_mobility=flags.shop_show_mobility,
+                show_other=flags.shop_show_other,
+            )
+        )
     layers.extend(
         amenity_layers(
             amenities,

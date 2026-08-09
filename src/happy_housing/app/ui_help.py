@@ -71,8 +71,24 @@ LAYER_HELP: dict[str, str] = {
     ),
     "shops": (
         "OpenStreetMap retail / shop POIs (full shop=* set). "
-        "Nearby daily shopping raises convenience and neighbourhood amenity; "
-        "shops are map context, not a trained distance feature yet."
+        "Turn on, then pick subtypes below (groceries, fashion, …). "
+        "Nearby daily shopping raises convenience; shops are map context, "
+        "not a trained distance feature yet."
+    ),
+    "shop_show_grocery": (
+        "Supermarkets, convenience, bakeries, greengrocers, alcohol, etc. "
+        "Requires Shops."
+    ),
+    "shop_show_health_beauty": (
+        "Chemists, beauty, hairdressers, opticians, laundry. Requires Shops."
+    ),
+    "shop_show_fashion": ("Clothes, shoes, jewelry, bags, tailor. Requires Shops."),
+    "shop_show_home": (
+        "Furniture, electronics, phones, DIY / hardware, housewares. Requires Shops."
+    ),
+    "shop_show_mobility": ("Car dealers / repair, bike shops, tyres. Requires Shops."),
+    "shop_show_other": (
+        "Remaining shop=* tags (florists, vacant, specialty, …). Requires Shops."
     ),
     "hospitals": (
         "OSM hospitals. Closer emergency / specialist care improves safety "

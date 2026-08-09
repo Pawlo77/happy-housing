@@ -376,120 +376,188 @@ def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
         transit_show_tram = False
         transit_show_bus = False
         transit_show_rail = False
+    offers = st.checkbox(
+        "Offers (Δ price)",
+        value=True,
+        help=layer_help("offers"),
+        key="explore_ly_offers",
+    )
+    city_boundary = st.checkbox(
+        "City boundary",
+        value=False,
+        help=layer_help("city_boundary"),
+        key="explore_ly_city_boundary",
+    )
+    military = st.checkbox(
+        "Military areas",
+        value=True,
+        help=layer_help("military"),
+        key="explore_ly_military",
+    )
+    rail_areas = st.checkbox(
+        "Rail land / yards",
+        value=True,
+        help=layer_help("rail_areas"),
+        key="explore_ly_rail_areas",
+    )
+    airport = st.checkbox(
+        "Airport footprints",
+        value=True,
+        help=layer_help("airport"),
+        key="explore_ly_airport",
+    )
+    transit_intensity = st.checkbox(
+        "Transit intensity (hourly)",
+        value=False,
+        help=layer_help("transit_intensity"),
+        key="explore_ly_transit_intensity",
+    )
+    traffic = st.checkbox(
+        "Traffic intensity proxy",
+        value=False,
+        help=layer_help("traffic"),
+        key="explore_ly_traffic",
+    )
+    bike_paths = st.checkbox(
+        "Bike paths (OSM)",
+        value=False,
+        help=layer_help("bike_paths"),
+        key="explore_ly_bike_paths",
+    )
+    shops_on = st.checkbox(
+        "Shops",
+        value=False,
+        help=layer_help("shops"),
+        key="explore_ly_shops",
+    )
+    if shops_on:
+        shop_show_grocery = st.checkbox(
+            "  Groceries",
+            value=True,
+            help=layer_help("shop_show_grocery"),
+            key="explore_ly_shop_grocery",
+        )
+        shop_show_health_beauty = st.checkbox(
+            "  Health & beauty",
+            value=True,
+            help=layer_help("shop_show_health_beauty"),
+            key="explore_ly_shop_health_beauty",
+        )
+        shop_show_fashion = st.checkbox(
+            "  Fashion",
+            value=True,
+            help=layer_help("shop_show_fashion"),
+            key="explore_ly_shop_fashion",
+        )
+        shop_show_home = st.checkbox(
+            "  Home & electronics",
+            value=True,
+            help=layer_help("shop_show_home"),
+            key="explore_ly_shop_home",
+        )
+        shop_show_mobility = st.checkbox(
+            "  Car & bike",
+            value=True,
+            help=layer_help("shop_show_mobility"),
+            key="explore_ly_shop_mobility",
+        )
+        shop_show_other = st.checkbox(
+            "  Other shops",
+            value=True,
+            help=layer_help("shop_show_other"),
+            key="explore_ly_shop_other",
+        )
+    else:
+        shop_show_grocery = False
+        shop_show_health_beauty = False
+        shop_show_fashion = False
+        shop_show_home = False
+        shop_show_mobility = False
+        shop_show_other = False
+    hospitals = st.checkbox(
+        "Hospitals",
+        value=False,
+        help=layer_help("hospitals"),
+        key="explore_ly_hospitals",
+    )
+    fire_stations = st.checkbox(
+        "Fire stations",
+        value=False,
+        help=layer_help("fire_stations"),
+        key="explore_ly_fire",
+    )
+    police = st.checkbox(
+        "Police",
+        value=False,
+        help=layer_help("police"),
+        key="explore_ly_police",
+    )
+    charging_stations = st.checkbox(
+        "EV charging",
+        value=False,
+        help=layer_help("charging_stations"),
+        key="explore_ly_charging",
+    )
+    gas_stations = st.checkbox(
+        "Gas stations",
+        value=False,
+        help=layer_help("gas_stations"),
+        key="explore_ly_gas",
+    )
+    air = st.checkbox(
+        "Air-quality stations",
+        value=False,
+        help=layer_help("air"),
+        key="explore_ly_air",
+    )
+    gunb = st.checkbox(
+        "GUNB permits",
+        value=False,
+        help=layer_help("gunb"),
+        key="explore_ly_gunb",
+    )
+    parks = st.checkbox(
+        "Parks & squares (UM)",
+        value=False,
+        help=layer_help("parks"),
+        key="explore_ly_parks",
+    )
+    commute_target = st.checkbox(
+        "Commute target",
+        value=False,
+        help=layer_help("commute_target"),
+        key="explore_ly_commute",
+    )
     flags = LayerFlags(
-        offers=st.checkbox(
-            "Offers (Δ price)",
-            value=True,
-            help=layer_help("offers"),
-            key="explore_ly_offers",
-        ),
-        city_boundary=st.checkbox(
-            "City boundary",
-            value=False,
-            help=layer_help("city_boundary"),
-            key="explore_ly_city_boundary",
-        ),
-        military=st.checkbox(
-            "Military areas",
-            value=True,
-            help=layer_help("military"),
-            key="explore_ly_military",
-        ),
-        rail_areas=st.checkbox(
-            "Rail land / yards",
-            value=True,
-            help=layer_help("rail_areas"),
-            key="explore_ly_rail_areas",
-        ),
-        airport=st.checkbox(
-            "Airport footprints",
-            value=True,
-            help=layer_help("airport"),
-            key="explore_ly_airport",
-        ),
-        transit_intensity=st.checkbox(
-            "Transit intensity (hourly)",
-            value=False,
-            help=layer_help("transit_intensity"),
-            key="explore_ly_transit_intensity",
-        ),
+        offers=offers,
+        city_boundary=city_boundary,
+        military=military,
+        rail_areas=rail_areas,
+        airport=airport,
+        transit_intensity=transit_intensity,
         transit_network=transit_network,
         transit_show_metro=transit_show_metro,
         transit_show_tram=transit_show_tram,
         transit_show_bus=transit_show_bus,
         transit_show_rail=transit_show_rail,
-        traffic=st.checkbox(
-            "Traffic intensity proxy",
-            value=False,
-            help=layer_help("traffic"),
-            key="explore_ly_traffic",
-        ),
-        bike_paths=st.checkbox(
-            "Bike paths (OSM)",
-            value=False,
-            help=layer_help("bike_paths"),
-            key="explore_ly_bike_paths",
-        ),
-        shops=st.checkbox(
-            "Shops",
-            value=False,
-            help=layer_help("shops"),
-            key="explore_ly_shops",
-        ),
-        hospitals=st.checkbox(
-            "Hospitals",
-            value=False,
-            help=layer_help("hospitals"),
-            key="explore_ly_hospitals",
-        ),
-        fire_stations=st.checkbox(
-            "Fire stations",
-            value=False,
-            help=layer_help("fire_stations"),
-            key="explore_ly_fire",
-        ),
-        police=st.checkbox(
-            "Police",
-            value=False,
-            help=layer_help("police"),
-            key="explore_ly_police",
-        ),
-        charging_stations=st.checkbox(
-            "EV charging",
-            value=False,
-            help=layer_help("charging_stations"),
-            key="explore_ly_charging",
-        ),
-        gas_stations=st.checkbox(
-            "Gas stations",
-            value=False,
-            help=layer_help("gas_stations"),
-            key="explore_ly_gas",
-        ),
-        air=st.checkbox(
-            "Air-quality stations",
-            value=False,
-            help=layer_help("air"),
-            key="explore_ly_air",
-        ),
-        gunb=st.checkbox(
-            "GUNB permits",
-            value=False,
-            help=layer_help("gunb"),
-            key="explore_ly_gunb",
-        ),
-        parks=st.checkbox(
-            "Parks & squares (UM)",
-            value=False,
-            help=layer_help("parks"),
-            key="explore_ly_parks",
-        ),
-        commute_target=st.checkbox(
-            "Commute target",
-            value=False,
-            help=layer_help("commute_target"),
-            key="explore_ly_commute",
-        ),
+        traffic=traffic,
+        bike_paths=bike_paths,
+        shops=shops_on,
+        shop_show_grocery=shop_show_grocery,
+        shop_show_health_beauty=shop_show_health_beauty,
+        shop_show_fashion=shop_show_fashion,
+        shop_show_home=shop_show_home,
+        shop_show_mobility=shop_show_mobility,
+        shop_show_other=shop_show_other,
+        hospitals=hospitals,
+        fire_stations=fire_stations,
+        police=police,
+        charging_stations=charging_stations,
+        gas_stations=gas_stations,
+        air=air,
+        gunb=gunb,
+        parks=parks,
+        commute_target=commute_target,
         city_poi_types=(),
     )
     noise_labels = [label for label, _ in NOISE_MAP_OVERLAYS]
