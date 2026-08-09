@@ -31,9 +31,10 @@ LAYER_HELP: dict[str, str] = {
         "in_poor_air). Station pins remain available separately."
     ),
     "transit_intensity": (
-        "Real GTFS stop-hour departure heatmap + busy stops at the sidebar "
-        "clock. Shows where service is dense (popularity), not the physical "
-        "line map."
+        "Continuous city-wide GTFS departure field for the sidebar clock hour "
+        "(BitmapLayer, same style as noise / AQ). Busy stop clusters glow "
+        "warmer; slide the hour to see service rise and fall. Shows popularity, "
+        "not the physical line map (use Transit lines & stops for that)."
     ),
     "transit_network": (
         "Turn on to draw GTFS route polylines + stops. Then pick modes below: "
@@ -58,10 +59,10 @@ LAYER_HELP: dict[str, str] = {
         "GTFS route_type=2."
     ),
     "traffic": (
-        "Diurnal street-activity heatmap along densified OSM drive roads "
-        "(motorway→residential), scaled by hour-of-day. Warm corridors ≈ "
-        "busier; not live vehicle counts. Model uses dist_traffic_road_m and "
-        "traffic_weight_nearby (local sample weight sum)."
+        "Continuous diurnal street-activity field along densified OSM drive "
+        "roads (BitmapLayer). Warm corridors ≈ busier; scales with the "
+        "sidebar hour — not live vehicle counts. Model uses dist_traffic_road_m "
+        "and traffic_weight_nearby (local sample weight sum)."
     ),
     "bike_paths": (
         "OSM bicycle infrastructure (cycleways / designated bike routes) as "

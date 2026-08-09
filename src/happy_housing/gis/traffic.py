@@ -72,6 +72,43 @@ _CACHE_NAME: str = "traffic_roads.parquet"
 _OSM_TIMEOUT_S: int = 300
 """OSMnx Overpass timeout for the city drive graph."""
 
+# Relative car-mobility intensity by hour-of-day (not live measured traffic).
+TRAFFIC_DIURNAL: tuple[float, ...] = (
+    0.12,
+    0.08,
+    0.06,
+    0.06,
+    0.10,
+    0.35,
+    0.70,
+    1.00,
+    0.92,
+    0.68,
+    0.62,
+    0.65,
+    0.70,
+    0.68,
+    0.70,
+    0.78,
+    0.90,
+    1.00,
+    0.88,
+    0.65,
+    0.45,
+    0.32,
+    0.22,
+    0.16,
+)
+"""Typical Warsaw road-activity proxy multipliers (00-23)."""
+
+TRAFFIC_DIURNAL_MAX: float = max(TRAFFIC_DIURNAL)
+"""Peak diurnal multiplier (colour-scale ceiling for map overlays)."""
+
+
+def diurnal_traffic_weight(hour: int) -> float:
+    """Return typical traffic-intensity multiplier for ``hour`` in ``0..23``."""
+    return float(TRAFFIC_DIURNAL[int(hour) % 24])
+
 
 def normalize_highway_key(highway: object) -> str:
     """Pick the highest-weight OSM highway tag from a scalar or list."""

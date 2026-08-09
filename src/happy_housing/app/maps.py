@@ -12,6 +12,7 @@ import pydeck as pdk
 import streamlit as st
 
 from happy_housing.app.commute_target import CommuteTarget, commute_compare_points
+from happy_housing.app.data import load_config
 from happy_housing.app.map_layers import (
     MAX_SHOP_MAP_POINTS,
     SHOP_CATEGORY_LABELS,
@@ -23,12 +24,10 @@ from happy_housing.app.map_layers import (
     prepare_listings_for_map,
     prepare_point_layer,
     prepare_shops_for_map,
-    prepare_transit_for_hour,
     prepare_transit_paths,
     prepare_transit_stops_network,
     shop_category_for_tag,
     slim_map_frame,
-    traffic_weights_for_hour,
 )
 from happy_housing.app.map_marker_shapes import marker_icon
 from happy_housing.app.spatial_insights import prepare_spatial_points
@@ -39,6 +38,11 @@ from happy_housing.app.zone_overlays import (
 )
 from happy_housing.gis.bike_paths import prepare_bike_paths_for_map
 from happy_housing.gis.gios_aq_field import AqMapOverlay
+from happy_housing.gis.intensity_field import (
+    IntensityMapOverlay,
+    prepare_traffic_intensity_overlay,
+    prepare_transit_intensity_overlay,
+)
 from happy_housing.gis.warsaw_noise import NoiseMapOverlay
 
 logger = logging.getLogger(__name__)
@@ -474,38 +478,19 @@ def transit_intensity_layers(
     *,
     hour: int,
 ) -> list[pdk.Layer]:
-    """Hourly departure heatmap + top active stops (popularity)."""
-    prepared = prepare_transit_for_hour(stops, hourly, hour=hour)
-    if prepared.empty:
-        return []
-    layers: list[pdk.Layer] = [
-        pdk.Layer(
-            "HeatmapLayer",
-            data=prepared,
-            get_position="[lon, lat]",
-            get_weight="weight",
-            radiusPixels=28,
-            intensity=1.2,
-            threshold=0.05,
-            opacity=0.55,
-            pickable=False,
-            id="transit-heat",
-        )
-    ]
-    top = prepared.head(180).copy()
-    top["icon_size"] = (14.0 + top["n_departures"].astype(float) * 0.15).clip(16, 34)
-    icons = _icon(
-        top,
-        layer_id="transit-intensity-stops",
-        kind="transit",
-        fill_color=[14, 116, 144, 210],
-        size="icon_size",
-        size_min_pixels=14,
-        size_max_pixels=34,
+    """Continuous GTFS departure field for the sidebar clock hour."""
+    overlay = prepare_transit_intensity_overlay(
+        stops,
+        hourly,
+        hour=hour,
+        bbox_wgs84=load_config().bbox.as_tuple(),
     )
-    if icons is not None:
-        layers.append(icons)
-    return layers
+    layer = intensity_bitmap_layer(
+        overlay,
+        layer_id="transit-intensity-bitmap",
+        opacity=0.62,
+    )
+    return [layer] if layer is not None else []
 
 
 def transit_network_layers(
@@ -548,25 +533,37 @@ def transit_network_layers(
 
 
 def traffic_heatmap_layer(sample: pd.DataFrame, *, hour: int) -> pdk.Layer | None:
-    """Diurnal street-activity heatmap along densified OSM roads."""
-    prepared = traffic_weights_for_hour(sample, hour=hour)
-    if prepared.empty:
+    """Continuous diurnal street-activity field (BitmapLayer, noise-style)."""
+    overlay = prepare_traffic_intensity_overlay(
+        sample,
+        hour=hour,
+        bbox_wgs84=load_config().bbox.as_tuple(),
+    )
+    return intensity_bitmap_layer(
+        overlay,
+        layer_id="traffic-intensity-bitmap",
+        opacity=0.62,
+    )
+
+
+def intensity_bitmap_layer(
+    overlay: IntensityMapOverlay | None,
+    *,
+    layer_id: str,
+    opacity: float = 0.62,
+) -> pdk.Layer | None:
+    """Georeferenced PNG intensity field as a deck.gl BitmapLayer."""
+    if overlay is None:
         return None
-    # Dense road sample → larger radius + lower threshold reads as corridors,
-    # not scattered blob points.
-    n = len(prepared)
-    radius = 55 if n >= 5_000 else 40
+    west, south, east, north = overlay.bounds
+    image = f'"{overlay.image_data_uri}"'
     return pdk.Layer(
-        "HeatmapLayer",
-        data=prepared,
-        get_position="[lon, lat]",
-        get_weight="weight",
-        radiusPixels=radius,
-        intensity=1.15,
-        threshold=0.02,
-        opacity=0.55,
+        "BitmapLayer",
+        image=image,
+        bounds=[float(west), float(south), float(east), float(north)],
+        opacity=float(opacity),
         pickable=False,
-        id="traffic-heat",
+        id=layer_id,
     )
 
 
