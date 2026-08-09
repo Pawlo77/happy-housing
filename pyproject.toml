@@ -66,6 +66,12 @@ dependencies = [
   "watchdog>=6.0.0",
 ]
 
+[project.optional-dependencies]
+vision = [
+  "torch>=2.2.0",
+  "transformers>=4.40.0",
+]
+
 [project.urls]
 Homepage = "https://github.com/Pawlo77/happy-housing"
 Repository = "https://github.com/Pawlo77/happy-housing"

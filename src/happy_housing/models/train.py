@@ -33,6 +33,7 @@ from happy_housing.orchestration.tracking import (
     _resolve_tracking_uri,
     build_mlflow_tracker,
 )
+from happy_housing.vision.photo_features import PHOTO_FEATURE_COLUMNS
 
 logger = logging.getLogger(__name__)
 
@@ -113,21 +114,28 @@ CATEGORICAL_FEATURE_COLUMNS: tuple[str, ...] = (
 )
 """Otodom string attributes encoded as LightGBM categories."""
 
-FEATURE_COLUMNS: tuple[str, ...] = CORE_FEATURE_COLUMNS + NEIGHBORHOOD_FEATURE_COLUMNS
-"""Full default feature list including neighborhood RCN comps."""
+FEATURE_COLUMNS: tuple[str, ...] = (
+    CORE_FEATURE_COLUMNS + NEIGHBORHOOD_FEATURE_COLUMNS + PHOTO_FEATURE_COLUMNS
+)
+"""Full default feature list including neighborhood RCN comps + photo CV."""
 
 _HPO_SPACE: dict[str, list[Any]] = {
-    "n_estimators": [100, 200, 300, 500],
-    "learning_rate": [0.03, 0.05, 0.08, 0.1],
-    "num_leaves": [15, 31, 63],
-    "min_child_samples": [10, 20, 40],
-    "subsample": [0.8, 1.0],
-    "colsample_bytree": [0.8, 1.0],
+    "n_estimators": [100, 200, 300, 500, 800],
+    "learning_rate": [0.02, 0.03, 0.05, 0.08, 0.1],
+    "num_leaves": [15, 31, 63, 127],
+    "min_child_samples": [10, 20, 40, 80],
+    "subsample": [0.7, 0.8, 1.0],
+    "colsample_bytree": [0.7, 0.8, 1.0],
+    "reg_lambda": [0.0, 0.1, 1.0, 5.0],
+    "min_split_gain": [0.0, 0.01, 0.1],
 }
 """LightGBM hyperparameter search space for ParameterSampler."""
 
 _LABEL_SOURCES_OTODOM: frozenset[str] = frozenset({"otodom", "fixture"})
 """Sources treated as ask-price labels when ``train_otodom_labels_only``."""
+
+_LABEL_SOURCES_BUYER: frozenset[str] = frozenset({"otodom", "fixture"})
+"""Buyer-facing ask sources for recommender default pool."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,7 +148,7 @@ class TrainSettings:
     """Fraction of non-test rows held out for HPO validation."""
     test_size: float = 0.2
     """Final hold-out fraction (never used for HPO selection)."""
-    hpo_trials: int = 12
+    hpo_trials: int = 40
     """Number of random hyperparameter samples (1 = no search)."""
     use_neighborhood: bool = True
     """Include RCN neighborhood features when present on the frame."""
@@ -148,6 +156,10 @@ class TrainSettings:
     """RNG seed for splits and HPO sampling."""
     train_otodom_labels_only: bool = True
     """Drop RCN deed rows from training labels (comps still OK as features)."""
+    log_target: bool = True
+    """Train on ``log1p(price_per_m2)``; report metrics in zł/m²."""
+    district_calibration: bool = True
+    """Add district median residual offsets after the final fit."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -188,13 +200,17 @@ class TrainResult:
     """Neighborhood IDW baseline metrics on the test fold (if available)."""
     train_medians: dict[str, float] = field(default_factory=dict)
     """Numeric impute medians from the train fold."""
+    log_target: bool = True
+    """Whether the booster predicts log1p space."""
+    district_offsets: dict[str, float] = field(default_factory=dict)
+    """Additive zł/m² correction by district (post-hoc)."""
 
 
 def active_feature_columns(*, use_neighborhood: bool = True) -> tuple[str, ...]:
     """Feature list depending on whether neighborhood comps are enabled."""
     if use_neighborhood:
         return FEATURE_COLUMNS
-    return CORE_FEATURE_COLUMNS
+    return CORE_FEATURE_COLUMNS + PHOTO_FEATURE_COLUMNS
 
 
 def model_feature_columns(model: lgb.Booster | lgb.LGBMRegressor) -> tuple[str, ...]:
@@ -320,6 +336,30 @@ def split_train_val_test(
     )
 
 
+def _default_params(model_config: ModelConfig) -> dict[str, Any]:
+    return {
+        "n_estimators": model_config.n_estimators,
+        "learning_rate": model_config.learning_rate,
+        "num_leaves": model_config.num_leaves,
+        "min_child_samples": 20,
+        "subsample": 1.0,
+        "colsample_bytree": 1.0,
+        "reg_lambda": 0.0,
+        "min_split_gain": 0.0,
+    }
+
+
+def _prepare_cats(features: pd.DataFrame) -> pd.DataFrame:
+    """Normalize categorical columns to stable string codes for LightGBM."""
+    work = features.copy()
+    for col in CATEGORICAL_FEATURE_COLUMNS:
+        if col not in work.columns:
+            continue
+        # Use plain strings — avoids pandas category-level mismatch on predict.
+        work[col] = work[col].astype(str).fillna("unknown")
+    return work
+
+
 def _fit_lgbm(
     features_train: pd.DataFrame,
     y_train: pd.Series,
@@ -328,13 +368,10 @@ def _fit_lgbm(
     *,
     n_jobs: int = 1,
 ) -> lgb.LGBMRegressor:
-    work = features_train.copy()
-    cat_in_frame: list[str] = []
-    for col in CATEGORICAL_FEATURE_COLUMNS:
-        if col not in work.columns:
-            continue
-        work[col] = work[col].astype(str).fillna("unknown").astype("category")
-        cat_in_frame.append(col)
+    work = _prepare_cats(features_train)
+    cat_in_frame = [c for c in CATEGORICAL_FEATURE_COLUMNS if c in work.columns]
+    for col in cat_in_frame:
+        work[col] = work[col].astype("category")
     model = lgb.LGBMRegressor(
         n_estimators=int(params["n_estimators"]),
         learning_rate=float(params["learning_rate"]),
@@ -342,6 +379,8 @@ def _fit_lgbm(
         min_child_samples=int(params.get("min_child_samples", 20)),
         subsample=float(params.get("subsample", 1.0)),
         colsample_bytree=float(params.get("colsample_bytree", 1.0)),
+        reg_lambda=float(params.get("reg_lambda", 0.0)),
+        min_split_gain=float(params.get("min_split_gain", 0.0)),
         random_state=random_state,
         n_jobs=int(n_jobs),
         verbosity=-1,
@@ -351,17 +390,123 @@ def _fit_lgbm(
         y_train,
         categorical_feature=cat_in_frame or "auto",
     )
+    model._hh_category_levels = {
+        col: list(work[col].cat.categories) for col in cat_in_frame
+    }
     return model
 
 
-def _default_params(model_config: ModelConfig) -> dict[str, Any]:
+def _predict_raw(
+    model: lgb.LGBMRegressor | lgb.Booster, features: pd.DataFrame
+) -> np.ndarray:
+    """Predict after aligning categorical columns to the booster's levels."""
+    work = _prepare_cats(features)
+    cat_in_frame = [c for c in CATEGORICAL_FEATURE_COLUMNS if c in work.columns]
+    if isinstance(model, lgb.LGBMRegressor) and hasattr(model, "booster_"):
+        # Reuse training category levels when available.
+        train_cats = getattr(model, "_hh_category_levels", None)
+        if isinstance(train_cats, dict):
+            for col, levels in train_cats.items():
+                if col in work.columns:
+                    work[col] = pd.Categorical(work[col], categories=levels)
+        else:
+            for col in cat_in_frame:
+                work[col] = work[col].astype("category")
+    else:
+        for col in cat_in_frame:
+            work[col] = work[col].astype("category")
+    return np.asarray(model.predict(work), dtype=float)
+
+
+def _to_train_target(y: pd.Series | np.ndarray, *, log_target: bool) -> np.ndarray:
+    arr = np.asarray(y, dtype=float)
+    return np.log1p(np.clip(arr, 0.0, None)) if log_target else arr
+
+
+def _from_model_pred(pred: np.ndarray, *, log_target: bool) -> np.ndarray:
+    arr = np.asarray(pred, dtype=float)
+    return np.expm1(arr) if log_target else arr
+
+
+def fit_district_offsets(
+    districts: pd.Series,
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+) -> dict[str, float]:
+    """Median residual (true - pred) per district for additive calibration."""
+    frame = pd.DataFrame({
+        "district": districts.astype(str).fillna("unknown").to_numpy(),
+        "resid": np.asarray(y_true, dtype=float) - np.asarray(y_pred, dtype=float),
+    })
+    grouped = frame.groupby("district", dropna=False)["resid"].median()
+    return {str(k): float(v) for k, v in grouped.items() if v == v}
+
+
+def apply_district_offsets(
+    pred: np.ndarray,
+    districts: pd.Series | None,
+    offsets: dict[str, float] | None,
+) -> np.ndarray:
+    """Add district median residual offsets to predictions."""
+    out = np.asarray(pred, dtype=float).copy()
+    if not offsets or districts is None or len(districts) != len(out):
+        return out
+    keys = districts.astype(str).fillna("unknown").to_numpy()
+    for i, key in enumerate(keys):
+        out[i] += float(offsets.get(str(key), 0.0))
+    return out
+
+
+def model_meta_path(model_path: Path) -> Path:
+    """Sidecar JSON next to the LightGBM text model."""
+    return model_path.with_suffix(model_path.suffix + ".meta.json")
+
+
+def save_model_meta(
+    model_path: Path,
+    *,
+    log_target: bool,
+    district_offsets: dict[str, float],
+) -> None:
+    """Persist prediction-space metadata beside the booster."""
+    import json
+
+    path = model_meta_path(model_path)
+    path.write_text(
+        json.dumps(
+            {
+                "log_target": bool(log_target),
+                "district_offsets": {
+                    str(k): float(v) for k, v in district_offsets.items()
+                },
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def load_model_meta(model_path: Path) -> dict[str, Any]:
+    """Load prediction-space metadata; missing → linear space (legacy boosters)."""
+    import json
+
+    path = model_meta_path(model_path)
+    if not path.exists():
+        return {"log_target": False, "district_offsets": {}}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"log_target": False, "district_offsets": {}}
+    if not isinstance(payload, dict):
+        return {"log_target": False, "district_offsets": {}}
+    offsets = payload.get("district_offsets") or {}
+    if not isinstance(offsets, dict):
+        offsets = {}
     return {
-        "n_estimators": model_config.n_estimators,
-        "learning_rate": model_config.learning_rate,
-        "num_leaves": model_config.num_leaves,
-        "min_child_samples": 20,
-        "subsample": 1.0,
-        "colsample_bytree": 1.0,
+        "log_target": bool(payload.get("log_target", False)),
+        "district_offsets": {str(k): float(v) for k, v in offsets.items()},
     }
 
 
@@ -427,6 +572,9 @@ def train_price_model(
         )
 
     check_feature_coverage(work, feature_cols, max_missing_fraction=0.9)
+    if "transit_commute_min" not in work.columns:
+        work = work.copy()
+        work["transit_commute_min"] = float("nan")
 
     # Unfilled matrix — medians from train fold only after split.
     raw_features = _raw_feature_frame(work, feature_cols)
@@ -459,6 +607,13 @@ def train_price_model(
     y_train, y_val, y_test = train_b.target, val_b.target, test_b.target
     features_tv = pd.concat([features_train, features_val], axis=0)
     y_tv = pd.concat([y_train, y_val], axis=0)
+    log_target = bool(settings.log_target)
+    y_train_fit = pd.Series(
+        _to_train_target(y_train, log_target=log_target), index=y_train.index
+    )
+    y_tv_fit = pd.Series(
+        _to_train_target(y_tv, log_target=log_target), index=y_tv.index
+    )
 
     candidates = _hpo_candidates(
         model_config,
@@ -476,10 +631,12 @@ def train_price_model(
     ) -> tuple[int, dict[str, Any], dict[str, float], float]:
         # Cap OpenMP threads per trial so parallel HPO does not oversubscribe.
         model = _fit_lgbm(
-            features_train, y_train, params, settings.random_state, n_jobs=1
+            features_train, y_train_fit, params, settings.random_state, n_jobs=1
         )
-        val_pred = model.predict(features_val)
-        val_metrics = compute_regression_metrics(y_val.to_numpy(), np.asarray(val_pred))
+        val_pred = _from_model_pred(
+            _predict_raw(model, features_val), log_target=log_target
+        )
+        val_metrics = compute_regression_metrics(y_val.to_numpy(), val_pred)
         score = float(val_metrics[opt_metric])
         return trial_i, params, val_metrics, score
 
@@ -518,9 +675,22 @@ def train_price_model(
 
     # Final model: train + val, evaluate on untouched test.
     final_model = _fit_lgbm(
-        features_tv, y_tv, best_params, settings.random_state, n_jobs=-1
+        features_tv, y_tv_fit, best_params, settings.random_state, n_jobs=-1
     )
-    test_pred = final_model.predict(features_test)
+    test_pred = _from_model_pred(
+        _predict_raw(final_model, features_test), log_target=log_target
+    )
+    district_offsets: dict[str, float] = {}
+    if settings.district_calibration and "district" in features_tv.columns:
+        tv_pred = _from_model_pred(
+            _predict_raw(final_model, features_tv), log_target=log_target
+        )
+        district_offsets = fit_district_offsets(
+            features_tv["district"], y_tv.to_numpy(), tv_pred
+        )
+        test_pred = apply_district_offsets(
+            test_pred, features_test.get("district"), district_offsets
+        )
     test_metrics = compute_regression_metrics(y_test.to_numpy(), np.asarray(test_pred))
 
     baseline_metrics: dict[str, float] = {}
@@ -537,6 +707,8 @@ def train_price_model(
         "n_test": float(len(features_test)),
         "n_train_val": float(len(features_tv)),
         "hpo_trials": float(len(candidates)),
+        "log_target": 1.0 if log_target else 0.0,
+        "district_calibration": 1.0 if district_offsets else 0.0,
         # Back-compat keys used by Home / metadata.
         "mae": float(test_metrics["mae"]),
         "r2": float(test_metrics["r2"]),
@@ -555,6 +727,8 @@ def train_price_model(
         test_metrics=test_metrics,
         baseline_metrics=baseline_metrics,
         train_medians={str(k): _safe_float(v) for k, v in train_medians.items()},
+        log_target=log_target,
+        district_offsets=district_offsets,
     )
 
 
@@ -610,10 +784,12 @@ def _impute_with_medians(
 
 
 def predict_price_per_m2(
-    model: lgb.LGBMRegressor,
+    model: lgb.LGBMRegressor | lgb.Booster,
     frame: pd.DataFrame,
     *,
     use_neighborhood: bool = True,
+    log_target: bool = True,
+    district_offsets: dict[str, float] | None = None,
 ) -> np.ndarray:
     """Score listings with a fitted model (feature matrix aligned to booster)."""
     cols = model_feature_columns(model)
@@ -626,7 +802,12 @@ def predict_price_per_m2(
             features[col] = (
                 features[col].astype(str).fillna("unknown").astype("category")
             )
-    return np.asarray(model.predict(features), dtype=float)
+    if isinstance(model, lgb.Booster):
+        raw = _predict_raw(model, features)
+    else:
+        raw = _predict_raw(model, features)
+    pred = _from_model_pred(raw, log_target=log_target)
+    return apply_district_offsets(pred, features.get("district"), district_offsets)
 
 
 def oof_predict_price_per_m2(
@@ -657,7 +838,11 @@ def oof_predict_price_per_m2(
         # Too small for OOF — fall back to in-sample after a quick fit
         result = train_price_model(frame, model_config, settings)
         return predict_price_per_m2(
-            result.model, frame, use_neighborhood=settings.use_neighborhood
+            result.model,
+            frame,
+            use_neighborhood=settings.use_neighborhood,
+            log_target=result.log_target,
+            district_offsets=result.district_offsets,
         )
 
     raw = _raw_feature_frame(frame, feature_cols)
@@ -666,9 +851,14 @@ def oof_predict_price_per_m2(
     if len(usable) < max(10, n_splits * 2):
         result = train_price_model(frame, model_config, settings)
         return predict_price_per_m2(
-            result.model, frame, use_neighborhood=settings.use_neighborhood
+            result.model,
+            frame,
+            use_neighborhood=settings.use_neighborhood,
+            log_target=result.log_target,
+            district_offsets=result.district_offsets,
         )
 
+    log_target = bool(settings.log_target)
     kf = KFold(
         n_splits=min(n_splits, len(usable) // 2),
         shuffle=True,
@@ -690,18 +880,26 @@ def oof_predict_price_per_m2(
         )
         x_tr = _impute_with_medians(raw.loc[train_ids], medians, feature_cols)
         x_te = _impute_with_medians(raw.loc[test_ids], medians, feature_cols)
-        y_tr = target.loc[train_ids]
+        y_tr = pd.Series(
+            _to_train_target(target.loc[train_ids], log_target=log_target),
+            index=train_ids,
+        )
         fold_model = _fit_lgbm(x_tr, y_tr, fold_params, settings.random_state, n_jobs=1)
         for col in CATEGORICAL_FEATURE_COLUMNS:
             if col in x_te.columns:
                 x_te[col] = x_te[col].astype(str).fillna("unknown").astype("category")
-        fold_pred = fold_model.predict(x_te)
-        preds[frame.index.get_indexer(test_ids)] = np.asarray(fold_pred, dtype=float)
+        fold_pred = _from_model_pred(
+            _predict_raw(fold_model, x_te),
+            log_target=log_target,
+        )
+        preds[frame.index.get_indexer(test_ids)] = fold_pred
 
     # Non-label rows: fit on all labels, score once
     other_ids = [i for i in frame.index if i not in set(usable)]
+    full_model = None
+    medians_all = None
     if other_ids:
-        medians = (
+        medians_all = (
             raw
             .loc[
                 usable,
@@ -710,28 +908,75 @@ def oof_predict_price_per_m2(
             .apply(pd.to_numeric, errors="coerce")
             .median(numeric_only=True)
         )
-        x_all = _impute_with_medians(raw.loc[usable], medians, feature_cols)
-        y_all = target.loc[usable]
+        x_all = _impute_with_medians(raw.loc[usable], medians_all, feature_cols)
+        y_all = pd.Series(
+            _to_train_target(target.loc[usable], log_target=log_target),
+            index=usable,
+        )
         full_model = _fit_lgbm(
             x_all, y_all, fold_params, settings.random_state, n_jobs=-1
         )
-        x_other = _impute_with_medians(raw.loc[other_ids], medians, feature_cols)
+        x_other = _impute_with_medians(raw.loc[other_ids], medians_all, feature_cols)
         for col in CATEGORICAL_FEATURE_COLUMNS:
             if col in x_other.columns:
                 x_other[col] = (
                     x_other[col].astype(str).fillna("unknown").astype("category")
                 )
-        other_pred = full_model.predict(x_other)
-        preds[frame.index.get_indexer(other_ids)] = np.asarray(other_pred, dtype=float)
+        other_pred = _from_model_pred(
+            _predict_raw(full_model, x_other),
+            log_target=log_target,
+        )
+        preds[frame.index.get_indexer(other_ids)] = other_pred
 
     # Fill any remaining NaN (failed folds) with full-model on labels
     missing = np.isnan(preds)
     if missing.any():
         result = train_price_model(frame, model_config, settings)
         fill = predict_price_per_m2(
-            result.model, frame, use_neighborhood=settings.use_neighborhood
+            result.model,
+            frame,
+            use_neighborhood=settings.use_neighborhood,
+            log_target=result.log_target,
+            district_offsets=result.district_offsets,
         )
         preds[missing] = fill[missing]
+
+    if settings.district_calibration and "district" in frame.columns:
+        # Global offsets from a full-label fit (reuse or build).
+        if full_model is None:
+            medians_all = (
+                raw
+                .loc[
+                    usable,
+                    [c for c in feature_cols if c not in CATEGORICAL_FEATURE_COLUMNS],
+                ]
+                .apply(pd.to_numeric, errors="coerce")
+                .median(numeric_only=True)
+            )
+            x_all = _impute_with_medians(raw.loc[usable], medians_all, feature_cols)
+            y_all = pd.Series(
+                _to_train_target(target.loc[usable], log_target=log_target),
+                index=usable,
+            )
+            full_model = _fit_lgbm(
+                x_all, y_all, fold_params, settings.random_state, n_jobs=-1
+            )
+        if full_model is None or medians_all is None:
+            return preds
+        x_lab = _impute_with_medians(raw.loc[usable], medians_all, feature_cols)
+        for col in CATEGORICAL_FEATURE_COLUMNS:
+            if col in x_lab.columns:
+                x_lab[col] = x_lab[col].astype(str).fillna("unknown").astype("category")
+        lab_pred = _from_model_pred(
+            _predict_raw(full_model, x_lab),
+            log_target=log_target,
+        )
+        offsets = fit_district_offsets(
+            frame.loc[usable, "district"],
+            target.loc[usable].to_numpy(),
+            lab_pred,
+        )
+        preds = apply_district_offsets(preds, frame["district"], offsets)
     return preds
 
 
@@ -774,6 +1019,11 @@ def run_training_with_mlflow(
         result = train_price_model(frame, config.model, settings)
         model_path.parent.mkdir(parents=True, exist_ok=True)
         result.model.booster_.save_model(str(model_path))
+        save_model_meta(
+            model_path,
+            log_target=result.log_target,
+            district_offsets=result.district_offsets,
+        )
         return result
 
     tracking_uri = _resolve_tracking_uri(config.mlflow.tracking_uri)
@@ -793,6 +1043,11 @@ def run_training_with_mlflow(
         )
         model_path.parent.mkdir(parents=True, exist_ok=True)
         result.model.booster_.save_model(str(model_path))
+        save_model_meta(
+            model_path,
+            log_target=result.log_target,
+            district_offsets=result.district_offsets,
+        )
 
         if tracker._mlflow is not None:
             if config.mlflow.log_params:
