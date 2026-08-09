@@ -8,6 +8,8 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
+from happy_housing.app.feature_labels import feature_description
+
 # Match `.streamlit/config.toml` brand accents.
 PRIMARY = "#0F6B5C"
 """Ink teal — primary marks / underpriced."""
@@ -77,6 +79,37 @@ def _tooltip(frame: pd.DataFrame) -> list[str]:
     return [str(c) for c in list(frame.columns)[:_TOOLTIP_LIMIT]]
 
 
+def _with_feature_descriptions(
+    frame: pd.DataFrame,
+    feature_col: str,
+) -> pd.DataFrame:
+    """Attach a ``description`` column for model-feature hover text."""
+    if feature_col not in frame.columns:
+        return frame
+    out = frame.copy()
+    out["description"] = out[feature_col].map(feature_description)
+    return out
+
+
+def _feature_axis_tooltip(
+    frame: pd.DataFrame,
+    *,
+    feature_col: str,
+    value_col: str,
+    value_title: str,
+    category_col: str | None = None,
+) -> list[alt.Tooltip]:
+    """Tooltip that surfaces the full feature name + human description."""
+    tips: list[alt.Tooltip] = [
+        alt.Tooltip(f"{feature_col}:N", title="Feature"),
+        alt.Tooltip("description:N", title="Description"),
+        alt.Tooltip(f"{value_col}:Q", title=value_title, format=".3f"),
+    ]
+    if category_col is not None and category_col in frame.columns:
+        tips.append(alt.Tooltip(f"{category_col}:N", title="Effect"))
+    return tips
+
+
 def _show(chart: alt.Chart | alt.LayerChart) -> None:
     st.altair_chart(styled(chart), width="stretch")
 
@@ -94,14 +127,24 @@ def bar_chart(
     if frame.empty:
         st.info(f"No data for {title.lower()}.")
         return
+    plot = frame
+    tip: list[str] | list[alt.Tooltip] = _tooltip(frame)
+    if y == "feature":
+        plot = _with_feature_descriptions(frame, "feature")
+        tip = _feature_axis_tooltip(
+            plot,
+            feature_col="feature",
+            value_col=x,
+            value_title=x_title or x.replace("_", " "),
+        )
     chart = (
         alt
-        .Chart(frame)
+        .Chart(plot)
         .mark_bar(cornerRadiusEnd=3, color=color)
         .encode(
             x=alt.X(f"{x}:Q", title=x_title or x.replace("_", " ")),
             y=alt.Y(f"{y}:N", sort="-x", title=None),
-            tooltip=_tooltip(frame),
+            tooltip=tip,
         )
         .properties(height=max(200, 26 * len(frame)), title=title)
     )
@@ -338,9 +381,20 @@ def diverging_bar_chart(
     if frame.empty:
         st.info(f"No data for {title.lower()}.")
         return
+    plot = frame
+    tip: list[str] | list[alt.Tooltip] = _tooltip(frame)
+    if feature == "feature":
+        plot = _with_feature_descriptions(frame, "feature")
+        tip = _feature_axis_tooltip(
+            plot,
+            feature_col="feature",
+            value_col=value,
+            value_title=x_title or value.replace("_", " "),
+            category_col=category,
+        )
     chart = (
         alt
-        .Chart(frame)
+        .Chart(plot)
         .mark_bar(cornerRadiusEnd=3)
         .encode(
             x=alt.X(f"{value}:Q", title=x_title or value.replace("_", " ")),
@@ -350,7 +404,7 @@ def diverging_bar_chart(
                 scale=alt.Scale(domain=color_domain, range=color_range),
                 legend=alt.Legend(title=None),
             ),
-            tooltip=_tooltip(frame),
+            tooltip=tip,
         )
         .properties(height=max(280, 28 * len(frame)), title=title)
     )
