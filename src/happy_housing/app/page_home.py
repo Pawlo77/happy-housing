@@ -9,7 +9,9 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
+from happy_housing.app.app_settings import load_app_settings, settings_path
 from happy_housing.app.charts import PRIMARY, bar_chart, histogram
+from happy_housing.app.commute_target import resolve_commute_target
 from happy_housing.app.data import (
     load_config,
     load_metadata,
@@ -21,10 +23,11 @@ from happy_housing.app.feature_labels import feature_catalog_frame
 from happy_housing.app.home_about import ABOUT_SECTIONS
 from happy_housing.app.home_hero import format_hero_stats
 from happy_housing.app.home_stats import counts_frame, market_summary
-from happy_housing.app.metadata import (
-    DEFAULT_METHODOLOGY,
-    DEFAULT_SOURCE_CATALOG,
-    METHODOLOGY_STEPS,
+from happy_housing.app.metadata import DEFAULT_SOURCE_CATALOG
+from happy_housing.app.methodology_docs import (
+    format_methodology_note,
+    methodology_steps,
+    model_tab_methodology_markdown,
 )
 from happy_housing.app.recommender import load_recommender_metrics
 from happy_housing.app.source_inventory import (
@@ -49,11 +52,124 @@ def _hero(refreshed: str | None, n_offers: int, r2: float | None) -> None:
 def _tab_about() -> None:
     """Business purpose of the tool in plain language."""
     st.caption(
-        "A short orientation before the charts — what the tool does and how to read it."
+        "What this tool is for — method details (pipeline, mermaid) live on "
+        "the Model tab."
     )
     for section in ABOUT_SECTIONS:
         st.subheader(section.title)
         st.markdown(section.body)
+
+
+def _tab_model(
+    meta_metrics: dict[str, float],
+    feature_columns: list[str],
+    *,
+    commute_label: str,
+    n_offers: int | None = None,
+    photo_cv_enabled: bool = False,
+    methodology_note: str | None = None,
+) -> None:
+    """Model performance cards + methodological write-up (mermaid)."""
+    if meta_metrics:
+        m1, m2, m3, m4 = st.columns(4)
+        with m1.container(border=True):
+            st.metric("MAE", f"{meta_metrics.get('mae', float('nan')):,.0f} zł/m²")
+        with m2.container(border=True):
+            st.metric("R²", f"{meta_metrics.get('r2', float('nan')):.3f}")
+        with m3.container(border=True):
+            st.metric(
+                "Train fold",
+                f"{int(meta_metrics.get('n_train', 0)):,}",
+                help=(
+                    "Otodom/fixture ask labels in the train split only. "
+                    "Final fit uses train+val "
+                    f"({int(meta_metrics.get('n_train_val', 0)):,}). "
+                    "RCN deeds are comps, not ask labels."
+                ),
+            )
+        with m4.container(border=True):
+            st.metric("Test hold-out", f"{int(meta_metrics.get('n_test', 0)):,}")
+        if meta_metrics.get("n_train_val") or meta_metrics.get("n_val"):
+            v1, v2, v3 = st.columns(3)
+            v1.metric("Val fold", f"{int(meta_metrics.get('n_val', 0)):,}")
+            v2.metric(
+                "Train+val (final fit)",
+                f"{int(meta_metrics.get('n_train_val', 0)):,}",
+            )
+            v3.metric(
+                "HPO trials",
+                f"{int(meta_metrics.get('hpo_trials', 0)):,}",
+            )
+    else:
+        st.info("No training metrics yet — run the pipeline from Admin.")
+
+    rec = load_recommender_metrics(processed_dir())
+    st.subheader("Preference recommender")
+    if rec:
+        r1, r2, r3, r4, r5 = st.columns(5)
+        r1.metric("Candidates", f"{int(rec.get('n_candidates', 0)):,}")
+        r2.metric("Recommended", f"{int(rec.get('n_recommended', 0)):,}")
+        r3.metric("Mean confidence", f"{rec.get('mean_confidence', float('nan')):.3f}")
+        r4.metric(
+            "Share unseen",
+            f"{100 * rec.get('share_unseen', float('nan')):.0f}%",
+        )
+        r5.metric(
+            "Prefs on",
+            "Yes" if rec.get("prefs_enabled", 0.0) >= 0.5 else "No",
+        )
+        st.caption(
+            "Rule-based preference-fit + bargain scorer with soft demotion for "
+            "already-seen offers (not the price LightGBM). "
+            "Configure on Explore → Prefs; retrain from Admin → Recommendations."
+        )
+    else:
+        st.info("No recommender metrics yet — open Explore → News or Admin → Retrain.")
+
+    st.subheader("How the fair price is built")
+    for idx, step in enumerate(methodology_steps(commute_label), start=1):
+        with st.container(border=True):
+            st.markdown(f"**{idx}.** {step}")
+
+    with st.expander("Methodology (diagrams + note)", expanded=True):
+        st.markdown(
+            model_tab_methodology_markdown(
+                commute_label=commute_label,
+                photo_cv_enabled=photo_cv_enabled,
+                n_offers=n_offers,
+                n_train=meta_metrics.get("n_train"),
+                n_train_val=meta_metrics.get("n_train_val"),
+                n_test=meta_metrics.get("n_test"),
+            )
+        )
+        if methodology_note:
+            st.caption("Run metadata note")
+            st.write(methodology_note)
+        else:
+            st.caption(format_methodology_note(commute_label))
+
+    if feature_columns:
+        st.subheader("Feature set")
+        st.caption("Model inputs — hover a row to read the full name and description.")
+        catalog = feature_catalog_frame(feature_columns)
+        st.dataframe(
+            catalog,
+            hide_index=True,
+            width="stretch",
+            height=min(420, 36 + 35 * min(len(catalog), 12)),
+            column_config={
+                "feature": st.column_config.TextColumn(
+                    "Feature",
+                    help="Technical column name used by the LightGBM model",
+                    width="medium",
+                ),
+                "description": st.column_config.TextColumn(
+                    "Description",
+                    help="What this input measures for the fair-price model",
+                    width="large",
+                ),
+            },
+        )
 
 
 def _kpi_strip(summary: dict[str, Any], duration_s: float | None) -> None:
@@ -150,76 +266,6 @@ def _tab_overview(
     # Offer board lives on Explore → Board (row opens Offer).
 
 
-def _tab_model(meta_metrics: dict[str, float], feature_columns: list[str]) -> None:
-    """Model performance cards + methodology steps."""
-    if meta_metrics:
-        m1, m2, m3, m4 = st.columns(4)
-        with m1.container(border=True):
-            st.metric("MAE", f"{meta_metrics.get('mae', float('nan')):,.0f} zł/m²")
-        with m2.container(border=True):
-            st.metric("R²", f"{meta_metrics.get('r2', float('nan')):.3f}")
-        with m3.container(border=True):
-            st.metric("Train rows", f"{int(meta_metrics.get('n_train', 0)):,}")
-        with m4.container(border=True):
-            st.metric("Test rows", f"{int(meta_metrics.get('n_test', 0)):,}")
-    else:
-        st.info("No training metrics yet — run the pipeline from Admin.")
-
-    rec = load_recommender_metrics(processed_dir())
-    st.subheader("Preference recommender")
-    if rec:
-        r1, r2, r3, r4, r5 = st.columns(5)
-        r1.metric("Candidates", f"{int(rec.get('n_candidates', 0)):,}")
-        r2.metric("Recommended", f"{int(rec.get('n_recommended', 0)):,}")
-        r3.metric("Mean confidence", f"{rec.get('mean_confidence', float('nan')):.3f}")
-        r4.metric(
-            "Share unseen",
-            f"{100 * rec.get('share_unseen', float('nan')):.0f}%",
-        )
-        r5.metric(
-            "Prefs on",
-            "Yes" if rec.get("prefs_enabled", 0.0) >= 0.5 else "No",
-        )
-        st.caption(
-            "Rule-based preference-fit + bargain scorer with soft demotion for "
-            "already-seen offers (not the price LightGBM). "
-            "Configure on Explore → Prefs; retrain from Admin → Recommendations."
-        )
-    else:
-        st.info("No recommender metrics yet — open Explore → News or Admin → Retrain.")
-
-    st.subheader("How the fair price is built")
-    for idx, step in enumerate(METHODOLOGY_STEPS, start=1):
-        with st.container(border=True):
-            st.markdown(f"**{idx}.** {step}")
-
-    with st.expander("Full methodology note", expanded=False):
-        st.write(DEFAULT_METHODOLOGY)
-
-    if feature_columns:
-        st.subheader("Feature set")
-        st.caption("Model inputs — hover a row to read the full name and description.")
-        catalog = feature_catalog_frame(feature_columns)
-        st.dataframe(
-            catalog,
-            hide_index=True,
-            width="stretch",
-            height=min(420, 36 + 35 * min(len(catalog), 12)),
-            column_config={
-                "feature": st.column_config.TextColumn(
-                    "Feature",
-                    help="Technical column name used by the LightGBM model",
-                    width="medium",
-                ),
-                "description": st.column_config.TextColumn(
-                    "Description",
-                    help="What this input measures for the fair-price model",
-                    width="large",
-                ),
-            },
-        )
-
-
 def _tab_sources(rows: list[SourceInventoryRow]) -> None:
     """Attributed sources with live fetch counts and timestamps."""
     st.caption(
@@ -282,7 +328,17 @@ def render_home() -> None:
         else:
             _tab_overview(frame, summary, duration)
     with model_tab:
-        _tab_model(metrics, features)
+        settings = load_app_settings(settings_path(processed_dir()))
+        config = load_config()
+        commute = resolve_commute_target(settings, config)
+        _tab_model(
+            metrics,
+            features,
+            commute_label=commute.label,
+            n_offers=int(summary.get("n_offers") or 0),
+            photo_cv_enabled=bool(getattr(settings, "photo_cv_enabled", False)),
+            methodology_note=(meta.methodology if meta else None),
+        )
     with sources_tab:
         config = load_config()
         inventory = build_source_inventory(

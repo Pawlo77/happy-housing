@@ -31,15 +31,22 @@ from happy_housing.app.chat_tools import (
     web_search_area,
 )
 from happy_housing.app.llm_metrics import PURPOSE_CHAT, record_timed_llm_call
+from happy_housing.app.methodology_docs import (
+    chat_methodology_blurb,
+    model_tab_methodology_markdown,
+)
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_CHAT_SYSTEM_PROMPT = (
     "You are the happy-housing Assistant for Warsaw flats. "
     "Use tools to look up scored listings, preferences, recommendations, "
-    "stars, cached reviews, and web opinions. "
+    "stars, cached reviews, web opinions, and methodology. "
     "Be concrete with zł/m², commute, and deltas from tool results — "
     "never invent listing ids or prices. "
+    "Price model: LightGBM on Otodom/fixture ask labels (RCN = comps only). "
+    "Recommender: separate rule blend (bargain/commute/transit/overprice). "
+    "For diagrams tell the user to open Home → Model. "
     "When the user wants to open an offer, call open_offer. "
     "Prefer Explore preferences as the buyer's source of truth. "
     "Keep answers concise and buyer-facing."
@@ -188,6 +195,14 @@ def build_chat_tools(ctx: ChatToolContext) -> list[lms.ToolFunctionDef]:
             default=str,
         )
 
+    def _get_methodology() -> str:
+        label = getattr(ctx.settings, "commute_target_label", None) or ""
+        photo = bool(getattr(ctx.settings, "photo_cv_enabled", False))
+        return model_tab_methodology_markdown(
+            commute_label=label or None,
+            photo_cv_enabled=photo,
+        )
+
     return [
         lms.ToolFunctionDef(
             name="get_active_offer",
@@ -282,6 +297,15 @@ def build_chat_tools(ctx: ChatToolContext) -> list[lms.ToolFunctionDef]:
             },
             implementation=_web_search_area,
         ),
+        lms.ToolFunctionDef(
+            name="get_methodology",
+            description=(
+                "Return price-model + recommender methodology markdown "
+                "(incl. mermaid). Use when the user asks how scoring works."
+            ),
+            parameters={},
+            implementation=_get_methodology,
+        ),
     ]
 
 
@@ -307,6 +331,7 @@ def run_chat_turn(
     append_message(path, conversation_id, role="user", content=text)
 
     system = (settings.chat_system_prompt or "").strip() or DEFAULT_CHAT_SYSTEM_PROMPT
+    system = f"{system}\n\n{chat_methodology_blurb(settings.commute_target_label)}"
     prior = get_lms_history(path, conversation_id)
     if prior and isinstance(prior.get("messages"), list) and prior["messages"]:
         chat = lms.Chat.from_history(cast(ChatHistoryDataDict, prior))

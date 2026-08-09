@@ -183,7 +183,7 @@ DEFAULT_SOURCES: list[str] = [src.name for src in DEFAULT_SOURCE_CATALOG]
 DEFAULT_METHODOLOGY: str = (
     "LightGBM regresses asking/transaction zł/m² from property traits "
     "(area, rooms, year) and livability distances (hospital, fire, police, "
-    "transit, air station, GUNB permits, commute to Rondo Daszyńskiego) plus "
+    "transit, air station, GUNB permits, commute to the Admin commute target) plus "
     "an aircraft Lden/Lnight feature from EEA END contours, nearest-station "
     "GIOŚ air quality (AQI + PM10/PM2.5/NO2, not distance alone), and "
     "district police crime rates (per 1,000 residents + detectability). SHAP "
@@ -191,7 +191,7 @@ DEFAULT_METHODOLOGY: str = (
     "explains each offer. "
     "Commute minutes use local OSRM when available, else a 30 km/h distance proxy."
 )
-"""Short modeling methodology blurb."""
+"""Short modeling methodology blurb (prefer ``format_methodology_note``)."""
 
 METHODOLOGY_STEPS: tuple[str, ...] = (
     "Ingest Otodom asks and UM Warszawa RCN transactions into one universe.",

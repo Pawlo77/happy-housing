@@ -273,8 +273,8 @@ PREF_HELP: dict[str, str] = {
     "max_rooms": "Maximum rooms — cap oversized layouts if desired.",
     "min_year": "Minimum year built — fabric / energy / comfort proxy.",
     "max_commute": (
-        "Max modelled commute minutes to Daszyńskiego. Shorter = better "
-        "job access and usually stronger price support."
+        "Max modelled commute minutes to the Admin commute target. "
+        "Shorter = better job access and usually stronger price support."
     ),
     "max_transit": (
         "Max metres to nearest GTFS stop. Closer transit = better daily "
@@ -351,7 +351,7 @@ SPATIAL_METRIC_HELP: dict[str, str] = {
     ),
     "commute": (
         "Continuous commute-ease field with listing pins. Shorter modelled "
-        "trips to Daszyńskiego score warmer — a major price driver."
+        "trips to the Admin commute target score warmer — a major price driver."
     ),
     "bargain": (
         "Model surface = underpriced residual (listing - model). Historical "

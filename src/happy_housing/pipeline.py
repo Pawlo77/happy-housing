@@ -24,11 +24,11 @@ from happy_housing.app.commute_target import (
 from happy_housing.app.listing_attrs import promote_listing_flags
 from happy_housing.app.llm_metrics import llm_metrics_path
 from happy_housing.app.metadata import (
-    DEFAULT_METHODOLOGY,
     DEFAULT_SOURCES,
     RunMetadata,
     write_run_metadata,
 )
+from happy_housing.app.methodology_docs import format_methodology_note
 from happy_housing.app.pipeline_ingest import (
     resolve_ingest_flags,
     resolve_ingest_limits,
@@ -70,6 +70,7 @@ from happy_housing.ingest.crime import (
     download_panorama_crime,
     load_crime_by_district,
 )
+from happy_housing.ingest.fx import apply_fx_to_listings_frame, fx_cache_path
 from happy_housing.ingest.gios_aq import (
     AIR_QUALITY_COLUMNS,
     enrich_stations_with_air_quality,
@@ -227,11 +228,19 @@ def run_pipeline(
         except Exception as exc:
             logger.warning("Otodom scrape failed: %s", exc)
             if otodom_parquet.exists():
-                otodom = pd.read_parquet(otodom_parquet)
+                otodom = apply_fx_to_listings_frame(
+                    pd.read_parquet(otodom_parquet),
+                    fx_cache_path(processed),
+                )
+                otodom.to_parquet(otodom_parquet, index=False)
                 otodom["source"] = "otodom"
                 listings_parts.append(otodom)
     elif otodom_parquet.exists():
-        otodom = pd.read_parquet(otodom_parquet)
+        otodom = apply_fx_to_listings_frame(
+            pd.read_parquet(otodom_parquet),
+            fx_cache_path(processed),
+        )
+        otodom.to_parquet(otodom_parquet, index=False)
         otodom["source"] = "otodom"
         listings_parts.append(otodom)
 
@@ -485,6 +494,16 @@ def run_pipeline(
             dest_lat=commute.lat,
             otp_url=config.routing.otp_url,
         )
+    if "transit_commute_min" not in train_frame.columns:
+        train_frame["transit_commute_min"] = float("nan")
+    if app_settings.photo_cv_enabled:
+        from happy_housing.vision.photo_features import attach_photo_features
+
+        train_frame = attach_photo_features(
+            train_frame,
+            max_photos=int(app_settings.photo_cv_max_photos),
+            model_id=str(app_settings.photo_cv_model_id),
+        )
 
     enriched_path = processed / "listings_enriched.parquet"
 
@@ -516,6 +535,8 @@ def run_pipeline(
         use_neighborhood=bool(app_settings.model_use_neighborhood),
         random_state=int(config.model.random_state),
         train_otodom_labels_only=bool(app_settings.train_otodom_labels_only),
+        log_target=bool(app_settings.model_log_target),
+        district_calibration=bool(app_settings.model_district_calibration),
     )
     model_path = processed / "lightgbm_price_per_m2.txt"
     result = run_training_with_mlflow(
@@ -539,6 +560,8 @@ def run_pipeline(
             result.model,
             train_frame,
             use_neighborhood=bool(app_settings.model_use_neighborhood),
+            log_target=result.log_target,
+            district_offsets=result.district_offsets,
         )
     train_frame["delta_price_per_m2"] = (
         train_frame["price_per_m2"] - train_frame["model_price_per_m2"]
@@ -570,7 +593,7 @@ def run_pipeline(
             model_path=str(model_path),
             feature_columns=list(result.feature_names),
             sources=list(DEFAULT_SOURCES),
-            methodology=DEFAULT_METHODOLOGY,
+            methodology=format_methodology_note(commute.label),
         ),
     )
 

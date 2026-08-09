@@ -70,7 +70,7 @@ SPATIAL_METRICS: tuple[SpatialMetric, ...] = (
     SpatialMetric(
         key="commute",
         label="Commute ease",
-        blurb="Shorter trips to Daszyńskiego score higher.",
+        blurb="Shorter trips to the Admin commute target score higher.",
         value_title="Mean commute ease",
     ),
     SpatialMetric(

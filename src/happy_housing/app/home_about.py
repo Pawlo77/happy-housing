@@ -50,7 +50,9 @@ ABOUT_SECTIONS: tuple[AboutSection, ...] = (
             "set. Sale prices from Warsaw's Rejestr Cen (RCN) sit beside "
             "listing asks so you can see ask versus what sold nearby.\n\n"
             "A separate preference score can rank offers against your starred "
-            "likes — that is not the price model; it is a fit helper."
+            "likes — that is not the price model; it is a fit helper.\n\n"
+            "For train folds, label universe, and diagrams, open the **Model** "
+            "tab on this page."
         ),
     ),
     AboutSection(

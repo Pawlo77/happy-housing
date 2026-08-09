@@ -81,7 +81,7 @@ class UserPreferences:
     min_year_built: int | None = None
     """Oldest acceptable build year."""
     max_commute_min: float | None = None
-    """Max minutes to Daszyńskiego."""
+    """Max minutes to Admin commute target."""
     max_dist_transit_m: float | None = None
     """Max metres to nearest transit stop."""
     max_dist_hospital_m: float | None = None

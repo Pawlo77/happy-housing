@@ -70,6 +70,12 @@ from happy_housing.app.recommender import (
 )
 from happy_housing.app.star_news import clear_star_news_memory, load_news, news_path
 from happy_housing.app.stars import clear_stars, load_stars, stars_path
+from happy_housing.ingest.fx import (
+    clear_fx_cache,
+    fx_cache_path,
+    fx_cache_summary,
+    get_pln_rate,
+)
 from happy_housing.logging_config import configure_logging
 from happy_housing.models.metrics import (
     OPT_METRICS,
@@ -516,7 +522,6 @@ def _panel_run(settings: AppSettings, settings_file: Path, proc: Path) -> None:
 
 def _panel_sources(settings: AppSettings, settings_file: Path, proc: Path) -> None:
     """Ingest caps, URLs, OSM flags — save overrides only."""
-    del proc
     config = load_config()
     limits = resolve_ingest_limits(settings, config)
     urls = resolve_ingest_urls(settings, config)
@@ -563,6 +568,26 @@ def _panel_sources(settings: AppSettings, settings_file: Path, proc: Path) -> No
         ),
         key="pipe_otodom_incremental",
     )
+
+    st.subheader("FX (NBP → PLN)")
+    st.caption(
+        "Non-PLN Otodom asks convert via NBP table A mid rates before "
+        "filters/model. Original currency kept for display."
+    )
+    cache = fx_cache_path(proc)
+    st.write(fx_cache_summary(cache))
+    fx_cols = st.columns(2)
+    with fx_cols[0]:
+        if st.button("Refresh EUR rate", key="fx_refresh_eur"):
+            try:
+                rate, effective = get_pln_rate("EUR", cache, force_refresh=True)
+                st.success(f"EUR→PLN {rate} (effective {effective})")
+            except Exception as exc:
+                st.error(f"NBP fetch failed: {exc}")
+    with fx_cols[1]:
+        if st.button("Clear FX cache", key="fx_clear_cache"):
+            clear_fx_cache(cache)
+            st.info("FX cache cleared.")
 
     st.subheader("RCN")
     download_rcn = st.checkbox(
@@ -788,10 +813,32 @@ def _panel_model(settings: AppSettings, settings_file: Path, proc: Path) -> None
     trials = st.number_input(
         "HPO trials",
         min_value=1,
-        max_value=64,
+        max_value=80,
         value=int(settings.model_hpo_trials),
         help="1 = use YAML defaults only (no search).",
         key="settings_model_hpo_trials",
+    )
+    log_target = st.checkbox(
+        "Log-target training (log1p zł/m²)",
+        value=bool(settings.model_log_target),
+        key="settings_model_log_target",
+    )
+    district_cal = st.checkbox(
+        "District residual calibration",
+        value=bool(settings.model_district_calibration),
+        key="settings_model_district_cal",
+    )
+    photo_cv = st.checkbox(
+        "Photo CV features (pretrained CLIP / heuristic)",
+        value=bool(settings.photo_cv_enabled),
+        key="settings_photo_cv_enabled",
+    )
+    photo_max = st.number_input(
+        "Max photos per listing (CV)",
+        min_value=1,
+        max_value=32,
+        value=int(settings.photo_cv_max_photos),
+        key="settings_photo_cv_max",
     )
     train_asks_only = st.checkbox(
         "Train on Otodom/fixture asks only (RCN = comps, not labels)",
@@ -827,6 +874,10 @@ def _panel_model(settings: AppSettings, settings_file: Path, proc: Path) -> None
         settings.model_use_neighborhood = bool(use_nbhd)
         settings.model_nbhd_radius_m = float(radius)
         settings.train_otodom_labels_only = bool(train_asks_only)
+        settings.model_log_target = bool(log_target)
+        settings.model_district_calibration = bool(district_cal)
+        settings.photo_cv_enabled = bool(photo_cv)
+        settings.photo_cv_max_photos = int(photo_max)
         save_app_settings(settings_file, settings)
         st.success(
             f"Model settings saved · optimize {settings.model_opt_metric} "
@@ -868,6 +919,44 @@ def _panel_recommender(settings: AppSettings, settings_file: Path, proc: Path) -
         step=0.1,
         key="settings_rec_alpha",
         help="Higher → already-seen offers rank lower (soft, not excluded).",
+    )
+    w1, w2, w3, w4 = st.columns(4)
+    w_bargain = w1.number_input(
+        "w bargain",
+        min_value=0.0,
+        max_value=2.0,
+        value=float(settings.recommender_w_bargain),
+        step=0.05,
+        key="settings_rec_w_bargain",
+    )
+    w_commute = w2.number_input(
+        "w commute",
+        min_value=0.0,
+        max_value=2.0,
+        value=float(settings.recommender_w_commute),
+        step=0.05,
+        key="settings_rec_w_commute",
+    )
+    w_transit = w3.number_input(
+        "w transit",
+        min_value=0.0,
+        max_value=2.0,
+        value=float(settings.recommender_w_transit),
+        step=0.05,
+        key="settings_rec_w_transit",
+    )
+    w_overprice = w4.number_input(
+        "w overprice",
+        min_value=0.0,
+        max_value=2.0,
+        value=float(settings.recommender_w_overprice),
+        step=0.05,
+        key="settings_rec_w_overprice",
+    )
+    otodom_pool = st.checkbox(
+        "Default pool = Otodom/fixture only (when prefs sources empty)",
+        value=bool(settings.recommender_otodom_pool_default),
+        key="settings_rec_otodom_pool",
     )
     st.markdown("#### Amenity polarity & weight")
     st.caption(
@@ -915,6 +1004,11 @@ def _panel_recommender(settings: AppSettings, settings_file: Path, proc: Path) -
             settings.recommender_top_n = int(top_n)
             settings.recommender_demotion_alpha = float(alpha)
             settings.recommender_amenity_weights = new_weights
+            settings.recommender_w_bargain = float(w_bargain)
+            settings.recommender_w_commute = float(w_commute)
+            settings.recommender_w_transit = float(w_transit)
+            settings.recommender_w_overprice = float(w_overprice)
+            settings.recommender_otodom_pool_default = bool(otodom_pool)
             save_app_settings(settings_file, settings)
             st.success("Recommender settings saved.")
     with r2:
@@ -922,6 +1016,11 @@ def _panel_recommender(settings: AppSettings, settings_file: Path, proc: Path) -
             settings.recommender_top_n = int(top_n)
             settings.recommender_demotion_alpha = float(alpha)
             settings.recommender_amenity_weights = new_weights
+            settings.recommender_w_bargain = float(w_bargain)
+            settings.recommender_w_commute = float(w_commute)
+            settings.recommender_w_transit = float(w_transit)
+            settings.recommender_w_overprice = float(w_overprice)
+            settings.recommender_otodom_pool_default = bool(otodom_pool)
             save_app_settings(settings_file, settings)
             try:
                 frame = load_scored()
@@ -937,6 +1036,11 @@ def _panel_recommender(settings: AppSettings, settings_file: Path, proc: Path) -
                         demotion_alpha=float(alpha),
                         prefs=prefs,
                         amenity_weights=new_weights,
+                        w_bargain=float(w_bargain),
+                        w_commute=float(w_commute),
+                        w_transit=float(w_transit),
+                        w_overprice=float(w_overprice),
+                        otodom_pool_default=bool(otodom_pool),
                     )
                 st.success(
                     f"Retrained · {int(out['n_recommended'])} of "
@@ -1509,7 +1613,7 @@ def panel_for_section(section: str) -> PanelFn:
 def render_admin() -> None:
     """Render Admin with left section nav (one short panel at a time)."""
     logger.info("Rendering Admin")
-    st.caption("Pick a section — one panel at a time. No raw settings dump.")
+    st.caption("Pick a section — one panel at a time.")
 
     proc = processed_dir()
     settings_file = settings_path(proc)

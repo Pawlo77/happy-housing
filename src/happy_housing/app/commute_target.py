@@ -24,7 +24,7 @@ from happy_housing.gis.routing import (
     attach_commute_minutes,
     attach_transit_commute_minutes,
 )
-from happy_housing.models.train import build_feature_matrix, model_feature_columns
+from happy_housing.models.train import load_model_meta, predict_price_per_m2
 from happy_housing.storage import write_geoparquet
 
 logger = logging.getLogger(__name__)
@@ -204,9 +204,13 @@ def recompute_commute_features(
     model_path = processed / "lightgbm_price_per_m2.txt"
     if model_path.exists():
         booster = lgb.Booster(model_file=str(model_path))
-        cols = model_feature_columns(booster)
-        features = build_feature_matrix(work, cols)
-        work["model_price_per_m2"] = booster.predict(features)
+        meta = load_model_meta(model_path)
+        work["model_price_per_m2"] = predict_price_per_m2(
+            booster,
+            work,
+            log_target=bool(meta.get("log_target", True)),
+            district_offsets=meta.get("district_offsets") or {},
+        )
         work["delta_price_per_m2"] = (
             pd.to_numeric(work["price_per_m2"], errors="coerce")
             - work["model_price_per_m2"]

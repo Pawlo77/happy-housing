@@ -131,7 +131,7 @@ class LayerFlags:
     airport: bool = True
     """Aerodrome / airport footprints (violet; not Lden noise)."""
     commute_target: bool = False
-    """Rondo Daszyńskiego commute target."""
+    """Admin-configured commute destination pin."""
 
 
 def explore_datasets_needed(
