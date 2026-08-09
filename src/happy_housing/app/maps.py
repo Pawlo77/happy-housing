@@ -381,59 +381,6 @@ def airport_areas_layer(frame: gpd.GeoDataFrame | None) -> pdk.Layer | None:
     )
 
 
-def aircraft_noise_layers(
-    lden: gpd.GeoDataFrame | None,
-) -> list[pdk.Layer]:
-    """Colored END Lden contour bands (darker = louder)."""
-    if lden is None or lden.empty or "lden_db" not in lden.columns:
-        return []
-    # Nested bands: draw quieter first so louder sits on top.
-    work = lden.copy()
-    work["lden_db"] = pd.to_numeric(work["lden_db"], errors="coerce")
-    work = work.dropna(subset=["lden_db"]).sort_values("lden_db")
-    records: list[dict[str, Any]] = []
-    for _, row in work.iterrows():
-        geom = row.geometry
-        if geom is None or geom.is_empty:
-            continue
-        db = float(row["lden_db"])
-        # Map 45→soft amber … 75→deep red.
-        t = min(1.0, max(0.0, (db - 45.0) / 30.0))
-        fill = [
-            int(220 - 40 * t),
-            int(160 - 120 * t),
-            int(40 - 20 * t),
-            int(40 + 50 * t),
-        ]
-        line = [int(180 - 40 * t), int(80 - 40 * t), 20, 200]
-        polys = [geom] if geom.geom_type == "Polygon" else list(geom.geoms)
-        for poly in polys:
-            if poly.geom_type != "Polygon":
-                continue
-            coords = [[float(x), float(y)] for x, y in poly.exterior.coords]
-            records.append({
-                "coordinates": [coords],
-                "fill_color": fill,
-                "line_color": line,
-                "tooltip_name": f"Aircraft Lden ≥ {db:.0f} dB",
-                "tooltip_detail": "EEA END major-airport contour (not live dB)",
-            })
-    if not records:
-        return []
-    return [
-        pdk.Layer(
-            "PolygonLayer",
-            data=records,
-            get_polygon="coordinates",
-            get_fill_color="fill_color",
-            get_line_color="line_color",
-            line_width_min_pixels=1,
-            pickable=True,
-            id="aircraft_lden",
-        )
-    ]
-
-
 def shops_layer(shops: pd.DataFrame) -> pdk.Layer | None:
     """Retail / supermarket points (square markers)."""
     prepared = prepare_shops_for_map(shops)
@@ -941,7 +888,6 @@ def build_explore_layers(
     *,
     listings: pd.DataFrame,
     flags: LayerFlags,
-    oou: gpd.GeoDataFrame | None,
     amenities: gpd.GeoDataFrame,
     shops: pd.DataFrame,
     stops: pd.DataFrame,
@@ -983,8 +929,6 @@ def build_explore_layers(
         aq = air_quality_bitmap_layer(aq_overlay)
         if aq is not None:
             layers.append(aq)
-    if flags.oou:
-        layers.extend(aircraft_noise_layers(oou))
     if flags.parks:
         park_layer = parks_layer(parks)
         if park_layer is not None:

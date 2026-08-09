@@ -16,12 +16,6 @@ LAYER_HELP: dict[str, str] = {
         "Hover pins for details; click a pin, then Open in Offer. "
         "Valuation only — does not change living-condition overlays."
     ),
-    "oou": (
-        "Legacy EEA END Chopin aircraft Lden contour polygons. Prefer the "
-        "UM 2022 Strategic noise overlay (continuous GetMap raster) for "
-        "city-wide coverage; model uses aircraft_lden_db / in_oou from UM "
-        "WMS when cached."
-    ),
     "noise_overlay": (
         "UM Warszawa 2022 strategic noise GetMap as a continuous city-wide "
         "raster overlay (same bands as mapa.um.warszawa.pl): total energy-sum "

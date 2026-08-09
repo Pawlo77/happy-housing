@@ -45,8 +45,6 @@ class LayerFlags:
 
     offers: bool = True
     """Scored listing pins."""
-    oou: bool = False
-    """Legacy Chopin aircraft Lden contour polygons (EEA END fixture)."""
     noise_overlay: str = "off"
     """UM WMS noise overlay key (``off`` / ``total_lden`` / ``road_lden`` / …)."""
     aq_overlay: str = "off"
@@ -123,8 +121,6 @@ def explore_datasets_needed(
     # Spatial always draws zone context + traffic heat for metrics.
     if name == "Spatial":
         needed.update({"city_boundary", "military", "rail_areas", "airport", "traffic"})
-    if flags.oou:
-        needed.add("oou")
     if flags.noise_overlay and flags.noise_overlay != "off":
         needed.add("warsaw_noise")
     if flags.aq_overlay and flags.aq_overlay != "off":

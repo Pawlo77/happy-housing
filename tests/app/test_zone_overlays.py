@@ -87,7 +87,6 @@ def test_zone_polygon_layer_and_explore_defaults() -> None:
     layers = build_explore_layers(
         listings=__import__("pandas").DataFrame(),
         flags=LayerFlags(city_boundary=True),
-        oou=None,
         amenities=__import__("geopandas").GeoDataFrame(geometry=[], crs="EPSG:4326"),
         shops=__import__("pandas").DataFrame(),
         stops=__import__("pandas").DataFrame(),

@@ -208,22 +208,6 @@ def load_airport_areas() -> gpd.GeoDataFrame:
     return _load_zone_fixture("airport_areas.geojson")
 
 
-def load_aircraft_lden() -> gpd.GeoDataFrame | None:
-    """Load Chopin aircraft Lden contour bands when present."""
-    path = load_config().data.fixtures_path() / "chopin_aircraft_lden.geojson"
-    if not path.exists():
-        return None
-    return read_geojson_gdf(str(path), path.stat().st_mtime)
-
-
-def load_aircraft_lnight() -> gpd.GeoDataFrame | None:
-    """Load Chopin aircraft Lnight contour bands when present."""
-    path = load_config().data.fixtures_path() / "chopin_aircraft_lnight.geojson"
-    if not path.exists():
-        return None
-    return read_geojson_gdf(str(path), path.stat().st_mtime)
-
-
 @st.cache_data(show_spinner=False)  # type: ignore[misc]
 def _load_warsaw_noise_overlay(
     cache_root: str, mtime: float, overlay_key: str

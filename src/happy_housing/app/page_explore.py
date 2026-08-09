@@ -41,7 +41,6 @@ from happy_housing.app.charts import (
 from happy_housing.app.chat_ui import render_assistant_popover, render_assistant_tab
 from happy_housing.app.commute_target import resolve_commute_target
 from happy_housing.app.data import (
-    load_aircraft_lden,
     load_airport_areas,
     load_amenities,
     load_bike_paths,
@@ -384,12 +383,6 @@ def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
             help=layer_help("offers"),
             key="explore_ly_offers",
         ),
-        oou=st.checkbox(
-            "Aircraft Lden contours (legacy)",
-            value=False,
-            help=layer_help("oou"),
-            key="explore_ly_oou",
-        ),
         city_boundary=st.checkbox(
             "City boundary",
             value=False,
@@ -682,7 +675,6 @@ def _render_explore_address_search() -> MapAddressFocus | None:
 def _tab_map(
     filtered: pd.DataFrame,
     *,
-    oou: gpd.GeoDataFrame | None,
     amenities: gpd.GeoDataFrame,
     shops: pd.DataFrame,
     stops: pd.DataFrame,
@@ -714,7 +706,6 @@ def _tab_map(
     layers = build_explore_layers(
         listings=filtered,
         flags=flags,
-        oou=oou,
         amenities=amenities,
         shops=shops,
         stops=stops,
@@ -1110,7 +1101,6 @@ def _tab_offer(
     lm_model: str,
     ai_review_on_open: bool,
     app_settings: AppSettings,
-    oou: gpd.GeoDataFrame | None,
     amenities: gpd.GeoDataFrame,
     shops: pd.DataFrame,
     stops: pd.DataFrame,
@@ -1231,7 +1221,6 @@ def _tab_offer(
             layers = build_explore_layers(
                 listings=filtered,
                 flags=flags,
-                oou=oou,
                 amenities=amenities,
                 shops=shops,
                 stops=stops,
@@ -1926,7 +1915,6 @@ def render_explore() -> None:
 
     empty_gdf = gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
     empty_df = pd.DataFrame()
-    oou = load_aircraft_lden() if "oou" in needed else None
     amenities = load_amenities() if "amenities" in needed else empty_gdf
     shops = load_shops() if "shops" in needed else empty_df
     stops = load_gtfs_stops() if "stops" in needed else empty_df
@@ -1959,7 +1947,6 @@ def render_explore() -> None:
         settings=app_settings,
     )
     map_kwargs = {
-        "oou": oou,
         "amenities": amenities,
         "shops": shops,
         "stops": stops,

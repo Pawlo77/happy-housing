@@ -27,7 +27,6 @@ def test_explore_datasets_needed_includes_bike_paths() -> None:
         military=False,
         rail_areas=False,
         airport=False,
-        oou=False,
         noise_overlay="off",
     )
     needed = explore_datasets_needed(section="Map", flags=flags)
@@ -41,7 +40,6 @@ def test_explore_datasets_needed_includes_warsaw_noise() -> None:
         military=False,
         rail_areas=False,
         airport=False,
-        oou=False,
     )
     needed = explore_datasets_needed(section="Map", flags=flags)
     assert "warsaw_noise" in needed
@@ -55,7 +53,6 @@ def test_explore_datasets_needed_includes_gas_and_charging() -> None:
         military=False,
         rail_areas=False,
         airport=False,
-        oou=False,
         noise_overlay="off",
     )
     needed = explore_datasets_needed(section="Map", flags=flags)
@@ -69,7 +66,6 @@ def test_explore_datasets_needed_includes_gios_aq() -> None:
         military=False,
         rail_areas=False,
         airport=False,
-        oou=False,
         noise_overlay="off",
     )
     needed = explore_datasets_needed(section="Map", flags=flags)
@@ -78,7 +74,6 @@ def test_explore_datasets_needed_includes_gios_aq() -> None:
 
 def test_explore_datasets_needed_includes_defaults_for_map() -> None:
     flags = LayerFlags(
-        oou=True,
         noise_overlay="total_lden",
         city_boundary=True,
         military=True,
@@ -87,7 +82,7 @@ def test_explore_datasets_needed_includes_defaults_for_map() -> None:
         city_poi_types=("gym", "indoor_pool"),
     )
     needed = explore_datasets_needed(section="Map", flags=flags)
-    assert "oou" in needed
+    assert "oou" not in needed
     assert "warsaw_noise" in needed
     assert "city_boundary" in needed
     assert "military" in needed
