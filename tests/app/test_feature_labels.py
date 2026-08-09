@@ -31,6 +31,20 @@ def test_feature_description_expands_lden_and_lnight() -> None:
     assert "day-evening-night" in high.casefold()
 
 
+def test_feature_description_expands_rcn() -> None:
+    """Neighborhood comps spell out Rejestr Cen, not bare RCN."""
+    for key in (
+        "nbhd_rcn_median_ppm",
+        "nbhd_rcn_mean_ppm",
+        "nbhd_rcn_idw_ppm",
+        "nbhd_rcn_n",
+        "nbhd_rcn_nearest_m",
+    ):
+        text = feature_description(key)
+        assert "rcn" not in text.casefold()
+        assert "rejestr cen" in text.casefold()
+
+
 def test_feature_description_falls_back_for_unknown() -> None:
     assert feature_description("weird_new_signal") == "weird new signal"
     assert feature_description("") == ""
