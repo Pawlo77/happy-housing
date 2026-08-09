@@ -162,7 +162,7 @@ from happy_housing.app.ui_help import (
 from happy_housing.gis.amenity_catalog import (
     AMENITY_TYPES,
     DEFAULT_MAP_OBJECT_TYPES,
-    city_map_object_keys,
+    city_map_objects_by_group,
     coerce_amenity_weights,
 )
 from happy_housing.gis.gios_aq_field import AQ_MAP_OVERLAYS, AqMapOverlay
@@ -312,6 +312,30 @@ def _sidebar_filters(frame: pd.DataFrame) -> tuple[FilterState, bool]:
     )
 
 
+def _sidebar_map_poi_multiselect(
+    title: str,
+    keys: tuple[str, ...],
+    *,
+    help_text: str,
+    widget_key: str,
+) -> tuple[str, ...]:
+    """Multiselect for city POIs without group prefixes on labels."""
+    label_by_key = {t.key: t.label for t in AMENITY_TYPES if t.key in set(keys)}
+    default_keys = [k for k in DEFAULT_MAP_OBJECT_TYPES if k in label_by_key]
+    options = [label_by_key[k] for k in keys if k in label_by_key]
+    selected_labels = st.multiselect(
+        title,
+        options=options,
+        default=[label_by_key[k] for k in default_keys],
+        help=help_text,
+        key=widget_key,
+    )
+    label_to_key = {v: k for k, v in label_by_key.items()}
+    return tuple(
+        label_to_key[label] for label in selected_labels if label in label_to_key
+    )
+
+
 def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
     """Map basemap, hour-of-day, and per-layer toggles; call inside Map layers tab."""
     basemap = (
@@ -324,6 +348,28 @@ def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
         )
         or "Streets"
     )
+
+    st.markdown("##### Listings & context")
+    offers = st.checkbox(
+        "Offers (Δ price)",
+        value=True,
+        help=layer_help("offers"),
+        key="explore_ly_offers",
+    )
+    city_boundary = st.checkbox(
+        "City boundary",
+        value=False,
+        help=layer_help("city_boundary"),
+        key="explore_ly_city_boundary",
+    )
+    commute_target = st.checkbox(
+        "Commute target",
+        value=False,
+        help=layer_help("commute_target"),
+        key="explore_ly_commute",
+    )
+
+    st.markdown("##### Transport")
     hour = int(
         st.slider(
             "Time of day (transit & traffic)",
@@ -345,7 +391,6 @@ def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
         help=layer_help("transit_network"),
         key="explore_ly_transit_network",
     )
-    # Mode filters only render when the network master is on (avoids silent no-ops).
     if transit_network:
         transit_show_metro = st.checkbox(
             "  Metro lines",
@@ -376,36 +421,6 @@ def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
         transit_show_tram = False
         transit_show_bus = False
         transit_show_rail = False
-    offers = st.checkbox(
-        "Offers (Δ price)",
-        value=True,
-        help=layer_help("offers"),
-        key="explore_ly_offers",
-    )
-    city_boundary = st.checkbox(
-        "City boundary",
-        value=False,
-        help=layer_help("city_boundary"),
-        key="explore_ly_city_boundary",
-    )
-    military = st.checkbox(
-        "Military areas",
-        value=True,
-        help=layer_help("military"),
-        key="explore_ly_military",
-    )
-    rail_areas = st.checkbox(
-        "Rail land / yards",
-        value=True,
-        help=layer_help("rail_areas"),
-        key="explore_ly_rail_areas",
-    )
-    airport = st.checkbox(
-        "Airport footprints",
-        value=True,
-        help=layer_help("airport"),
-        key="explore_ly_airport",
-    )
     transit_intensity = st.checkbox(
         "Transit intensity (hourly)",
         value=False,
@@ -424,6 +439,20 @@ def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
         help=layer_help("bike_paths"),
         key="explore_ly_bike_paths",
     )
+    charging_stations = st.checkbox(
+        "EV charging",
+        value=False,
+        help=layer_help("charging_stations"),
+        key="explore_ly_charging",
+    )
+    gas_stations = st.checkbox(
+        "Gas stations",
+        value=False,
+        help=layer_help("gas_stations"),
+        key="explore_ly_gas",
+    )
+
+    st.markdown("##### Shopping")
     shops_on = st.checkbox(
         "Shops",
         value=False,
@@ -474,6 +503,8 @@ def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
         shop_show_home = False
         shop_show_mobility = False
         shop_show_other = False
+
+    st.markdown("##### Public services")
     hospitals = st.checkbox(
         "Hospitals",
         value=False,
@@ -492,17 +523,31 @@ def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
         help=layer_help("police"),
         key="explore_ly_police",
     )
-    charging_stations = st.checkbox(
-        "EV charging",
-        value=False,
-        help=layer_help("charging_stations"),
-        key="explore_ly_charging",
+
+    st.markdown("##### Environment")
+    military = st.checkbox(
+        "Military areas",
+        value=True,
+        help=layer_help("military"),
+        key="explore_ly_military",
     )
-    gas_stations = st.checkbox(
-        "Gas stations",
+    rail_areas = st.checkbox(
+        "Rail land / yards",
+        value=True,
+        help=layer_help("rail_areas"),
+        key="explore_ly_rail_areas",
+    )
+    airport = st.checkbox(
+        "Airport footprints",
+        value=True,
+        help=layer_help("airport"),
+        key="explore_ly_airport",
+    )
+    parks = st.checkbox(
+        "Parks & squares (UM)",
         value=False,
-        help=layer_help("gas_stations"),
-        key="explore_ly_gas",
+        help=layer_help("parks"),
+        key="explore_ly_parks",
     )
     air = st.checkbox(
         "Air-quality stations",
@@ -516,18 +561,57 @@ def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
         help=layer_help("gunb"),
         key="explore_ly_gunb",
     )
-    parks = st.checkbox(
-        "Parks & squares (UM)",
-        value=False,
-        help=layer_help("parks"),
-        key="explore_ly_parks",
+    noise_labels = [label for label, _ in NOISE_MAP_OVERLAYS]
+    noise_by_label = {label: key for label, key in NOISE_MAP_OVERLAYS}
+    default_noise_label = next(
+        (label for label, key in NOISE_MAP_OVERLAYS if key == "off"),
+        noise_labels[0],
     )
-    commute_target = st.checkbox(
-        "Commute target",
-        value=False,
-        help=layer_help("commute_target"),
-        key="explore_ly_commute",
+    noise_label = st.selectbox(
+        "Strategic noise (UM 2022)",
+        options=noise_labels,
+        index=noise_labels.index(default_noise_label),
+        help=layer_help("noise_overlay"),
+        key="explore_ly_noise_overlay",
     )
+    aq_labels = [label for label, _ in AQ_MAP_OVERLAYS]
+    aq_by_label = {label: key for label, key in AQ_MAP_OVERLAYS}
+    default_aq_label = next(
+        (label for label, key in AQ_MAP_OVERLAYS if key == "off"),
+        aq_labels[0],
+    )
+    aq_label = st.selectbox(
+        "Air quality field (GIOŚ IDW)",
+        options=aq_labels,
+        index=aq_labels.index(default_aq_label),
+        help=layer_help("aq_overlay"),
+        key="explore_ly_aq_overlay",
+    )
+
+    st.markdown("##### Sport")
+    sport_keys = _sidebar_map_poi_multiselect(
+        "Sports facilities (UM + OSM gyms)",
+        city_map_objects_by_group("Sports"),
+        help_text=(
+            "UM sports (mapa.um.warszawa.pl/obiekty-sportowe) plus OSM "
+            "commercial fitness clubs under Gym / fitness club. "
+            "Default: gyms, fitness studios, swimming pools."
+        ),
+        widget_key="explore_ly_city_pois_sports",
+    )
+
+    st.markdown("##### Civic & culture")
+    civic_keys = _sidebar_map_poi_multiselect(
+        "Civic points (UM city map)",
+        city_map_objects_by_group("Civic"),
+        help_text=(
+            "UM civic WFS (schools, libraries, pharmacies, hotels, …). "
+            "Police / hospitals / fire / parks / shops / EV / gas use the "
+            "dedicated checkboxes in other sections — not listed here."
+        ),
+        widget_key="explore_ly_city_pois_civic",
+    )
+
     flags = LayerFlags(
         offers=offers,
         city_boundary=city_boundary,
@@ -558,54 +642,9 @@ def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
         gunb=gunb,
         parks=parks,
         commute_target=commute_target,
-        city_poi_types=(),
-    )
-    noise_labels = [label for label, _ in NOISE_MAP_OVERLAYS]
-    noise_by_label = {label: key for label, key in NOISE_MAP_OVERLAYS}
-    default_noise_label = next(
-        (label for label, key in NOISE_MAP_OVERLAYS if key == "off"),
-        noise_labels[0],
-    )
-    noise_label = st.selectbox(
-        "Strategic noise (UM 2022)",
-        options=noise_labels,
-        index=noise_labels.index(default_noise_label),
-        help=layer_help("noise_overlay"),
-        key="explore_ly_noise_overlay",
-    )
-    flags.noise_overlay = noise_by_label.get(str(noise_label), "off")
-    aq_labels = [label for label, _ in AQ_MAP_OVERLAYS]
-    aq_by_label = {label: key for label, key in AQ_MAP_OVERLAYS}
-    default_aq_label = next(
-        (label for label, key in AQ_MAP_OVERLAYS if key == "off"),
-        aq_labels[0],
-    )
-    aq_label = st.selectbox(
-        "Air quality field (GIOŚ IDW)",
-        options=aq_labels,
-        index=aq_labels.index(default_aq_label),
-        help=layer_help("aq_overlay"),
-        key="explore_ly_aq_overlay",
-    )
-    flags.aq_overlay = aq_by_label.get(str(aq_label), "off")
-    label_by_key = {t.key: f"{t.group}: {t.label}" for t in AMENITY_TYPES}
-    map_keys = city_map_object_keys()
-    default_keys = [k for k in DEFAULT_MAP_OBJECT_TYPES if k in map_keys]
-    selected_labels = st.multiselect(
-        "City map objects (UM sports + civic)",
-        options=[label_by_key[k] for k in map_keys if k in label_by_key],
-        default=[label_by_key[k] for k in default_keys if k in label_by_key],
-        help=(
-            "UM sports (mapa.um.warszawa.pl/obiekty-sportowe) + civic WFS, plus "
-            "OSM commercial fitness clubs under Gym. OSM hospitals / police / "
-            "fire / shops / EV / gas stations use the checkboxes above — not "
-            "listed here. Default: gyms, fitness studios, swimming pools."
-        ),
-        key="explore_ly_city_pois",
-    )
-    label_to_key = {v: k for k, v in label_by_key.items()}
-    flags.city_poi_types = tuple(
-        label_to_key[label] for label in selected_labels if label in label_to_key
+        city_poi_types=sport_keys + civic_keys,
+        noise_overlay=noise_by_label.get(str(noise_label), "off"),
+        aq_overlay=aq_by_label.get(str(aq_label), "off"),
     )
     return flags, hour, basemap
 

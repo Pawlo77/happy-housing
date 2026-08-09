@@ -184,18 +184,19 @@ AMENITY_TYPES: tuple[AmenityType, ...] = (
 _AMENITY_BY_KEY: dict[str, AmenityType] = {t.key: t for t in AMENITY_TYPES}
 """Lookup by catalog key."""
 
-# OSM keys that have dedicated Explore checkboxes (or are OSM-only map layers).
+# Keys that have dedicated Explore checkboxes / layers (avoid multiselect dupes).
 CITY_MAP_OBJECT_EXCLUDE_KEYS: frozenset[str] = frozenset({
     "hospital",
     "fire_station",
     "police",
+    "police_um",  # UM WFS police — same role as OSM Police checkbox
     "shop",
     "metro",
     "charging_station",
     "fuel",
     "park",  # dedicated Parks & squares layer
 })
-"""Catalog keys omitted from the City map objects multiselect (avoid duplicates)."""
+"""Catalog keys omitted from City map object multiselects (avoid duplicates)."""
 
 DEFAULT_MAP_OBJECT_TYPES: tuple[str, ...] = tuple(
     t.key for t in AMENITY_TYPES if t.default_map_visible
@@ -221,6 +222,15 @@ LEGACY_DIST_KEYS: frozenset[str] = frozenset({
 def city_map_object_keys() -> tuple[str, ...]:
     """Catalog keys shown in Explore City map objects (UM sports/civic + gym)."""
     return tuple(k for k in amenity_keys() if k not in CITY_MAP_OBJECT_EXCLUDE_KEYS)
+
+
+def city_map_objects_by_group(group: str) -> tuple[str, ...]:
+    """City-map keys limited to one amenity ``group`` (e.g. Sports, Civic)."""
+    return tuple(
+        t.key
+        for t in AMENITY_TYPES
+        if t.group == group and t.key not in CITY_MAP_OBJECT_EXCLUDE_KEYS
+    )
 
 
 def model_distance_feature_columns() -> tuple[str, ...]:
