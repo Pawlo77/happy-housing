@@ -7,11 +7,11 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 
 from happy_housing.app.explore_nav import (
-    EXPLORE_PAGE_PATH,
     listing_id_from_board_selection,
     listing_id_from_map_selection,
     open_explore_offer,
     prepare_offer_select_state,
+    register_explore_page,
 )
 
 
@@ -83,13 +83,28 @@ def test_open_explore_offer_sets_session_and_switches_page() -> None:
     session: dict[str, object] = {}
     mock_st = MagicMock()
     mock_st.session_state = session
+    explore_page = object()
+    register_explore_page(explore_page)
     with patch("happy_housing.app.explore_nav.st", mock_st):
         open_explore_offer("RCN-605")
     assert session["explore_offer_id"] == "RCN-605"
     assert session["explore_offer_force"] is True
     assert session["explore_section_pending"] == "Offer"
     assert "explore_section" not in session
-    mock_st.switch_page.assert_called_once_with(EXPLORE_PAGE_PATH)
+    mock_st.switch_page.assert_called_once_with(explore_page)
+
+
+def test_open_explore_offer_requires_registered_page() -> None:
+    register_explore_page(None)
+    session: dict[str, object] = {}
+    mock_st = MagicMock()
+    mock_st.session_state = session
+    with patch("happy_housing.app.explore_nav.st", mock_st):
+        try:
+            open_explore_offer("OTO-1")
+            raise AssertionError("expected RuntimeError")
+        except RuntimeError as exc:
+            assert "not registered" in str(exc)
 
 
 def test_apply_explore_section_pending_moves_into_section_key() -> None:

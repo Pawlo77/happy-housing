@@ -19,7 +19,7 @@ EXPLORE_SECTIONS: tuple[str, ...] = (
 """Top-level Explore section labels."""
 
 EXPLORE_PAGE_PATH: str = "explore"
-"""``st.navigation`` url_path for the Explore page (``st.switch_page`` target)."""
+"""``st.navigation`` url_path for the Explore page."""
 
 OFFER_SELECT_KEY: str = "explore_offer_select"
 """Session key for the Offer-tab listing selectbox."""
@@ -29,6 +29,20 @@ EXPLORE_SECTION_KEY: str = "explore_section"
 
 EXPLORE_SECTION_PENDING_KEY: str = "explore_section_pending"
 """Queued section switch — applied before ``st.tabs`` is instantiated."""
+
+_explore_page: object | None = None
+"""Registered ``st.Page`` for Explore — required by ``st.switch_page``."""
+
+
+def register_explore_page(page: object | None) -> None:
+    """Store the Explore ``st.Page`` built in ``st.navigation``."""
+    global _explore_page
+    _explore_page = page
+
+
+def get_explore_page() -> object | None:
+    """Return the registered Explore page, if any."""
+    return _explore_page
 
 
 def request_explore_section(section: str) -> None:
@@ -52,7 +66,11 @@ def open_explore_offer(listing_id: str) -> None:
     st.session_state["explore_offer_id"] = str(listing_id)
     st.session_state["explore_offer_force"] = True
     request_explore_section("Offer")
-    st.switch_page(EXPLORE_PAGE_PATH)
+    page = _explore_page
+    if page is None:
+        msg = "Explore page not registered; call register_explore_page from main()"
+        raise RuntimeError(msg)
+    st.switch_page(page)
 
 
 def listing_id_from_map_selection(event: object | None) -> str | None:
