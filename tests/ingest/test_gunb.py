@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+from typing import Any
+from unittest.mock import MagicMock
+
 import pandas as pd
+import requests
 
 from happy_housing.ingest.gunb import (
     _centroid_lon_lat,
+    _fetch_wfs_city_layer,
     _frame_from_wfs_geojson,
     _frame_from_wfs_gml,
     gunb_points_gdf,
@@ -86,3 +91,50 @@ def test_frame_from_wfs_gml_extracts_centroid() -> None:
     assert "Krucza" in str(frame.iloc[0]["adres"])
     assert abs(float(frame.iloc[0]["lon"]) - 21.05) < 1e-6
     assert frame.iloc[0]["numer_ewidencyjny_system"] == "ABC-1"
+
+
+def test_fetch_wfs_city_layer_retries_on_timeout(monkeypatch: Any) -> None:
+    """Geoportal read timeouts retry before failing the layer."""
+    pos = "52.2 21.0 52.3 21.0 52.3 21.1 52.2 21.1"
+    xml = f"""<?xml version='1.0' encoding="UTF-8" ?>
+    <wfs:FeatureCollection xmlns:wfs="http://www.opengis.net/wfs/2.0"
+      xmlns:gml="http://www.opengis.net/gml/3.2"
+      xmlns:ms="http://mapserver.gis.umn.edu/mapserver"
+      numberReturned="1">
+      <wfs:member>
+        <ms:pozwolenia_2026>
+          <ms:msGeometry>
+            <gml:Polygon srsName="urn:ogc:def:crs:EPSG::4326">
+              <gml:exterior>
+                <gml:LinearRing>
+                  <gml:posList srsDimension="2">{pos}</gml:posList>
+                </gml:LinearRing>
+              </gml:exterior>
+            </gml:Polygon>
+          </ms:msGeometry>
+          <ms:miasto>Warszawa</ms:miasto>
+          <ms:ulica>Marszalkowska</ms:ulica>
+          <ms:nr_domu>1</ms:nr_domu>
+          <ms:numer_ewidencyjny_system>RETRY-1</ms:numer_ewidencyjny_system>
+        </ms:pozwolenia_2026>
+      </wfs:member>
+    </wfs:FeatureCollection>
+    """
+    calls = {"n": 0}
+    ok = MagicMock()
+    ok.text = xml
+    ok.raise_for_status = MagicMock()
+
+    def fake_get(*_a: object, **_k: object) -> MagicMock:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise requests.exceptions.ReadTimeout("read timed out")
+        return ok
+
+    monkeypatch.setattr("happy_housing.ingest.gunb.requests.get", fake_get)
+    monkeypatch.setattr("happy_housing.ingest.gunb.time.sleep", lambda _s: None)
+
+    frame = _fetch_wfs_city_layer("ms:pozwolenia_2026", page_size=500)
+    assert calls["n"] == 2
+    assert len(frame) == 1
+    assert frame.iloc[0]["numer_decyzji"] == "RETRY-1"
