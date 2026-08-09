@@ -17,6 +17,7 @@ from happy_housing.app.data import (
     processed_dir,
     scored_path,
 )
+from happy_housing.app.feature_labels import feature_catalog_frame
 from happy_housing.app.home_about import ABOUT_SECTIONS
 from happy_housing.app.home_hero import format_hero_stats
 from happy_housing.app.home_stats import counts_frame, market_summary
@@ -197,13 +198,25 @@ def _tab_model(meta_metrics: dict[str, float], feature_columns: list[str]) -> No
 
     if feature_columns:
         st.subheader("Feature set")
-        st.pills(
-            "Model inputs",
-            options=feature_columns,
-            selection_mode="multi",
-            default=feature_columns,
-            key="home_features",
-            disabled=True,
+        st.caption("Model inputs — hover a row to read the full name and description.")
+        catalog = feature_catalog_frame(feature_columns)
+        st.dataframe(
+            catalog,
+            hide_index=True,
+            width="stretch",
+            height=min(420, 36 + 35 * min(len(catalog), 12)),
+            column_config={
+                "feature": st.column_config.TextColumn(
+                    "Feature",
+                    help="Technical column name used by the LightGBM model",
+                    width="medium",
+                ),
+                "description": st.column_config.TextColumn(
+                    "Description",
+                    help="What this input measures for the fair-price model",
+                    width="large",
+                ),
+            },
         )
 
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pandas as pd
+
 from happy_housing.gis.amenity_catalog import amenity_type
 
 FEATURE_DESCRIPTIONS: dict[str, str] = {
@@ -92,3 +94,12 @@ def feature_description(name: object) -> str:
         nice = amenity_key.replace("_", " ")
         return f"Nearest {nice} (m)"
     return key.replace("_", " ")
+
+
+def feature_catalog_frame(columns: list[str] | tuple[str, ...]) -> pd.DataFrame:
+    """Build a Feature / Description table for Home and similar UIs."""
+    names = [str(c).strip() for c in columns if str(c).strip()]
+    return pd.DataFrame({
+        "feature": names,
+        "description": [feature_description(name) for name in names],
+    })

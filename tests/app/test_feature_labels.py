@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from happy_housing.app.feature_labels import feature_description
+from happy_housing.app.feature_labels import feature_catalog_frame, feature_description
 
 
 def test_feature_description_covers_core_and_amenity_distances() -> None:
@@ -19,3 +19,11 @@ def test_feature_description_covers_core_and_amenity_distances() -> None:
 def test_feature_description_falls_back_for_unknown() -> None:
     assert feature_description("weird_new_signal") == "weird new signal"
     assert feature_description("") == ""
+
+
+def test_feature_catalog_frame_pairs_names_with_descriptions() -> None:
+    frame = feature_catalog_frame(["district", "dist_gym_m", ""])
+    assert list(frame.columns) == ["feature", "description"]
+    assert list(frame["feature"]) == ["district", "dist_gym_m"]
+    assert frame.iloc[0]["description"] == "Warsaw district"
+    assert "gym" in str(frame.iloc[1]["description"]).casefold()
