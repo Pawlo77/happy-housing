@@ -6,6 +6,7 @@ import pandas as pd
 
 from happy_housing.app.map_layers import (
     prepare_transit_paths,
+    prepare_transit_stops_network,
 )
 from happy_housing.app.maps import transit_network_layers
 
@@ -85,3 +86,17 @@ def test_transit_network_layers_emit_path_and_stops() -> None:
     types = {layer.type for layer in layers}
     assert "PathLayer" in types
     assert "IconLayer" in types
+
+
+def test_prepare_transit_stops_network_keeps_full_warsaw_scale() -> None:
+    """Do not randomly sample away half the ZTM stop set (~7k)."""
+    n = 7135
+    stops = pd.DataFrame({
+        "stop_id": [f"s{i}" for i in range(n)],
+        "stop_name": [f"Stop {i}" for i in range(n)],
+        "stop_lat": [52.10 + (i % 200) * 0.001 for i in range(n)],
+        "stop_lon": [20.85 + (i // 200) * 0.001 for i in range(n)],
+    })
+    out = prepare_transit_stops_network(stops)
+    assert len(out) == n
+    assert set(out.columns) >= {"lat", "lon", "tooltip_name"}

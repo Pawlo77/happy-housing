@@ -630,9 +630,13 @@ def prepare_transit_paths(
 def prepare_transit_stops_network(
     stops: pd.DataFrame,
     *,
-    max_stops: int = 3500,
+    max_stops: int = 0,
 ) -> pd.DataFrame:
-    """Slim stop markers for the transit-network overlay."""
+    """Slim stop markers for the transit-network overlay.
+
+    ``max_stops`` ≤ 0 keeps every geocoded stop (Warsaw ZTM is ~7k). A positive
+    cap only exists as an escape hatch for huge feeds / message-size limits.
+    """
     if stops.empty:
         return pd.DataFrame()
     work = stops.copy()
