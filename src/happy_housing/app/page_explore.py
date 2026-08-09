@@ -127,6 +127,7 @@ from happy_housing.app.recommender import (
     impressions_path,
     load_impressions,
     mark_opened,
+    mark_skipped,
     record_impressions,
     retrain_recommender,
     top_recommendations,
@@ -182,6 +183,67 @@ from happy_housing.models.train import (
 )
 
 logger = logging.getLogger(__name__)
+
+NEWS_REC_IDS_KEY: str = "explore_news_rec_ids"
+"""Session key for last News recommendation id tuple (impression trigger)."""
+
+
+def _refresh_recommender_after_feedback(
+    scored: pd.DataFrame,
+    *,
+    processed_dir: Path,
+    prefs: UserPreferences,
+    app_settings: AppSettings,
+) -> None:
+    """Rescore + clear News cache so the next view shows a fresh top-N."""
+    retrain_recommender(
+        scored,
+        processed_dir=processed_dir,
+        top_n=int(app_settings.recommender_top_n),
+        demotion_alpha=float(app_settings.recommender_demotion_alpha),
+        prefs=prefs,
+        amenity_weights=coerce_amenity_weights(
+            app_settings.recommender_amenity_weights
+        ),
+        w_bargain=float(app_settings.recommender_w_bargain),
+        w_commute=float(app_settings.recommender_w_commute),
+        w_transit=float(app_settings.recommender_w_transit),
+        w_overprice=float(app_settings.recommender_w_overprice),
+        otodom_pool_default=bool(app_settings.recommender_otodom_pool_default),
+    )
+    st.session_state.pop(NEWS_REC_IDS_KEY, None)
+
+
+def _recommended_listing_ids(
+    scored: pd.DataFrame,
+    *,
+    processed_dir: Path,
+    prefs: UserPreferences,
+    app_settings: AppSettings,
+    starred: frozenset[str],
+) -> frozenset[str]:
+    """Current promising ids for map highlighting (starred excluded)."""
+    top = top_recommendations(
+        scored,
+        processed_dir=processed_dir,
+        top_n=int(app_settings.recommender_top_n),
+        demotion_alpha=float(app_settings.recommender_demotion_alpha),
+        prefs=prefs,
+        amenity_weights=coerce_amenity_weights(
+            app_settings.recommender_amenity_weights
+        ),
+        record=False,
+        w_bargain=float(app_settings.recommender_w_bargain),
+        w_commute=float(app_settings.recommender_w_commute),
+        w_transit=float(app_settings.recommender_w_transit),
+        w_overprice=float(app_settings.recommender_w_overprice),
+        otodom_pool_default=bool(app_settings.recommender_otodom_pool_default),
+        exclude_ids=starred,
+    )
+    if top.empty:
+        return frozenset()
+    return frozenset(top["listing_id"].astype(str).tolist())
+
 
 _BOARD_COLUMNS: tuple[str, ...] = (
     "starred",
@@ -841,10 +903,15 @@ def _tab_map(
     commute_lon: float,
     commute_lat: float,
     commute_label: str = "Commute target",
+    recommended_ids: frozenset[str] | None = None,
 ) -> None:
     """Market map with toggleable livability overlays."""
     if filtered.empty and flags.offers:
         st.warning("No offers match filters — disable Offers or widen filters.")
+    if recommended_ids:
+        st.caption(
+            f"{len(recommended_ids)} recommended pin(s) — larger gold-ring markers."
+        )
     focus = _render_explore_address_search()
     layers = build_explore_layers(
         listings=filtered,
@@ -870,6 +937,7 @@ def _tab_map(
         commute_lat=commute_lat,
         hour=hour,
         commute_label=commute_label,
+        recommended_ids=recommended_ids,
     )
     if focus is not None:
         layers.append(address_search_layer(focus.lon, focus.lat, label=focus.label))
@@ -1331,6 +1399,9 @@ def _tab_offer(
     lm_model: str,
     ai_review_on_open: bool,
     app_settings: AppSettings,
+    scored_universe: pd.DataFrame,
+    prefs: UserPreferences,
+    proc: Path,
     amenities: gpd.GeoDataFrame,
     shops: pd.DataFrame,
     stops: pd.DataFrame,
@@ -1354,6 +1425,7 @@ def _tab_offer(
     commute_lon: float,
     commute_lat: float,
     commute_label: str = "Commute target",
+    recommended_ids: frozenset[str] | None = None,
 ) -> None:
     """Single-offer deep dive with Overview / Context / Map / SHAP / AI subtabs."""
     if filtered.empty:
@@ -1391,6 +1463,12 @@ def _tab_offer(
         label = "★ Starred" if starred_now else "☆ Star"
         if st.button(label, key=f"star_btn_{selected_id}", width="stretch"):
             toggle_star(stars_file, selected_id)
+            _refresh_recommender_after_feedback(
+                scored_universe,
+                processed_dir=proc,
+                prefs=prefs,
+                app_settings=app_settings,
+            )
             st.rerun()
 
     row = filtered.loc[filtered["listing_id"] == selected_id].iloc[0].copy()
@@ -1472,6 +1550,7 @@ def _tab_offer(
                 commute_lat=commute_lat,
                 hour=hour,
                 commute_label=commute_label,
+                recommended_ids=recommended_ids,
             )
             layers.append(focus_marker_layer(lat, lon))
             render_deck(
@@ -1659,16 +1738,41 @@ def _tab_news(
     st.subheader("Promising for you")
     if not prefs.enabled:
         st.caption(
-            "Enable preferences on the Prefs tab to rank offers by your fit + bargain."
+            "Prefs off — ranking bargain + commute on Otodom asks. "
+            "Enable Prefs for hard filters. Skip refreshes the list; "
+            "starring an offer does too."
         )
     else:
         st.caption(
             "Preference-fit + bargain score with soft demotion for already-seen "
-            "listings. Opening an offer marks it seen."
+            "listings. Skip replaces a card; starring an offer also refreshes."
         )
-        rec_ids_key = "explore_news_rec_ids"
-        previous = st.session_state.get(rec_ids_key)
-        promising = top_recommendations(
+    previous = st.session_state.get(NEWS_REC_IDS_KEY)
+    promising = top_recommendations(
+        scored,
+        processed_dir=proc,
+        top_n=int(app_settings.recommender_top_n),
+        demotion_alpha=float(app_settings.recommender_demotion_alpha),
+        prefs=prefs,
+        amenity_weights=coerce_amenity_weights(
+            app_settings.recommender_amenity_weights
+        ),
+        record=False,
+        w_bargain=float(app_settings.recommender_w_bargain),
+        w_commute=float(app_settings.recommender_w_commute),
+        w_transit=float(app_settings.recommender_w_transit),
+        w_overprice=float(app_settings.recommender_w_overprice),
+        otodom_pool_default=bool(app_settings.recommender_otodom_pool_default),
+        exclude_ids=starred,
+    )
+    current_ids = (
+        tuple(promising["listing_id"].astype(str).tolist())
+        if not promising.empty
+        else ()
+    )
+    if current_ids and current_ids != previous:
+        record_impressions(impressions_path(proc), list(current_ids))
+        retrain_recommender(
             scored,
             processed_dir=proc,
             top_n=int(app_settings.recommender_top_n),
@@ -1677,63 +1781,57 @@ def _tab_news(
             amenity_weights=coerce_amenity_weights(
                 app_settings.recommender_amenity_weights
             ),
-            record=False,
+            w_bargain=float(app_settings.recommender_w_bargain),
+            w_commute=float(app_settings.recommender_w_commute),
+            w_transit=float(app_settings.recommender_w_transit),
+            w_overprice=float(app_settings.recommender_w_overprice),
+            otodom_pool_default=bool(app_settings.recommender_otodom_pool_default),
         )
-        current_ids = (
-            tuple(promising["listing_id"].astype(str).tolist())
-            if not promising.empty
-            else ()
-        )
-        if current_ids and current_ids != previous:
-            record_impressions(impressions_path(proc), list(current_ids))
-            retrain_recommender(
-                scored,
-                processed_dir=proc,
-                top_n=int(app_settings.recommender_top_n),
-                demotion_alpha=float(app_settings.recommender_demotion_alpha),
-                prefs=prefs,
-                amenity_weights=coerce_amenity_weights(
-                    app_settings.recommender_amenity_weights
-                ),
-                w_bargain=float(app_settings.recommender_w_bargain),
-                w_commute=float(app_settings.recommender_w_commute),
-                w_transit=float(app_settings.recommender_w_transit),
-                w_overprice=float(app_settings.recommender_w_overprice),
-                otodom_pool_default=bool(app_settings.recommender_otodom_pool_default),
-            )
-            st.session_state[rec_ids_key] = current_ids
-        if promising.empty:
-            st.info("No listings match your enabled preferences.")
-        else:
-            for _, row in promising.iterrows():
-                with st.container(border=True):
-                    head, action = st.columns([3.5, 1], vertical_alignment="center")
-                    with head:
-                        title = str(row.get("title") or row["listing_id"])
-                        st.markdown(f"**{title}**")
-                        conf = row.get("confidence")
-                        try:
-                            conf_txt = f"{float(conf):.2f}"
-                        except (TypeError, ValueError):
-                            conf_txt = "—"
-                        if conf_txt != "—" and conf != conf:  # NaN
-                            conf_txt = "—"
-                        st.caption(
-                            f"{row['listing_id']} · confidence {conf_txt} · "
-                            f"{row.get('district', '—')}"
+        st.session_state[NEWS_REC_IDS_KEY] = current_ids
+    if promising.empty:
+        st.info("No candidate listings for recommendations right now.")
+    else:
+        for _, row in promising.iterrows():
+            with st.container(border=True):
+                head, action = st.columns([3.2, 1.3], vertical_alignment="center")
+                with head:
+                    title = str(row.get("title") or row["listing_id"])
+                    st.markdown(f"**{title}**")
+                    conf = row.get("confidence")
+                    try:
+                        conf_txt = f"{float(conf):.2f}"
+                    except (TypeError, ValueError):
+                        conf_txt = "—"
+                    if conf_txt != "—" and conf != conf:  # NaN
+                        conf_txt = "—"
+                    st.caption(
+                        f"{row['listing_id']} · confidence {conf_txt} · "
+                        f"{row.get('district', '—')}"
+                    )
+                with action:
+                    lid = str(row["listing_id"])
+                    if st.button(
+                        "Open offer",
+                        key=f"news_rec_open_{lid}",
+                        width="stretch",
+                    ):
+                        st.session_state["explore_offer_id"] = lid
+                        st.session_state["explore_offer_force"] = True
+                        request_explore_section("Offer")
+                        st.rerun()
+                    if st.button(
+                        "Skip",
+                        key=f"news_rec_skip_{lid}",
+                        width="stretch",
+                    ):
+                        mark_skipped(impressions_path(proc), lid)
+                        _refresh_recommender_after_feedback(
+                            scored,
+                            processed_dir=proc,
+                            prefs=prefs,
+                            app_settings=app_settings,
                         )
-                    with action:
-                        if st.button(
-                            "Open offer",
-                            key=f"news_rec_open_{row['listing_id']}",
-                            width="stretch",
-                        ):
-                            st.session_state["explore_offer_id"] = str(
-                                row["listing_id"]
-                            )
-                            st.session_state["explore_offer_force"] = True
-                            request_explore_section("Offer")
-                            st.rerun()
+                        st.rerun()
 
     st.subheader("Starred changes")
     st.caption(
@@ -2235,6 +2333,13 @@ def render_explore() -> None:
         "commute_lon": float(commute.lon),
         "commute_lat": float(commute.lat),
         "commute_label": commute.label,
+        "recommended_ids": _recommended_listing_ids(
+            frame,
+            processed_dir=proc,
+            prefs=prefs,
+            app_settings=app_settings,
+            starred=starred,
+        ),
     }
     tab_map, tab_spatial, tab_offer, tab_board, tab_news, tab_chat, tab_prefs = st.tabs(
         list(EXPLORE_SECTIONS),
@@ -2282,6 +2387,9 @@ def render_explore() -> None:
                 lm_model=app_settings.lm_model,
                 ai_review_on_open=app_settings.ai_review_on_offer_open,
                 app_settings=app_settings,
+                scored_universe=frame,
+                prefs=prefs,
+                proc=proc,
                 **map_kwargs,
             )
     with tab_board:

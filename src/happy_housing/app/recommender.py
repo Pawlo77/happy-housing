@@ -97,6 +97,25 @@ def mark_opened(path: Path, listing_id: str) -> None:
     save_impressions(path, current)
 
 
+def mark_skipped(path: Path, listing_id: str, *, count_bump: int = 5) -> None:
+    """Hard-demote a recommended listing so the next refresh replaces it."""
+    current = load_impressions(path)
+    key = str(listing_id)
+    now = datetime.now(tz=UTC).isoformat()
+    entry = current.get(key) or {
+        "count": 0,
+        "last_seen_at": now,
+        "opened": False,
+        "skipped": False,
+    }
+    entry["count"] = int(entry.get("count") or 0) + max(1, int(count_bump))
+    entry["last_seen_at"] = now
+    entry["opened"] = True
+    entry["skipped"] = True
+    current[key] = entry
+    save_impressions(path, current)
+
+
 def clear_recommendation_memory(processed: Path) -> None:
     """Delete impression memory and recommender metrics."""
     for path in (impressions_path(processed), metrics_path(processed)):
@@ -245,7 +264,14 @@ def score_offers(
         .astype(str)
         .map(lambda lid: 1.0 if (impressions.get(lid) or {}).get("opened") else 0.0)
     )
-    demoted = base / (1.0 + float(demotion_alpha) * counts + 0.5 * opened)
+    skipped = (
+        work["listing_id"]
+        .astype(str)
+        .map(lambda lid: 1.0 if (impressions.get(lid) or {}).get("skipped") else 0.0)
+    )
+    demoted = base / (
+        1.0 + float(demotion_alpha) * counts + 0.5 * opened + 3.0 * skipped
+    )
     out = pd.DataFrame({
         "listing_id": work["listing_id"].astype(str),
         "confidence": demoted.astype(float),
@@ -343,6 +369,7 @@ def top_recommendations(
     w_transit: float = 0.20,
     w_overprice: float = 0.15,
     otodom_pool_default: bool = True,
+    exclude_ids: frozenset[str] | set[str] | None = None,
 ) -> pd.DataFrame:
     """Return top-N ranked listing rows; optionally record impressions + metrics."""
     impressions = load_impressions(impressions_path(processed_dir))
@@ -358,6 +385,11 @@ def top_recommendations(
         w_overprice=w_overprice,
         otodom_pool_default=otodom_pool_default,
     )
+    if exclude_ids:
+        blocked = {str(x) for x in exclude_ids}
+        ranked = ranked.loc[
+            ~ranked["listing_id"].astype(str).isin(blocked)
+        ].reset_index(drop=True)
     top = ranked.head(max(0, int(top_n)))
     if top.empty:
         return frame.iloc[0:0].copy()

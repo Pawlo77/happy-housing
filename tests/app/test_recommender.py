@@ -11,10 +11,12 @@ from happy_housing.app.recommender import (
     clear_recommendation_memory,
     impressions_path,
     load_impressions,
+    mark_skipped,
     metrics_path,
     record_impressions,
     retrain_recommender,
     score_offers,
+    top_recommendations,
 )
 
 
@@ -134,3 +136,40 @@ def test_retrain_metrics_include_prefs_enabled(tmp_path: Path) -> None:
         prefs=prefs,
     )
     assert metrics["prefs_enabled"] == 1.0
+
+
+def test_mark_skipped_demotes_below_unseen(tmp_path: Path) -> None:
+    frame = pd.DataFrame({
+        "listing_id": ["a", "b"],
+        "source": ["otodom", "otodom"],
+        "delta_price_per_m2": [-900.0, -500.0],
+        "commute_min": [10.0, 10.0],
+        "dist_transit_stop_m": [100.0, 100.0],
+    })
+    before = score_offers(frame, demotion_alpha=1.0, impressions={})
+    assert list(before["listing_id"]) == ["a", "b"]
+    mark_skipped(impressions_path(tmp_path), "a")
+    impressions = load_impressions(impressions_path(tmp_path))
+    assert impressions["a"].get("skipped") is True
+    after = score_offers(frame, demotion_alpha=1.0, impressions=impressions)
+    assert list(after["listing_id"]) == ["b", "a"]
+
+
+def test_top_recommendations_excludes_ids(tmp_path: Path) -> None:
+    frame = pd.DataFrame({
+        "listing_id": ["a", "b", "c"],
+        "source": ["otodom", "otodom", "otodom"],
+        "title": ["A", "B", "C"],
+        "delta_price_per_m2": [-900.0, -800.0, -700.0],
+        "commute_min": [10.0, 10.0, 10.0],
+        "dist_transit_stop_m": [100.0, 100.0, 100.0],
+    })
+    top = top_recommendations(
+        frame,
+        processed_dir=tmp_path,
+        top_n=2,
+        demotion_alpha=0.0,
+        record=False,
+        exclude_ids=frozenset({"a"}),
+    )
+    assert list(top["listing_id"]) == ["b", "c"]
