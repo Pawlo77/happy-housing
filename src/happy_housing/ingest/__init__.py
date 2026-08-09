@@ -84,18 +84,22 @@ def download_gtfs_stops(
     url: str,
     raw_dir: Path,
     output_parquet: Path,
+    *,
+    force: bool = False,
 ) -> pd.DataFrame:
     """Download Warsaw GTFS and export ``stops.txt`` to parquet.
 
-    Args:
-        url: GTFS zip URL.
-        raw_dir: Directory for the zip archive.
-        output_parquet: Destination parquet path for stops.
-
-    Returns:
-        Stops dataframe.
+    Skips re-export when stop/hourly/shape parquets are newer than the zip.
     """
+    from happy_housing.pipeline_cache import outputs_fresh_vs_inputs
+
     zip_path = download_file(url, raw_dir / "gtfs_warsaw.zip", timeout_s=600.0)
+    hourly_path = output_parquet.with_name("gtfs_stop_hourly.parquet")
+    shapes_path = output_parquet.with_name("gtfs_route_shapes.parquet")
+    outputs = [output_parquet, hourly_path, shapes_path]
+    if not force and outputs_fresh_vs_inputs(outputs, [zip_path]):
+        logger.info("Skip GTFS export (parquet fresher than zip)")
+        return pd.read_parquet(output_parquet)
     return export_gtfs_stops_from_zip(zip_path, output_parquet)
 
 
@@ -196,17 +200,15 @@ def fetch_gios_stations(
     output_parquet: Path,
     *,
     fixture_path: Path | None = None,
+    force: bool = False,
 ) -> pd.DataFrame:
     """Fetch all GIOŚ v1 stations (paginated) into parquet.
 
-    Args:
-        url: GIOŚ stations endpoint.
-        output_parquet: Destination parquet path.
-        fixture_path: Optional offline JSON list used when the HTTP fetch fails.
-
-    Returns:
-        Stations dataframe with ``station_id``, ``lat``, ``lon``, ``name``.
+    Reuses an existing non-empty parquet unless ``force`` is set.
     """
+    if not force and output_parquet.exists() and output_parquet.stat().st_size > 0:
+        logger.info("Using cached GIOŚ stations %s", output_parquet)
+        return pd.read_parquet(output_parquet)
     try:
         frame = _fetch_gios_stations_http(url)
     except (OSError, requests.RequestException, ValueError, TypeError) as exc:
