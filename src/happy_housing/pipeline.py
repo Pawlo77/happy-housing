@@ -6,6 +6,7 @@ input fingerprints match ``pipeline_steps.json`` unless force refresh is set.
 
 from __future__ import annotations
 
+import argparse
 import json
 import logging
 import time
@@ -226,8 +227,8 @@ def run_pipeline(
     uses Admin Pipeline overrides when saved, else downloads everything.
     Explicit ``otodom_max_*`` / ``rcn_max_rows`` kwargs override resolved caps.
     ``force_gis_refresh`` ignores OSM / Warsaw map caches and re-downloads.
-    ``force_pipeline`` (or Admin ``pipeline_force_refresh``) ignores enrich /
-    train / score / recommender step fingerprints.
+    ``force_pipeline`` (or Admin ``pipeline_force_refresh``) ignores step
+    fingerprints and re-exports GTFS/GIOŚ/RCN plus enrich/train/score/recommend.
     """
     from happy_housing.logging_config import configure_logging
 
@@ -818,14 +819,58 @@ def run_pipeline(
     }
 
 
-def main() -> None:
+def parse_pipeline_cli_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Parse ``python -m happy_housing.pipeline`` flags."""
+    parser = argparse.ArgumentParser(
+        prog="happy_housing.pipeline",
+        description=(
+            "Run ingest → enrich → train/score → recommend. "
+            "Incremental by default; use --force to recompute."
+        ),
+    )
+    parser.add_argument(
+        "--force",
+        "--force-pipeline",
+        dest="force_pipeline",
+        action="store_true",
+        help=(
+            "Ignore step fingerprints and re-run GTFS/GIOŚ/RCN export, "
+            "enrich, train/score, and recommender."
+        ),
+    )
+    parser.add_argument(
+        "--force-gis",
+        dest="force_gis_refresh",
+        action="store_true",
+        help="Re-download OSM / Warsaw map GIS caches.",
+    )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=Path("configs/experiment.yaml"),
+        help="Experiment YAML path (default: configs/experiment.yaml).",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> None:
     """CLI entry for ``python -m happy_housing.pipeline``."""
     from happy_housing.logging_config import configure_logging
 
-    config = load_experiment_config(Path("configs/experiment.yaml"))
+    args = parse_pipeline_cli_args(argv)
+    config = load_experiment_config(args.config)
     configure_logging(config.logging.level, force=True)
-    logger.info("Starting pipeline (log level=%s)", config.logging.level)
-    paths = run_pipeline()
+    logger.info(
+        "Starting pipeline (log level=%s force_pipeline=%s force_gis=%s)",
+        config.logging.level,
+        args.force_pipeline,
+        args.force_gis_refresh,
+    )
+    paths = run_pipeline(
+        args.config,
+        force_pipeline=True if args.force_pipeline else None,
+        force_gis_refresh=bool(args.force_gis_refresh),
+    )
     for name, path in paths.items():
         logger.info("%s: %s", name, path)
 
