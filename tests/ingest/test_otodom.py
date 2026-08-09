@@ -106,5 +106,5 @@ def test_fetch_listing_detail_reads_coordinates() -> None:
     assert detail["lat"] == pytest.approx(52.23)
     assert detail["lon"] == pytest.approx(21.01)
     assert detail["year_built"] == 2015
-    assert detail["listed_at"] == "2026-03-01T10:00:00Z"
+    assert detail["listed_at"].startswith("2026-03-01T10:00:00")
     assert detail["description"] == "Sunny corner flat with balcony."

@@ -14,7 +14,14 @@ from urllib.parse import urlencode
 import pandas as pd
 import requests
 
+from happy_housing.ingest.fx import (
+    apply_fx_to_listings_frame,
+    currency_from_characteristics,
+    fx_cache_path,
+    price_value_from_characteristics,
+)
 from happy_housing.ingest.limits import reached_cap, resolve_ingest_cap
+from happy_housing.ingest.listed_at import coalesce_listed_at
 
 logger = logging.getLogger(__name__)
 
@@ -320,7 +327,9 @@ def flatten_otodom_ad(ad: dict[str, Any]) -> dict[str, Any]:
         "lat": float(lat) if lat is not None else None,
         "lon": float(lon) if lon is not None else None,
         "year_built": year_built,
-        "listed_at": ad.get("dateCreated") or ad.get("createdAt"),
+        "listed_at": coalesce_listed_at(
+            ad.get("dateCreated"), ad.get("createdAt"), ad.get("modifiedAt")
+        ),
         "description": _ad_description(ad),
         "image_url": image_urls[0] if image_urls else None,
         "image_urls_json": json.dumps(image_urls, ensure_ascii=False),
@@ -538,8 +547,15 @@ def _district_from_item(item: dict[str, Any]) -> str:
 
 def _normalize_search_item(item: dict[str, Any]) -> dict[str, Any]:
     """Map a search-card item to a flat listing row (coords filled later)."""
-    price = (item.get("totalPrice") or {}).get("value")
-    ppm = (item.get("pricePerSquareMeter") or {}).get("value")
+    money = item.get("totalPrice") or {}
+    price = money.get("value") if isinstance(money, dict) else None
+    currency = (
+        str(money.get("currency") or "PLN").strip().upper()
+        if isinstance(money, dict)
+        else "PLN"
+    ) or "PLN"
+    ppm_money = item.get("pricePerSquareMeter") or {}
+    ppm = ppm_money.get("value") if isinstance(ppm_money, dict) else None
     rooms = _parse_rooms(item.get("roomsNumber"))
     tags = _tags_from_search(item)
     floor_no = parse_floor_no(item.get("floorNumber"))
@@ -551,17 +567,25 @@ def _normalize_search_item(item: dict[str, Any]) -> dict[str, Any]:
         floor_no=floor_no,
     )
     search_images = extract_image_urls({"images": item.get("images") or []})
+    area = (
+        float(item["areaInSquareMeters"])
+        if item.get("areaInSquareMeters") is not None
+        else None
+    )
+    # Defer FX to frame-level apply (needs cache path); stash original + currency.
+    price_f = float(price) if price is not None else None
+    ppm_f = float(ppm) if ppm is not None else None
     return {
         "listing_id": f"OTO-{item.get('id')}",
         "otodom_id": item.get("id"),
         "slug": item.get("slug"),
         "title": item.get("title"),
         "district": _district_from_item(item),
-        "price_pln": float(price) if price is not None else None,
-        "price_per_m2": float(ppm) if ppm is not None else None,
-        "area_m2": float(item["areaInSquareMeters"])
-        if item.get("areaInSquareMeters") is not None
-        else None,
+        "price_original": price_f,
+        "price_currency": currency,
+        "price_pln": price_f,
+        "price_per_m2": ppm_f if currency == "PLN" else None,
+        "area_m2": area,
         "rooms": rooms,
         "floor_no": floor_no,
         "floor_label": item.get("floorNumber"),
@@ -571,7 +595,11 @@ def _normalize_search_item(item: dict[str, Any]) -> dict[str, Any]:
         "floor_plan_urls_json": "[]",
         "url": f"https://www.otodom.pl/pl/oferta/{item.get('slug')}",
         "short_description": item.get("shortDescription"),
-        "listed_at": item.get("dateCreated") or item.get("createdAtFirst"),
+        "listed_at": coalesce_listed_at(
+            item.get("dateCreated"),
+            item.get("createdAtFirst"),
+            item.get("createdAt"),
+        ),
         "is_private_owner": (
             1 if is_private is True else (0 if is_private is False else None)
         ),
@@ -844,16 +872,32 @@ def scrape_otodom_warsaw(
             "is_attic",
         ):
             out[flag] = max(int(row.get(flag) or 0), int(detail.get(flag) or 0))
+        chars_raw = out.get("characteristics_json")
+        chars: object = None
+        if isinstance(chars_raw, str) and chars_raw.strip():
+            try:
+                chars = json.loads(chars_raw)
+            except json.JSONDecodeError:
+                chars = None
+        char_currency = currency_from_characteristics(chars)
+        char_price = price_value_from_characteristics(chars)
+        if char_currency:
+            out["price_currency"] = char_currency
+        if char_price is not None:
+            out["price_original"] = char_price
+            if char_currency in {None, "PLN"}:
+                out["price_pln"] = char_price
         if (
             out.get("price_per_m2") is None
             and out.get("price_pln")
             and out.get("area_m2")
+            and str(out.get("price_currency") or "PLN").upper() == "PLN"
         ):
             out["price_per_m2"] = out["price_pln"] / out["area_m2"]
         if out.get("year_built") is None:
             out["year_built"] = 1990
         if out.get("listed_at") is None:
-            out["listed_at"] = "2026-01-01"
+            out["listed_at"] = coalesce_listed_at(None)
         if out.get("rooms") is None:
             out["rooms"] = 2
         return out
@@ -893,6 +937,9 @@ def scrape_otodom_warsaw(
     if missing:
         raise ValueError(f"Otodom frame missing columns: {missing}")
     frame = frame.dropna(subset=["lat", "lon", "price_pln", "area_m2"])
+    cache = fx_cache_path(output_parquet.parent)
+    frame = apply_fx_to_listings_frame(frame, cache)
+    frame = frame.dropna(subset=["price_pln", "area_m2"])
     frame["price_per_m2"] = frame["price_pln"] / frame["area_m2"]
     output_parquet.parent.mkdir(parents=True, exist_ok=True)
     frame.to_parquet(output_parquet, index=False)

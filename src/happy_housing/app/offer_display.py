@@ -9,6 +9,8 @@ from typing import Any
 
 import pandas as pd
 
+from happy_housing.ingest.fx import format_original_price
+
 _DELTA_NEAR_ZL = 500.0
 """Abs delta (zł/m²) treated as fair / yellow band."""
 
@@ -381,6 +383,10 @@ def offer_fact_rows(row: pd.Series) -> pd.DataFrame:
         ("Plumbing replaced", flag_yes_no(row.get("plumbing_replaced"))),
         ("Wiring replaced", flag_yes_no(row.get("wiring_replaced"))),
         ("Private owner", flag_yes_no(row.get("is_private_owner"))),
+        (
+            "Price (original)",
+            format_original_price(row.get("price_original"), row.get("price_currency")),
+        ),
         ("Price (PLN)", row.get("price_pln")),
         ("Latitude", row.get("lat")),
         ("Longitude", row.get("lon")),

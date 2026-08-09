@@ -54,7 +54,7 @@ def test_normalize_search_item_keeps_extra_search_fields() -> None:
     }
     row = _normalize_search_item(item)
     assert row["floor_no"] == 3
-    assert row["listed_at"] == "2026-01-02"
+    assert str(row["listed_at"]).startswith("2026-01-02")
     assert row["short_description"] == "Nice"
     assert row["is_private_owner"] == 0
     assert row["has_balcony"] == 1
