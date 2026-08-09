@@ -16,6 +16,21 @@ def test_feature_description_covers_core_and_amenity_distances() -> None:
     assert "squash" in feature_description("dist_squash_m").casefold()
 
 
+def test_feature_description_expands_lden_and_lnight() -> None:
+    """Explainability text spells out day-evening-night / night indicators."""
+    aircraft_day = feature_description("aircraft_lden_db")
+    aircraft_night = feature_description("aircraft_lnight_db")
+    total_day = feature_description("noise_total_lden_db")
+    high = feature_description("in_high_noise")
+    assert "lden" not in aircraft_day.casefold()
+    assert "lnight" not in aircraft_night.casefold()
+    assert "day-evening-night" in aircraft_day.casefold()
+    assert "night" in aircraft_night.casefold()
+    assert "day-evening-night" in total_day.casefold()
+    assert "lden" not in high.casefold()
+    assert "day-evening-night" in high.casefold()
+
+
 def test_feature_description_falls_back_for_unknown() -> None:
     assert feature_description("weird_new_signal") == "weird new signal"
     assert feature_description("") == ""
