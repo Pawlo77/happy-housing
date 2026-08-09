@@ -54,6 +54,7 @@ from happy_housing.app.llm_metrics import (
     purpose_stats_frame,
     summarize_llm_calls,
 )
+from happy_housing.app.lmstudio_models import list_lmstudio_llm_keys
 from happy_housing.app.maps import commute_compare_layers, render_deck
 from happy_housing.app.pipeline_ingest import (
     resolve_ingest_flags,
@@ -1379,10 +1380,20 @@ def _panel_extract(settings: AppSettings, settings_file: Path, proc: Path) -> No
         "Lightweight model fills gaps from truncated descriptions "
         "(CSV line, N if unknown). Structured Otodom fields always win."
     )
+    lms_keys = list_lmstudio_llm_keys()
+    if lms_keys:
+        st.caption("LMS downloaded LLMs: `" + "`, `".join(lms_keys[:16]) + "`")
+    else:
+        st.caption(
+            "No LMS LLM keys listed — start LM Studio local server, then refresh."
+        )
     extract_model = st.text_input(
         "Extract LM Studio model id",
         value=settings.extract_lm_model,
-        help="Default gemma-3-4b-it — keep small for speed.",
+        help=(
+            "Must match an LMS download key (see list above). "
+            "Aliases like gemma-3-4b-it ↔ google/gemma-3-4b resolve automatically."
+        ),
         key="settings_extract_lm_model",
     )
     extract_on = st.checkbox(

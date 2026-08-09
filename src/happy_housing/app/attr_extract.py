@@ -13,6 +13,7 @@ import lmstudio as lms
 import pandas as pd
 
 from happy_housing.app.llm_metrics import PURPOSE_ATTR_EXTRACT, record_timed_llm_call
+from happy_housing.app.lmstudio_models import get_lmstudio_llm
 
 logger = logging.getLogger(__name__)
 
@@ -352,7 +353,7 @@ def extract_attrs_from_description(
     def _run() -> str:
         chat = lms.Chat(system)
         chat.add_user_message(user)
-        llm = lms.llm(model)
+        llm = get_lmstudio_llm(model)
         result = llm.respond(
             chat,
             config={"temperature": 0.0, "maxTokens": int(max_tokens)},
