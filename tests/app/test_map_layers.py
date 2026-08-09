@@ -93,6 +93,32 @@ def test_prepare_listings_and_shops_expose_tooltip_fields() -> None:
     assert "supermarket" in shops.iloc[0]["tooltip_detail"]
 
 
+def test_prepare_listings_boosts_recommended_radius() -> None:
+    """Recommended offer pins are larger and labelled on the map."""
+    frame = pd.DataFrame({
+        "listing_id": ["std", "rec"],
+        "district": ["wola", "wola"],
+        "source": ["otodom", "otodom"],
+        "lat": [52.2, 52.21],
+        "lon": [21.0, 21.01],
+        "delta_price_per_m2": [-100.0, -100.0],
+        "price_per_m2": [15000.0, 15000.0],
+        "model_price_per_m2": [15100.0, 15100.0],
+        "price_pln": [750000.0, 750000.0],
+        "area_m2": [50.0, 50.0],
+        "rooms": [2.0, 2.0],
+        "year_built": [2005.0, 2005.0],
+        "commute_min": [18.0, 18.0],
+    })
+    out = prepare_listings_for_map(frame, recommended_ids=frozenset({"rec"}))
+    std = out.loc[out["listing_id"] == "std"].iloc[0]
+    rec = out.loc[out["listing_id"] == "rec"].iloc[0]
+    assert float(rec["radius"]) > float(std["radius"])
+    assert bool(rec["is_recommended"]) is True
+    assert bool(std["is_recommended"]) is False
+    assert "Recommended" in str(rec["tooltip_detail"])
+
+
 def test_prepare_listings_drops_missing_coordinates() -> None:
     listings = prepare_listings_for_map(
         pd.DataFrame({

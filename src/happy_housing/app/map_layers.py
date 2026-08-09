@@ -334,6 +334,12 @@ _MAP_PAYLOAD_COLUMNS: tuple[str, ...] = (
     "color_g",
     "color_b",
     "color_a",
+    "line_r",
+    "line_g",
+    "line_b",
+    "line_a",
+    "line_width",
+    "is_recommended",
     "weight",
     "n_departures",
     "stop_id",
@@ -400,8 +406,16 @@ def prepare_gunb_for_map(
     return slim_map_frame(work)
 
 
-def prepare_listings_for_map(frame: pd.DataFrame) -> pd.DataFrame:
-    """Listing pins with delta colours and rich hover fields."""
+def prepare_listings_for_map(
+    frame: pd.DataFrame,
+    *,
+    recommended_ids: frozenset[str] | set[str] | None = None,
+) -> pd.DataFrame:
+    """Listing pins with delta colours and rich hover fields.
+
+    Recommended ids get larger radii and a clear tooltip badge so they
+    stand out among standard offer pins.
+    """
     if frame.empty:
         return pd.DataFrame()
     out = frame.copy()
@@ -411,6 +425,8 @@ def prepare_listings_for_map(frame: pd.DataFrame) -> pd.DataFrame:
     if out.empty:
         return pd.DataFrame()
     out["listing_id"] = out["listing_id"].astype(str)
+    recommended = {str(x) for x in (recommended_ids or ())}
+    out["is_recommended"] = out["listing_id"].isin(recommended)
     delta = pd.to_numeric(out["delta_price_per_m2"], errors="coerce").fillna(0.0)
     colors = listing_delta_rgba_columns(delta)
     out["color_r"] = colors["color_r"].to_numpy()
@@ -418,7 +434,16 @@ def prepare_listings_for_map(frame: pd.DataFrame) -> pd.DataFrame:
     out["color_b"] = colors["color_b"].to_numpy()
     out["color_a"] = colors["color_a"].to_numpy()
     area = pd.to_numeric(out.get("area_m2"), errors="coerce")
-    out["radius"] = (area.fillna(50.0) * 0.7).clip(22, 55)
+    base_radius = (area.fillna(50.0) * 0.7).clip(22, 55)
+    out["radius"] = base_radius.where(
+        ~out["is_recommended"], (base_radius * 2.2).clip(48, 120)
+    )
+    # Gold stroke for recommended; soft white for the rest.
+    out["line_r"] = np.where(out["is_recommended"], 255, 255)
+    out["line_g"] = np.where(out["is_recommended"], 196, 255)
+    out["line_b"] = np.where(out["is_recommended"], 40, 255)
+    out["line_a"] = np.where(out["is_recommended"], 230, 160)
+    out["line_width"] = np.where(out["is_recommended"], 3, 1)
     out["tooltip_name"] = out["listing_id"]
     ppm = pd.to_numeric(out["price_per_m2"], errors="coerce")
     price = (
@@ -463,8 +488,12 @@ def prepare_listings_for_map(frame: pd.DataFrame) -> pd.DataFrame:
     def _fmt_signed(series: pd.Series, suffix: str = "") -> pd.Series:
         return series.map(lambda v: f"{v:+,.0f}{suffix}" if pd.notna(v) else "—")
 
+    badge = out["is_recommended"].map(
+        lambda flag: "★ Recommended<br/>" if bool(flag) else ""
+    )
     out["tooltip_detail"] = (
-        district
+        badge
+        + district
         + " · "
         + source
         + "<br/>"

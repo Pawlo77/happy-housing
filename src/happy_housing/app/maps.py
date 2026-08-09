@@ -128,6 +128,8 @@ def _scatter(
     radius_min_pixels: int = 5,
     radius_max_pixels: int = 18,
     auto_highlight: bool = False,
+    line_color: list[int] | str | None = None,
+    line_width_min_pixels: int | str = 1,
 ) -> pdk.Layer | None:
     if data.empty:
         return None
@@ -142,8 +144,8 @@ def _scatter(
         pickable=True,
         auto_highlight=auto_highlight,
         stroked=True,
-        get_line_color=[255, 255, 255, 160],
-        line_width_min_pixels=1,
+        get_line_color=line_color if line_color is not None else [255, 255, 255, 160],
+        line_width_min_pixels=line_width_min_pixels,
         id=layer_id,
     )
 
@@ -197,20 +199,53 @@ def _icon(
     )
 
 
-def listings_scatter_layer(frame: pd.DataFrame) -> pdk.Layer | None:
-    """Scatterplot of filtered offers coloured by listing-model delta."""
-    map_df = prepare_listings_for_map(frame)
+def listings_scatter_layer(
+    frame: pd.DataFrame,
+    *,
+    recommended_ids: frozenset[str] | set[str] | None = None,
+) -> list[pdk.Layer]:
+    """Scatterplot of filtered offers; recommended pins draw larger on top."""
+    map_df = prepare_listings_for_map(frame, recommended_ids=recommended_ids)
     if map_df.empty:
-        return None
-    return _scatter(
-        map_df,
-        layer_id="listings",
-        fill_color="[color_r, color_g, color_b, color_a]",
-        radius="radius",
-        radius_min_pixels=3,
-        radius_max_pixels=10,
-        auto_highlight=True,
+        return []
+    layers: list[pdk.Layer] = []
+    base = (
+        map_df.loc[~map_df["is_recommended"]] if "is_recommended" in map_df else map_df
     )
+    rec = (
+        map_df.loc[map_df["is_recommended"]]
+        if "is_recommended" in map_df.columns
+        else map_df.iloc[0:0]
+    )
+    if not base.empty:
+        layer = _scatter(
+            base,
+            layer_id="listings",
+            fill_color="[color_r, color_g, color_b, color_a]",
+            radius="radius",
+            radius_min_pixels=3,
+            radius_max_pixels=10,
+            auto_highlight=True,
+            line_color="[line_r, line_g, line_b, line_a]",
+            line_width_min_pixels=1,
+        )
+        if layer is not None:
+            layers.append(layer)
+    if not rec.empty:
+        layer = _scatter(
+            rec,
+            layer_id="listings_recommended",
+            fill_color="[color_r, color_g, color_b, color_a]",
+            radius="radius",
+            radius_min_pixels=7,
+            radius_max_pixels=22,
+            auto_highlight=True,
+            line_color="[line_r, line_g, line_b, line_a]",
+            line_width_min_pixels=3,
+        )
+        if layer is not None:
+            layers.append(layer)
+    return layers
 
 
 def amenity_layers(
@@ -1030,6 +1065,7 @@ def build_explore_layers(
     bike_paths: gpd.GeoDataFrame | None = None,
     noise_overlay: NoiseMapOverlay | None = None,
     aq_overlay: AqMapOverlay | None = None,
+    recommended_ids: frozenset[str] | set[str] | None = None,
 ) -> list[pdk.Layer]:
     """Assemble enabled Explore map layers in draw order."""
     layers: list[pdk.Layer] = []
@@ -1113,9 +1149,7 @@ def build_explore_layers(
             commute_target_layer(commute_lon, commute_lat, label=commute_label)
         )
     if flags.offers:
-        offers = listings_scatter_layer(listings)
-        if offers is not None:
-            layers.append(offers)
+        layers.extend(listings_scatter_layer(listings, recommended_ids=recommended_ids))
     logger.debug(
         "Built %s map layers (offers=%s hour=%s)", len(layers), flags.offers, hour
     )

@@ -49,7 +49,11 @@ def test_listing_colors_vectorized_over_under() -> None:
     assert int(out.loc[1, "color_g"]) > int(out.loc[2, "color_g"])
     assert int(out.loc[0, "color_r"]) > int(out.loc[1, "color_r"])
     assert out["radius"].between(22, 55).all()
-    assert listings_scatter_layer(frame) is not None
+    layers = listings_scatter_layer(frame)
+    assert isinstance(layers, list)
+    assert layers
+    rec_layers = listings_scatter_layer(frame, recommended_ids={"b"})
+    assert len(rec_layers) == 2
 
 
 def test_satellite_basemap_requires_mapbox_provider() -> None:
