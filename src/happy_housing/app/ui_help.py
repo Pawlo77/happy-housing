@@ -303,36 +303,37 @@ PREF_HELP: dict[str, str] = {
 
 SPATIAL_METRIC_HELP: dict[str, str] = {
     "price_ppm": (
-        "Heat of asking zł/m². Warm = expensive pocket — price level, not "
-        "bargain quality. Cross-check Bargain heat for attractiveness."
+        "Continuous zł/m² field (Model predictions = fair price surface; "
+        "Historical = interpolated asks). Dark pins = historical listing "
+        "prices. Warm = expensive pocket — price level, not bargain quality."
     ),
     "listing_density": (
-        "Where open asks pile up. High density = more choice / competition, "
-        "not proven sales liquidity."
+        "Continuous offer-density field with listing pins. High density = "
+        "more choice / competition, not proven sales liquidity."
     ),
     "sold_density": (
-        "RCN closed deals. Warm = proven transaction activity — stronger "
-        "signal of real market depth than asks alone."
+        "Continuous RCN deal field with transaction pins. Warm = proven "
+        "activity — stronger signal of real market depth than asks alone."
     ),
     "avg_area": (
-        "Larger mean floor plates. Bigger units change living space and "
-        "usually total price; zł/m² can still be moderate."
+        "Continuous mean-area field with listing pins. Bigger units change "
+        "living space and usually total price; zł/m² can still be moderate."
     ),
     "popularity": (
-        "Weight toward fresher listed_month. Fresh inventory ≈ current "
-        "demand interest; stale stock may linger for a reason."
+        "Continuous freshness field with listing pins. Fresh inventory ≈ "
+        "current demand interest; stale stock may linger for a reason."
     ),
     "commute": (
-        "Shorter modelled trips to Daszyńskiego score warmer. Job-access "
-        "livability and a major price driver in the model."
+        "Continuous commute-ease field with listing pins. Shorter modelled "
+        "trips to Daszyńskiego score warmer — a major price driver."
     ),
     "bargain": (
-        "Underpriced residual intensity (listing - model). Warm = stronger "
-        "price attractiveness vs fair value — core bargain hunt map."
+        "Model surface = underpriced residual (listing - model). Historical "
+        "surface = interpolated asks (replaces model). Pins mark offers."
     ),
     "traffic": (
-        "OSM densified drive-road heatmap x hour curve. Warm = busier streets "
-        "— noise/congestion trade-off for living comfort."
+        "OSM densified drive-road BitmapLayer x hour curve. Warm = busier "
+        "streets — noise/congestion trade-off for living comfort."
     ),
 }
 """Explore Spatial metric selectbox help (keyed by SpatialMetric.key)."""

@@ -178,6 +178,42 @@ def _overlay_from_grid(
     )
 
 
+def prepare_weighted_points_overlay(
+    lon: np.ndarray | pd.Series,
+    lat: np.ndarray | pd.Series,
+    weights: np.ndarray | pd.Series,
+    *,
+    bbox_wgs84: tuple[float, float, float, float],
+    layer_key: str,
+    width: int = INTENSITY_GRID_WIDTH,
+    height: int = INTENSITY_GRID_HEIGHT,
+    blur_passes: int = _BLUR_PASSES + 1,
+) -> IntensityMapOverlay | None:
+    """Continuous BitmapLayer field from weighted lon/lat samples."""
+    xs = np.asarray(lon, dtype=float)
+    ys = np.asarray(lat, dtype=float)
+    ws = np.asarray(weights, dtype=float)
+    grid = weighted_points_density_grid(
+        xs,
+        ys,
+        ws,
+        bbox_wgs84=bbox_wgs84,
+        width=width,
+        height=height,
+        blur_passes=blur_passes,
+    )
+    finite = grid > 0.0
+    if not finite.any():
+        return None
+    vmax = max(1.0, float(np.percentile(grid[finite], 99)))
+    return _overlay_from_grid(
+        grid,
+        layer_key=layer_key,
+        bbox_wgs84=bbox_wgs84,
+        vmax=vmax,
+    )
+
+
 def prepare_traffic_intensity_overlay(
     sample: pd.DataFrame,
     *,

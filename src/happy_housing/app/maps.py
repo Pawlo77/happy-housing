@@ -30,7 +30,12 @@ from happy_housing.app.map_layers import (
     slim_map_frame,
 )
 from happy_housing.app.map_marker_shapes import marker_icon
-from happy_housing.app.spatial_insights import prepare_spatial_points
+from happy_housing.app.spatial_insights import (
+    SPATIAL_FIELD_MODE_MODEL,
+    prepare_spatial_field_points,
+    prepare_spatial_marker_points,
+    prepare_spatial_points,
+)
 from happy_housing.app.zone_overlays import (
     ZONE_FILL,
     ZONE_LINE,
@@ -42,6 +47,7 @@ from happy_housing.gis.intensity_field import (
     IntensityMapOverlay,
     prepare_traffic_intensity_overlay,
     prepare_transit_intensity_overlay,
+    prepare_weighted_points_overlay,
 )
 from happy_housing.gis.warsaw_noise import NoiseMapOverlay
 
@@ -884,6 +890,30 @@ def spatial_hex_layer(
     )
 
 
+def spatial_marker_layer(
+    points: pd.DataFrame,
+    *,
+    layer_id: str = "spatial-markers",
+) -> pdk.Layer | None:
+    """Historical listing pins drawn above the Spatial continuous field."""
+    if points.empty or "lat" not in points.columns or "lon" not in points.columns:
+        return None
+    work = limit_map_points(points, 4_000)
+    if work.empty:
+        return None
+    return pdk.Layer(
+        "ScatterplotLayer",
+        data=work,
+        get_position="[lon, lat]",
+        get_fill_color=[15, 23, 42, 200],
+        get_radius=45,
+        radius_min_pixels=3,
+        radius_max_pixels=8,
+        pickable=True,
+        id=layer_id,
+    )
+
+
 def build_spatial_layers(
     *,
     listings: pd.DataFrame,
@@ -896,6 +926,7 @@ def build_spatial_layers(
     rail_areas: gpd.GeoDataFrame | None = None,
     airport: gpd.GeoDataFrame | None = None,
     flags: LayerFlags | None = None,
+    field_mode: str = SPATIAL_FIELD_MODE_MODEL,
 ) -> list[pdk.Layer]:
     """Assemble Spatial-tab layers for the selected metric."""
     layers: list[pdk.Layer] = []
@@ -914,12 +945,32 @@ def build_spatial_layers(
         if heat is not None:
             layers.append(heat)
         return layers
-    points = prepare_spatial_points(listings, metric_key)
-    heat = spatial_heatmap_layer(points)
-    if heat is not None:
-        layers.append(heat)
+    field_pts = prepare_spatial_field_points(
+        listings, metric_key, field_mode=field_mode
+    )
+    if not field_pts.empty:
+        overlay = prepare_weighted_points_overlay(
+            field_pts["lon"].to_numpy(dtype=float),
+            field_pts["lat"].to_numpy(dtype=float),
+            field_pts["weight"].to_numpy(dtype=float),
+            bbox_wgs84=load_config().bbox.as_tuple(),
+            layer_key=f"spatial-{metric_key}-{field_mode}",
+        )
+        heat = intensity_bitmap_layer(
+            overlay,
+            layer_id=f"spatial-field-{metric_key}",
+            opacity=0.68,
+        )
+        if heat is not None:
+            layers.append(heat)
+    markers = prepare_spatial_marker_points(listings, metric_key)
+    marker_layer = spatial_marker_layer(markers)
+    if marker_layer is not None:
+        layers.append(marker_layer)
     if show_hex:
-        hex_layer = spatial_hex_layer(points)
+        # Hex bins still use observed weights for 3D reading.
+        hex_pts = prepare_spatial_points(listings, metric_key)
+        hex_layer = spatial_hex_layer(hex_pts)
         if hex_layer is not None:
             layers.append(hex_layer)
     return layers

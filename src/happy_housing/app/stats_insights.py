@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import unicodedata
+
 import numpy as np
 import pandas as pd
 
@@ -9,8 +11,10 @@ from happy_housing.ingest.market import ensure_market_primary
 
 
 def normalize_district(value: object) -> str:
-    """Casefold and strip a district label for stable grouping."""
-    return str(value).strip().casefold()
+    """Casefold, strip, and drop diacritics for stable district grouping."""
+    text = str(value).strip().casefold()
+    decomposed = unicodedata.normalize("NFD", text)
+    return "".join(ch for ch in decomposed if unicodedata.category(ch) != "Mn")
 
 
 def _num(frame: pd.DataFrame, col: str) -> pd.Series:

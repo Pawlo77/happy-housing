@@ -127,6 +127,8 @@ from happy_housing.app.recommender import (
     top_recommendations,
 )
 from happy_housing.app.spatial_insights import (
+    SPATIAL_FIELD_MODE_MODEL,
+    SPATIAL_FIELD_MODES,
     SPATIAL_METRICS,
     district_spatial_summary,
     get_spatial_metric,
@@ -910,8 +912,8 @@ def _tab_spatial(
 ) -> None:
     """Spatial analytics: metric heatmaps + district charts (not map-only)."""
     st.caption(
-        "Pick a market signal — map shows spatial intensity; KPIs and district "
-        "bars explain where it concentrates. Uses the same sidebar filters as Map."
+        "Pick a market signal — continuous city field plus historical listing "
+        "pins. Toggle Model vs Historical surface. Same sidebar filters as Map."
     )
     labels = [m.label for m in SPATIAL_METRICS]
     keys = [m.key for m in SPATIAL_METRICS]
@@ -926,12 +928,31 @@ def _tab_spatial(
     )
     metric_key = keys[labels.index(str(choice))]
     metric = get_spatial_metric(metric_key)
+    field_mode = SPATIAL_FIELD_MODE_MODEL
+    if metric_key != "traffic":
+        mode_labels = [label for label, _ in SPATIAL_FIELD_MODES]
+        mode_by_label = {label: key for label, key in SPATIAL_FIELD_MODES}
+        mode_choice = (
+            st.segmented_control(
+                "Surface field",
+                options=mode_labels,
+                default=mode_labels[0],
+                key="explore_spatial_field_mode",
+                help=(
+                    "Model predictions = continuous fair-price / model-derived "
+                    "field. Historical = interpolated observed asks (replaces "
+                    "the model surface). Pins always mark historical listings."
+                ),
+            )
+            or mode_labels[0]
+        )
+        field_mode = mode_by_label.get(str(mode_choice), SPATIAL_FIELD_MODE_MODEL)
     show_hex = st.checkbox(
         "Show hex elevation (3D)",
         value=False,
         key="explore_spatial_hex",
         help=(
-            "Extrude hex bins by the same metric weight. Listing metrics only — "
+            "Extrude hex bins by observed metric weight. Listing metrics only — "
             "disabled for traffic proxy. Visual density ≠ price change by itself."
         ),
         disabled=metric_key == "traffic",
@@ -961,6 +982,7 @@ def _tab_spatial(
             rail_areas=rail_areas,
             airport=airport,
             flags=flags,
+            field_mode=field_mode,
         )
         if not layers:
             st.info(

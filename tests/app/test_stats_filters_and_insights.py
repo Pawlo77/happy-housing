@@ -87,8 +87,9 @@ def _frame() -> pd.DataFrame:
 
 
 def test_normalize_district_casefolds() -> None:
-    assert normalize_district("Mokotów") == "mokotów"
+    assert normalize_district("Mokotów") == "mokotow"
     assert normalize_district("  WOLA ") == "wola"
+    assert normalize_district("Śródmieście") == normalize_district("srodmiescie")
 
 
 def test_apply_stats_filters_valuation_and_district() -> None:

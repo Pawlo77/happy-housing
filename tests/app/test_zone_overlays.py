@@ -117,8 +117,10 @@ def test_spatial_layers_include_zone_overlays() -> None:
             "lat": [52.23],
             "lon": [21.0],
             "price_per_m2": [15000.0],
+            "model_price_per_m2": [14800.0],
+            "listing_id": ["x"],
         }),
-        metric_key="price_per_m2",
+        metric_key="price_ppm",
         traffic_sample=__import__("pandas").DataFrame(),
         hour=8,
         show_hex=False,
@@ -132,6 +134,8 @@ def test_spatial_layers_include_zone_overlays() -> None:
     assert "city-boundary" in ids
     assert "military-areas" in ids
     assert "airport-areas" in ids
+    assert "spatial-field-price_ppm" in ids
+    assert "spatial-markers" in ids
 
 
 def test_zone_fixtures_exist() -> None:

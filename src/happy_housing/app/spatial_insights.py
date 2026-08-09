@@ -7,6 +7,20 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
+from happy_housing.app.stats_insights import normalize_district
+
+SPATIAL_FIELD_MODE_MODEL: str = "model"
+"""Continuous surface from model predictions / model-derived scores."""
+
+SPATIAL_FIELD_MODE_HISTORICAL: str = "historical"
+"""Continuous surface interpolated from observed / historical listing values."""
+
+SPATIAL_FIELD_MODES: tuple[tuple[str, str], ...] = (
+    ("Model predictions", SPATIAL_FIELD_MODE_MODEL),
+    ("Historical (interpolated)", SPATIAL_FIELD_MODE_HISTORICAL),
+)
+"""UI label → field-mode key for Spatial surface toggle."""
+
 
 @dataclass(frozen=True, slots=True)
 class SpatialMetric:
@@ -26,7 +40,7 @@ SPATIAL_METRICS: tuple[SpatialMetric, ...] = (
     SpatialMetric(
         key="price_ppm",
         label="Asking zł/m²",
-        blurb="Heat where asking prices run hottest.",
+        blurb="City-wide price field; pins mark historical asks.",
         value_title="Median zł/m²",
     ),
     SpatialMetric(
@@ -62,7 +76,7 @@ SPATIAL_METRICS: tuple[SpatialMetric, ...] = (
     SpatialMetric(
         key="bargain",
         label="Bargain heat",
-        blurb="Underpriced (listing - model) residual intensity.",
+        blurb="Model bargain surface, or historical ask field; pins mark offers.",
         value_title="Mean bargain score",
     ),
     SpatialMetric(
@@ -96,7 +110,7 @@ def _with_coords(frame: pd.DataFrame) -> pd.DataFrame:
 
 
 def _point_weights(frame: pd.DataFrame, key: str) -> pd.Series:
-    """Per-row heatmap weight for listing-based metrics."""
+    """Per-row observed / historical weight for listing-based metrics."""
     if key == "price_ppm":
         return _num(frame, "price_per_m2").clip(lower=0.0)
     if key == "listing_density":
@@ -122,8 +136,87 @@ def _point_weights(frame: pd.DataFrame, key: str) -> pd.Series:
     return pd.Series(1.0, index=frame.index, dtype=float)
 
 
+def _field_weights(
+    frame: pd.DataFrame,
+    metric_key: str,
+    field_mode: str,
+) -> pd.Series:
+    """Weights for the continuous Spatial surface (model vs historical)."""
+    mode = str(field_mode or SPATIAL_FIELD_MODE_MODEL).strip().casefold()
+    if metric_key == "price_ppm":
+        if mode == SPATIAL_FIELD_MODE_HISTORICAL:
+            return _num(frame, "price_per_m2").clip(lower=0.0)
+        model = _num(frame, "model_price_per_m2")
+        ask = _num(frame, "price_per_m2")
+        return model.where(model.notna() & (model > 0), ask).clip(lower=0.0)
+    if metric_key == "bargain":
+        if mode == SPATIAL_FIELD_MODE_HISTORICAL:
+            # Replace bargain surface with interpolated historical asks.
+            return _num(frame, "price_per_m2").clip(lower=0.0)
+        return _point_weights(frame, "bargain")
+    # Density / area / commute / popularity: observed field either mode.
+    return _point_weights(frame, metric_key)
+
+
+def prepare_spatial_field_points(
+    frame: pd.DataFrame,
+    metric_key: str,
+    *,
+    field_mode: str = SPATIAL_FIELD_MODE_MODEL,
+) -> pd.DataFrame:
+    """Lon/lat/weight rows that feed the continuous Spatial BitmapLayer."""
+    empty = pd.DataFrame(columns=["lon", "lat", "weight"])
+    if metric_key == "traffic":
+        return empty
+    work = _with_coords(frame)
+    if work.empty:
+        return empty
+    weights = _field_weights(work, metric_key, field_mode)
+    out = work.loc[weights > 0, ["lon", "lat"]].copy()
+    out["weight"] = weights.loc[out.index].astype(float)
+    return out.reset_index(drop=True)
+
+
+def prepare_spatial_marker_points(
+    frame: pd.DataFrame,
+    metric_key: str,
+) -> pd.DataFrame:
+    """Historical / observed listing pins drawn atop the Spatial field."""
+    empty = pd.DataFrame(
+        columns=["lon", "lat", "weight", "tooltip_name", "tooltip_detail"]
+    )
+    if metric_key == "traffic":
+        return empty
+    work = _with_coords(frame)
+    if work.empty:
+        return empty
+    # Markers always show observed history (asks / RCN), not the model surface.
+    weights = _point_weights(work, metric_key)
+    if metric_key == "sold_density":
+        keep = weights > 0
+    else:
+        keep = pd.Series(True, index=work.index)
+    out = work.loc[keep, ["lon", "lat"]].copy()
+    if out.empty:
+        return empty
+    out["weight"] = weights.reindex(out.index).fillna(0.0).astype(float)
+    metric = get_spatial_metric(metric_key)
+    if "listing_id" in work.columns:
+        out["tooltip_name"] = work.loc[out.index, "listing_id"].astype(str)
+    else:
+        out["tooltip_name"] = metric.label
+    if "price_per_m2" in work.columns:
+        ppm = _num(work, "price_per_m2").loc[out.index]
+        out["tooltip_detail"] = "Historical ask · " + ppm.map(
+            lambda v: f"{v:,.0f} zł/m²" if v == v else "—"
+        )
+    else:
+        out["tooltip_detail"] = metric.label
+    return out.reset_index(drop=True)
+
+
 def prepare_spatial_points(frame: pd.DataFrame, metric_key: str) -> pd.DataFrame:
-    """Lon/lat/weight rows for a HeatmapLayer (listing metrics only)."""
+    """Lon/lat/weight rows for listing metrics (observed / historical weights)."""
     empty = pd.DataFrame(
         columns=["lon", "lat", "weight", "tooltip_name", "tooltip_detail"]
     )
@@ -157,7 +250,7 @@ def district_spatial_summary(
     if frame.empty or "district" not in frame.columns or metric_key == "traffic":
         return empty
     work = frame.copy()
-    work["district"] = work["district"].astype(str).str.strip().str.casefold()
+    work["district"] = work["district"].map(normalize_district)
     work = work.loc[work["district"].ne("") & work["district"].ne("nan")]
     if work.empty:
         return empty
