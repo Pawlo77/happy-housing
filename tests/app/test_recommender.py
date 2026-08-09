@@ -64,10 +64,45 @@ def test_retrain_and_clear_memory(tmp_path: Path) -> None:
     assert not metrics_path(tmp_path).exists()
 
 
+def test_score_offers_penalizes_overpriced() -> None:
+    frame = pd.DataFrame({
+        "listing_id": ["cheap", "rich"],
+        "source": ["otodom", "otodom"],
+        "delta_price_per_m2": [-800.0, 2000.0],
+        "commute_min": [10.0, 10.0],
+        "dist_transit_stop_m": [100.0, 100.0],
+    })
+    ranked = score_offers(
+        frame,
+        demotion_alpha=0.0,
+        impressions={},
+        w_overprice=0.5,
+    )
+    assert list(ranked["listing_id"]) == ["cheap", "rich"]
+    assert float(ranked.iloc[0]["rec_overprice"]) < float(
+        ranked.iloc[1]["rec_overprice"]
+    )
+
+
+def test_score_offers_default_pool_skips_rcn() -> None:
+    frame = pd.DataFrame({
+        "listing_id": ["oto", "deed"],
+        "source": ["otodom", "rcn"],
+        "delta_price_per_m2": [-100.0, -900.0],
+        "commute_min": [10.0, 5.0],
+        "dist_transit_stop_m": [100.0, 50.0],
+    })
+    ranked = score_offers(
+        frame, demotion_alpha=0.0, impressions={}, otodom_pool_default=True
+    )
+    assert list(ranked["listing_id"]) == ["oto"]
+
+
 def test_score_offers_respects_enabled_preferences() -> None:
     frame = pd.DataFrame({
         "listing_id": ["a", "b"],
         "district": ["wola", "mokotow"],
+        "source": ["otodom", "otodom"],
         "delta_price_per_m2": [-900.0, -900.0],
         "commute_min": [10.0, 10.0],
         "dist_transit_stop_m": [100.0, 100.0],

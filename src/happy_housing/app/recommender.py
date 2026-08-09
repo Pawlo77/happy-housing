@@ -25,6 +25,9 @@ from happy_housing.gis.amenity_catalog import (
 
 logger = logging.getLogger(__name__)
 
+_BUYER_SOURCES: frozenset[str] = frozenset({"otodom", "fixture"})
+"""Default candidate sources when prefs do not set sources."""
+
 
 def impressions_path(processed: Path) -> Path:
     """JSON map of recommendation impressions per listing."""
@@ -108,6 +111,43 @@ def _col(frame: pd.DataFrame, name: str) -> pd.Series:
     return pd.to_numeric(frame[name], errors="coerce")
 
 
+def normalize_recommender_weights(
+    *,
+    w_bargain: float,
+    w_commute: float,
+    w_transit: float,
+) -> tuple[float, float, float]:
+    """Normalize positive blend weights to sum to 1 (keep zeros if all zero)."""
+    weights = np.array(
+        [
+            max(0.0, float(w_bargain)),
+            max(0.0, float(w_commute)),
+            max(0.0, float(w_transit)),
+        ],
+        dtype=float,
+    )
+    total = float(weights.sum())
+    if total <= 0:
+        return 0.50, 0.25, 0.20
+    weights = weights / total
+    return float(weights[0]), float(weights[1]), float(weights[2])
+
+
+def _soft_pref_bonus(work: pd.DataFrame, prefs: UserPreferences) -> pd.Series:
+    """Small additive fit for rooms/area/year toward preferred ranges."""
+    bonus = pd.Series(0.0, index=work.index, dtype=float)
+    if prefs.min_rooms is not None and "rooms" in work.columns:
+        rooms = _col(work, "rooms")
+        bonus = bonus + (rooms >= float(prefs.min_rooms)).astype(float) * 0.03
+    if prefs.min_area_m2 is not None and "area_m2" in work.columns:
+        area = _col(work, "area_m2")
+        bonus = bonus + (area >= float(prefs.min_area_m2)).astype(float) * 0.03
+    if prefs.max_price_pln is not None and "price_pln" in work.columns:
+        price = _col(work, "price_pln")
+        bonus = bonus + (price <= float(prefs.max_price_pln)).astype(float) * 0.02
+    return bonus
+
+
 def score_offers(
     frame: pd.DataFrame,
     *,
@@ -115,6 +155,11 @@ def score_offers(
     impressions: dict[str, dict[str, Any]],
     prefs: UserPreferences | None = None,
     amenity_weights: dict[str, float] | None = None,
+    w_bargain: float = 0.50,
+    w_commute: float = 0.25,
+    w_transit: float = 0.20,
+    w_overprice: float = 0.15,
+    otodom_pool_default: bool = True,
 ) -> pd.DataFrame:
     """Rank offers by bargain + proximity (+ soft prefs / amenity weights).
 
@@ -126,13 +171,31 @@ def score_offers(
     work = frame
     if prefs is not None and prefs.enabled:
         work = apply_preferences(frame, prefs)
+    elif otodom_pool_default and "source" in frame.columns:
+        sources = frame["source"].astype(str).str.lower()
+        work = frame.loc[sources.isin(_BUYER_SOURCES)].copy()
     if work.empty or "listing_id" not in work.columns:
-        return pd.DataFrame(columns=["listing_id", "confidence"])
+        return pd.DataFrame(
+            columns=[
+                "listing_id",
+                "confidence",
+                "rec_bargain",
+                "rec_commute",
+                "rec_transit",
+                "rec_overprice",
+                "rec_base",
+            ]
+        )
     work = work.copy()
+    wb, wc, wt = normalize_recommender_weights(
+        w_bargain=w_bargain, w_commute=w_commute, w_transit=w_transit
+    )
+    wo = max(0.0, float(w_overprice))
     delta = _col(work, "delta_price_per_m2")
     commute = _col(work, "commute_min")
     transit = _col(work, "dist_transit_stop_m")
     bargain = ((-delta).clip(lower=0.0) / 2000.0).clip(upper=1.0).fillna(0.0)
+    overprice = (delta.clip(lower=0.0) / 2000.0).clip(upper=1.0).fillna(0.0)
     commute_cap = (
         float(prefs.max_commute_min)
         if prefs is not None and prefs.max_commute_min
@@ -158,12 +221,19 @@ def score_offers(
         dist = _col(work, dist_column(key))
         prox = (1.0 - (dist.fillna(cap) / cap)).clip(0.0, 1.0)
         amenity_bonus = amenity_bonus + (0.20 * weight * prox)
+    soft = (
+        _soft_pref_bonus(work, prefs)
+        if prefs is not None and prefs.enabled
+        else pd.Series(0.0, index=work.index, dtype=float)
+    )
     base = (
-        0.50 * bargain
-        + 0.25 * commute_score
-        + 0.20 * transit_score
+        wb * bargain
+        + wc * commute_score
+        + wt * transit_score
+        - wo * overprice
         + noise_bonus
         + amenity_bonus
+        + soft
     ).clip(0.0, 1.0)
     counts = (
         work["listing_id"]
@@ -179,6 +249,11 @@ def score_offers(
     out = pd.DataFrame({
         "listing_id": work["listing_id"].astype(str),
         "confidence": demoted.astype(float),
+        "rec_bargain": bargain.astype(float),
+        "rec_commute": commute_score.astype(float),
+        "rec_transit": transit_score.astype(float),
+        "rec_overprice": overprice.astype(float),
+        "rec_base": base.astype(float),
     })
     return out.sort_values("confidence", ascending=False).reset_index(drop=True)
 
@@ -191,6 +266,11 @@ def retrain_recommender(
     demotion_alpha: float,
     prefs: UserPreferences | None = None,
     amenity_weights: dict[str, float] | None = None,
+    w_bargain: float = 0.50,
+    w_commute: float = 0.25,
+    w_transit: float = 0.20,
+    w_overprice: float = 0.15,
+    otodom_pool_default: bool = True,
 ) -> dict[str, float]:
     """Rescore the universe, persist metrics, return summary stats."""
     impressions = load_impressions(impressions_path(processed_dir))
@@ -200,28 +280,53 @@ def retrain_recommender(
         impressions=impressions,
         prefs=prefs,
         amenity_weights=amenity_weights,
+        w_bargain=w_bargain,
+        w_commute=w_commute,
+        w_transit=w_transit,
+        w_overprice=w_overprice,
+        otodom_pool_default=otodom_pool_default,
     )
     top = ranked.head(max(1, int(top_n)))
-    unseen = 0
-    for lid in top["listing_id"].tolist():
-        if int((impressions.get(str(lid)) or {}).get("count") or 0) == 0:
-            unseen += 1
+    unseen = 0.0
+    if not top.empty:
+        unseen = float(
+            top["listing_id"]
+            .map(lambda lid: 0.0 if impressions.get(str(lid)) else 1.0)
+            .mean()
+        )
     metrics = {
         "n_candidates": float(len(ranked)),
         "n_recommended": float(len(top)),
         "mean_confidence": float(top["confidence"].mean()) if not top.empty else 0.0,
-        "share_unseen": float(unseen / len(top)) if not top.empty else 0.0,
-        "prefs_enabled": 1.0 if (prefs is not None and prefs.enabled) else 0.0,
-        "retrained_at": datetime.now(tz=UTC).timestamp(),
+        "share_unseen": unseen,
+        "prefs_enabled": 1.0 if prefs is not None and prefs.enabled else 0.0,
+        "refreshed_at": datetime.now(tz=UTC).timestamp(),
     }
     path = metrics_path(processed_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(metrics, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
-    logger.info("Retrained recommender → %s", metrics)
+    path.write_text(json.dumps(metrics, indent=2) + "\n", encoding="utf-8")
     return metrics
+
+
+def load_recommender_metrics(processed: Path) -> dict[str, float]:
+    """Load latest recommender metrics; missing → empty."""
+    path = metrics_path(processed)
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("Failed to load recommender metrics %s: %s", path, exc)
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    out: dict[str, float] = {}
+    for key, value in payload.items():
+        try:
+            out[str(key)] = float(value)
+        except (TypeError, ValueError):
+            continue
+    return out
 
 
 def top_recommendations(
@@ -233,6 +338,11 @@ def top_recommendations(
     prefs: UserPreferences | None = None,
     amenity_weights: dict[str, float] | None = None,
     record: bool = True,
+    w_bargain: float = 0.50,
+    w_commute: float = 0.25,
+    w_transit: float = 0.20,
+    w_overprice: float = 0.15,
+    otodom_pool_default: bool = True,
 ) -> pd.DataFrame:
     """Return top-N ranked listing rows; optionally record impressions + metrics."""
     impressions = load_impressions(impressions_path(processed_dir))
@@ -242,6 +352,11 @@ def top_recommendations(
         impressions=impressions,
         prefs=prefs,
         amenity_weights=amenity_weights,
+        w_bargain=w_bargain,
+        w_commute=w_commute,
+        w_transit=w_transit,
+        w_overprice=w_overprice,
+        otodom_pool_default=otodom_pool_default,
     )
     top = ranked.head(max(0, int(top_n)))
     if top.empty:
@@ -255,29 +370,14 @@ def top_recommendations(
             demotion_alpha=demotion_alpha,
             prefs=prefs,
             amenity_weights=amenity_weights,
+            w_bargain=w_bargain,
+            w_commute=w_commute,
+            w_transit=w_transit,
+            w_overprice=w_overprice,
+            otodom_pool_default=otodom_pool_default,
         )
     ids = top["listing_id"].tolist()
     conf_map = dict(zip(top["listing_id"], top["confidence"], strict=True))
     subset = frame.loc[frame["listing_id"].astype(str).isin(ids)].copy()
     subset["confidence"] = subset["listing_id"].astype(str).map(conf_map)
     return subset.sort_values("confidence", ascending=False).reset_index(drop=True)
-
-
-def load_recommender_metrics(processed: Path) -> dict[str, float]:
-    """Load last recommender metrics dict."""
-    path = metrics_path(processed)
-    if not path.exists():
-        return {}
-    try:
-        payload = read_json(str(path), path.stat().st_mtime)
-    except (OSError, UnicodeDecodeError, ValueError):
-        return {}
-    if not isinstance(payload, dict):
-        return {}
-    out: dict[str, float] = {}
-    for key, value in payload.items():
-        try:
-            out[str(key)] = float(value)
-        except (TypeError, ValueError):
-            continue
-    return out

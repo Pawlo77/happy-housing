@@ -102,6 +102,16 @@ class AppSettings:
     """How many promising offers to surface after retrain."""
     recommender_demotion_alpha: float = 1.0
     """Soft-demotion strength for already-seen recommendations."""
+    recommender_w_bargain: float = 0.50
+    """Weight for underpricing bargain term."""
+    recommender_w_commute: float = 0.25
+    """Weight for commute proximity term."""
+    recommender_w_transit: float = 0.20
+    """Weight for transit-stop proximity term."""
+    recommender_w_overprice: float = 0.15
+    """Penalty weight for overpriced asks."""
+    recommender_otodom_pool_default: bool = True
+    """When prefs sources empty, score Otodom/fixture only."""
     recommender_amenity_weights: dict[str, float] | None = None
     """Per-amenity score weights (-1..+1); None -> catalog defaults (all 0)."""
     stats_min_district_offers: int = 5
@@ -118,12 +128,22 @@ class AppSettings:
     """Validation metric for LightGBM HPO (mae/rmse/MAPE/medae/r2)."""
     model_val_size: float = 0.15
     """Fraction of data used as HPO validation (test held out separately)."""
-    model_hpo_trials: int = 12
+    model_hpo_trials: int = 40
     """Random hyperparameter trials (1 disables search)."""
     model_use_neighborhood: bool = True
     """Attach RCN neighborhood comps and log IDW baseline in MLflow."""
     model_nbhd_radius_m: float = 800.0
     """Search radius (metres) for local RCN comparable sales."""
+    model_log_target: bool = True
+    """Train on log1p(zł/m²); report metrics in zł/m²."""
+    model_district_calibration: bool = True
+    """Apply district median residual offsets after fit."""
+    photo_cv_enabled: bool = False
+    """Attach pretrained CLIP photo features during pipeline enrich."""
+    photo_cv_max_photos: int = 8
+    """Max listing photos to score with CLIP."""
+    photo_cv_model_id: str = "openai/clip-vit-base-patch32"
+    """Hugging Face CLIP model id for photo features."""
     commute_target_lon: float | None = None
     """Admin override longitude; None → experiment.yaml."""
     commute_target_lat: float | None = None
@@ -393,6 +413,30 @@ def load_app_settings(path: Path) -> AppSettings:
                 )
             ),
         ),
+        recommender_w_bargain=max(
+            0.0,
+            float(payload.get("recommender_w_bargain", defaults.recommender_w_bargain)),
+        ),
+        recommender_w_commute=max(
+            0.0,
+            float(payload.get("recommender_w_commute", defaults.recommender_w_commute)),
+        ),
+        recommender_w_transit=max(
+            0.0,
+            float(payload.get("recommender_w_transit", defaults.recommender_w_transit)),
+        ),
+        recommender_w_overprice=max(
+            0.0,
+            float(
+                payload.get("recommender_w_overprice", defaults.recommender_w_overprice)
+            ),
+        ),
+        recommender_otodom_pool_default=bool(
+            payload.get(
+                "recommender_otodom_pool_default",
+                defaults.recommender_otodom_pool_default,
+            )
+        ),
         recommender_amenity_weights=coerce_amenity_weights(
             payload.get(
                 "recommender_amenity_weights",
@@ -441,6 +485,29 @@ def load_app_settings(path: Path) -> AppSettings:
             100.0,
             float(payload.get("model_nbhd_radius_m", defaults.model_nbhd_radius_m)),
         ),
+        model_log_target=bool(
+            payload.get("model_log_target", defaults.model_log_target)
+        ),
+        model_district_calibration=bool(
+            payload.get(
+                "model_district_calibration",
+                defaults.model_district_calibration,
+            )
+        ),
+        photo_cv_enabled=bool(
+            payload.get("photo_cv_enabled", defaults.photo_cv_enabled)
+        ),
+        photo_cv_max_photos=max(
+            1,
+            min(
+                32,
+                int(payload.get("photo_cv_max_photos", defaults.photo_cv_max_photos)),
+            ),
+        ),
+        photo_cv_model_id=str(
+            payload.get("photo_cv_model_id", defaults.photo_cv_model_id) or ""
+        ).strip()
+        or defaults.photo_cv_model_id,
         commute_target_lon=_opt_lon_lat(payload.get("commute_target_lon")),
         commute_target_lat=_opt_lon_lat(payload.get("commute_target_lat")),
         commute_target_label=str(
