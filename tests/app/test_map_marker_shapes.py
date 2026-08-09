@@ -1,4 +1,4 @@
-"""Tests for map marker shapes (distinct POI silhouettes)."""
+"""Tests for map marker emojis (readable POI icons)."""
 
 from __future__ import annotations
 
@@ -11,33 +11,35 @@ import pydeck as pdk
 from shapely.geometry import Point
 
 from happy_housing.app.map_marker_shapes import (
-    MARKER_SHAPE_BY_KIND,
+    emoji_for_kind,
     marker_icon,
-    shape_for_kind,
 )
-from happy_housing.app.maps import amenity_layers, shops_layer
+from happy_housing.app.maps import amenity_layers, shops_layer, shops_layers
 
 
-def test_shape_for_kind_differs_across_poi_types() -> None:
-    """Shops, police, fire, hospital must not share one silhouette."""
-    kinds = ("shop", "police", "fire_station", "hospital", "air", "gunb", "transit")
-    shapes = {shape_for_kind(k) for k in kinds}
-    assert len(shapes) == len(kinds)
-    assert shape_for_kind("") == MARKER_SHAPE_BY_KIND["default"]
-    assert shape_for_kind("unknown_poi") != "circle"
+def test_emoji_for_kind_differs_across_poi_types() -> None:
+    """Shops, police, fire, hospital must not share one emoji."""
+    kinds = ("grocery", "police", "fire_station", "hospital", "air", "gunb", "transit")
+    emojis = {emoji_for_kind(k) for k in kinds}
+    assert len(emojis) == len(kinds)
+    assert emoji_for_kind("police") == "👮"
+    assert emoji_for_kind("grocery") == "🛒"
+    assert emoji_for_kind("") == emoji_for_kind("default")
+    assert emoji_for_kind("unknown_poi_xyz") != emoji_for_kind("police")
 
 
-def test_marker_icon_is_inline_svg_data_url() -> None:
+def test_marker_icon_embeds_emoji_in_svg() -> None:
     icon = marker_icon("police", [29, 78, 216, 210])
     assert icon["url"].startswith("data:image/svg+xml")
-    assert "<svg" in unquote(icon["url"].split(",", 1)[1])
+    svg = unquote(icon["url"].split(",", 1)[1])
+    assert "<svg" in svg
+    assert "👮" in svg
     assert icon["width"] == 128
     assert icon["anchorY"] == 64
-    assert shape_for_kind("police") == "diamond"
 
 
 def test_amenity_and_shop_layers_use_icon_layer() -> None:
-    """Readable POIs use IconLayer shapes, not identical Scatterplot circles."""
+    """Readable POIs use IconLayer emoji markers, not identical circles."""
     amenities = gpd.GeoDataFrame(
         {
             "amenity": ["hospital", "police", "fire_station"],
@@ -62,16 +64,36 @@ def test_amenity_and_shop_layers_use_icon_layer() -> None:
     )
     assert shops is not None
     assert shops.type == "IconLayer"
+    payload = json.loads(pdk.Deck(layers=[shops]).to_json())
+    atlas = payload["layers"][0]["iconAtlas"]
+    assert "🛒" in unquote(atlas.split(",", 1)[1])
 
 
-def test_city_poi_kinds_use_distinct_non_circle_shapes() -> None:
-    """UM sports/civic layers must not collapse to the default circle."""
+def test_shop_subcategories_use_distinct_emojis() -> None:
+    shops = pd.DataFrame({
+        "name": ["Biedronka", "Rossmann", "Zara"],
+        "shop": ["supermarket", "chemist", "clothes"],
+        "lon": [21.0, 21.01, 21.02],
+        "lat": [52.2, 52.21, 52.22],
+    })
+    layers = shops_layers(shops)
+    assert len(layers) >= 2
+    svgs = []
+    for layer in layers:
+        payload = json.loads(pdk.Deck(layers=[layer]).to_json())
+        atlas = payload["layers"][0]["iconAtlas"]
+        svgs.append(unquote(atlas.split(",", 1)[1]))
+    assert any("🛒" in s for s in svgs)
+    assert any("💄" in s for s in svgs) or any("💊" in s for s in svgs)
+    assert len({s for s in svgs}) == len(svgs)
+
+
+def test_city_poi_kinds_use_distinct_emojis() -> None:
+    """UM sports/civic layers must not collapse to one generic glyph."""
     from happy_housing.app.maps import city_poi_layers
 
-    assert shape_for_kind("gym") != "circle"
-    assert shape_for_kind("indoor_pool") != "circle"
-    assert shape_for_kind("gym") != shape_for_kind("indoor_pool")
-    assert shape_for_kind("library") != shape_for_kind("gym")
+    assert emoji_for_kind("gym") != emoji_for_kind("indoor_pool")
+    assert emoji_for_kind("library") != emoji_for_kind("gym")
 
     frame = gpd.GeoDataFrame(
         {
@@ -91,12 +113,8 @@ def test_city_poi_kinds_use_distinct_non_circle_shapes() -> None:
     assert atlases[0] != atlases[1]
     assert all(a.startswith("data:image/svg+xml") for a in atlases)
     svgs = [unquote(a.split(",", 1)[1]) for a in atlases]
-    # Gym → rounded square; pool → ring (hollow stroke, not filled r=22 circle).
-    assert any('rx="14"' in s for s in svgs)
-    assert any('fill="none"' in s for s in svgs)
-    assert not any(
-        'r="22"' in s and 'fill="none"' not in s and "<ellipse" not in s for s in svgs
-    )
+    assert any("🏋️" in s or "🏋" in s for s in svgs)
+    assert any("🏊" in s for s in svgs)
 
 
 def test_icon_atlas_is_literal_not_expression() -> None:
@@ -123,6 +141,7 @@ def test_icon_atlas_is_literal_not_expression() -> None:
     assert isinstance(atlas, str)
     assert atlas.startswith("data:image/svg+xml")
     assert not atlas.startswith("@@=")
+    assert "🏥" in unquote(atlas.split(",", 1)[1])
     rows = layer.get("data") or []
     assert rows
     assert rows[0].get("icon") == "marker"

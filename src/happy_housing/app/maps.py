@@ -222,7 +222,7 @@ def amenity_layers(
     show_charging: bool = False,
     show_fuel: bool = False,
 ) -> list[pdk.Layer]:
-    """Toggleable OSM amenity markers with distinct silhouettes per type."""
+    """Toggleable OSM amenity markers with distinct emojis per type."""
     if not (show_hospital or show_fire or show_police or show_charging or show_fuel):
         return []
     if amenities.empty or "amenity" not in amenities.columns:
@@ -255,9 +255,9 @@ def amenity_layers(
             layer_id=f"amenity-{kind}",
             kind=kind,
             fill_color=rgba,
-            size=28,
-            size_min_pixels=16,
-            size_max_pixels=34,
+            size=30,
+            size_min_pixels=18,
+            size_max_pixels=36,
         )
         if layer is not None:
             layers.append(layer)
@@ -292,7 +292,7 @@ def city_poi_layers(
     *,
     object_types: tuple[str, ...] | frozenset[str] | set[str],
 ) -> list[pdk.Layer]:
-    """UM sports, civic, and OSM commercial fitness markers by catalog key."""
+    """UM sports, civic, and OSM commercial fitness emoji markers by key."""
     if city_pois is None or city_pois.empty or not object_types:
         return []
     layers: list[pdk.Layer] = []
@@ -306,9 +306,9 @@ def city_poi_layers(
             layer_id=f"city-poi-{key}",
             kind=key,
             fill_color=rgba,
-            size=24,
-            size_min_pixels=12,
-            size_max_pixels=30,
+            size=28,
+            size_min_pixels=16,
+            size_max_pixels=34,
         )
         if layer is not None:
             layers.append(layer)
@@ -417,7 +417,7 @@ def shops_layers(
     show_mobility: bool = True,
     show_other: bool = True,
 ) -> list[pdk.Layer]:
-    """One IconLayer per enabled shop subcategory (square markers)."""
+    """One IconLayer per enabled shop subcategory (emoji markers)."""
     enabled: set[str] = set()
     if show_grocery:
         enabled.add("grocery")
@@ -461,11 +461,11 @@ def shops_layers(
         layer = _icon(
             prepared,
             layer_id=f"shops-{category}",
-            kind="shop",
+            kind=category,
             fill_color=_SHOP_CATEGORY_COLORS.get(category, [100, 116, 139, 200]),
-            size=22,
-            size_min_pixels=12,
-            size_max_pixels=28,
+            size=26,
+            size_min_pixels=14,
+            size_max_pixels=32,
         )
         if layer is not None:
             layers.append(layer)

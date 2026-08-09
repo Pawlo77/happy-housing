@@ -171,7 +171,8 @@ BASEMAP_HELP: str = (
     "Streets = Carto light basemap for labels/context. "
     "Satellite = Esri imagery for roof/yard/green cover — living-condition "
     "context only; does not change model scores. "
-    "POI layers use distinct silhouettes — hover map pins for details."
+    "POI layers use emoji markers (👮 police, 🛒 groceries, …) — "
+    "hover pins for details."
 )
 """Basemap segmented-control help."""
 
