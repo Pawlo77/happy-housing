@@ -11,8 +11,9 @@ from happy_housing.app.map_layers import MAX_GUNB_MAP_POINTS
 # Map overlay toggles — keys match LayerFlags field names.
 LAYER_HELP: dict[str, str] = {
     "offers": (
-        "Scored listing pins coloured by Δ zł/m² (listing - model). "
-        "Green = model says underpriced; red = overpriced. "
+        "Scored listing pins coloured by Δ zł/m² (listing - model) on a "
+        "continuous green → amber → red ramp (not binary). "
+        "Deeper green = more underpriced vs model; deeper red = more overpriced. "
         "Hover pins for details; click a pin, then Open in Offer. "
         "Valuation only — does not change living-condition overlays."
     ),

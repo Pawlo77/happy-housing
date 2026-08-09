@@ -11,6 +11,58 @@ import pandas as pd
 
 from happy_housing.gis.traffic import diurnal_traffic_weight
 
+_DELTA_COLOR_SCALE_ZL: float = 1_500.0
+"""Δ zł/m² soft-saturation scale for offer pin colours (tanh)."""
+
+_DELTA_UNDER_RGB: tuple[int, int, int] = (20, 160, 85)
+"""Teal-green — strongly underpriced."""
+
+_DELTA_MID_RGB: tuple[int, int, int] = (190, 150, 40)
+"""Amber — near-fair Δ ≈ 0."""
+
+_DELTA_OVER_RGB: tuple[int, int, int] = (215, 35, 30)
+"""Danger red — strongly overpriced."""
+
+_DELTA_COLOR_ALPHA: int = 200
+"""Offer pin alpha."""
+
+
+def listing_delta_rgba(delta_zl_m2: float) -> tuple[int, int, int, int]:
+    """Map listing-model delta zl/m2 to continuous RGBA (green → amber → red)."""
+    t = 0.5 * (float(np.tanh(float(delta_zl_m2) / _DELTA_COLOR_SCALE_ZL)) + 1.0)
+    if t <= 0.5:
+        u = t * 2.0
+        lo, hi = _DELTA_UNDER_RGB, _DELTA_MID_RGB
+    else:
+        u = (t - 0.5) * 2.0
+        lo, hi = _DELTA_MID_RGB, _DELTA_OVER_RGB
+    rgb = tuple(round(lo[i] + u * (hi[i] - lo[i])) for i in range(3))
+    return (rgb[0], rgb[1], rgb[2], _DELTA_COLOR_ALPHA)
+
+
+def listing_delta_rgba_columns(delta: pd.Series) -> pd.DataFrame:
+    """Vectorized RGBA columns for offer ScatterplotLayer fills."""
+    values = pd.to_numeric(delta, errors="coerce").fillna(0.0).to_numpy(dtype=float)
+    t = 0.5 * (np.tanh(values / _DELTA_COLOR_SCALE_ZL) + 1.0)
+    left = t <= 0.5
+    u = np.where(left, t * 2.0, (t - 0.5) * 2.0)
+    lo_arr = np.empty((len(values), 3), dtype=float)
+    hi_arr = np.empty((len(values), 3), dtype=float)
+    lo_arr[left] = _DELTA_UNDER_RGB
+    lo_arr[~left] = _DELTA_MID_RGB
+    hi_arr[left] = _DELTA_MID_RGB
+    hi_arr[~left] = _DELTA_OVER_RGB
+    rgb = np.rint(lo_arr + u[:, None] * (hi_arr - lo_arr)).astype(int)
+    return pd.DataFrame(
+        {
+            "color_r": rgb[:, 0],
+            "color_g": rgb[:, 1],
+            "color_b": rgb[:, 2],
+            "color_a": _DELTA_COLOR_ALPHA,
+        },
+        index=delta.index,
+    )
+
 
 @dataclass(slots=True)
 class LayerFlags:
@@ -360,11 +412,11 @@ def prepare_listings_for_map(frame: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame()
     out["listing_id"] = out["listing_id"].astype(str)
     delta = pd.to_numeric(out["delta_price_per_m2"], errors="coerce").fillna(0.0)
-    over = delta.to_numpy() > 0
-    out["color_r"] = np.where(over, 220, 30)
-    out["color_g"] = np.where(over, 40, 170)
-    out["color_b"] = 70
-    out["color_a"] = 200
+    colors = listing_delta_rgba_columns(delta)
+    out["color_r"] = colors["color_r"].to_numpy()
+    out["color_g"] = colors["color_g"].to_numpy()
+    out["color_b"] = colors["color_b"].to_numpy()
+    out["color_a"] = colors["color_a"].to_numpy()
     area = pd.to_numeric(out.get("area_m2"), errors="coerce")
     out["radius"] = (area.fillna(50.0) * 0.7).clip(22, 55)
     out["tooltip_name"] = out["listing_id"]
