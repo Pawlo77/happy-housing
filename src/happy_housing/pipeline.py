@@ -373,6 +373,7 @@ def run_pipeline(
             gunb_parquet,
             url=urls.gunb_zip,
             fixture_path=fixtures / "gunb_points.json",
+            refresh_wfs_cache=bool(force_gis_refresh or force),
         )
     else:
         _ensure_empty(gunb_parquet, ["lon", "lat"])

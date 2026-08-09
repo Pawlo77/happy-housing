@@ -13,6 +13,7 @@ from happy_housing.ingest.gunb import (
     _fetch_wfs_city_layer,
     _frame_from_wfs_geojson,
     _frame_from_wfs_gml,
+    _keep_warsaw_metro_row,
     gunb_points_gdf,
 )
 
@@ -138,3 +139,79 @@ def test_fetch_wfs_city_layer_retries_on_timeout(monkeypatch: Any) -> None:
     assert calls["n"] == 2
     assert len(frame) == 1
     assert frame.iloc[0]["numer_decyzji"] == "RETRY-1"
+
+
+def test_keep_warsaw_metro_row_by_city_terc_or_bbox() -> None:
+    assert _keep_warsaw_metro_row({"miasto": "Warszawa", "lon": 19.0, "lat": 50.0})
+    assert _keep_warsaw_metro_row({
+        "miasto": "Kraków",
+        "terc": "1465011",
+        "lon": 19.0,
+        "lat": 50.0,
+    })
+    assert _keep_warsaw_metro_row({"miasto": "Piaseczno", "lon": 21.02, "lat": 52.07})
+    assert not _keep_warsaw_metro_row({"miasto": "Kraków", "lon": 19.9, "lat": 50.1})
+
+
+def test_fetch_wfs_filters_client_side_and_past_old_cap(monkeypatch: Any) -> None:
+    """GUGiK ignores CQL — keep Warsaw-metro rows and scan past the old 200k stop."""
+
+    def _member(city: str, lon: float, lat: float, decision: str) -> str:
+        # GML posList is lat lon pairs.
+        pos = (
+            f"{lat} {lon} {lat + 0.001} {lon} "
+            f"{lat + 0.001} {lon + 0.001} {lat} {lon + 0.001}"
+        )
+        return f"""
+      <wfs:member>
+        <ms:pozwolenia_2025>
+          <ms:msGeometry>
+            <gml:Polygon srsName="urn:ogc:def:crs:EPSG::4326">
+              <gml:exterior>
+                <gml:LinearRing>
+                  <gml:posList srsDimension="2">{pos}</gml:posList>
+                </gml:LinearRing>
+              </gml:exterior>
+            </gml:Polygon>
+          </ms:msGeometry>
+          <ms:miasto>{city}</ms:miasto>
+          <ms:numer_ewidencyjny_system>{decision}</ms:numer_ewidencyjny_system>
+        </ms:pozwolenia_2025>
+      </wfs:member>"""
+
+    page_size = 2
+    # Three full pages then a short page — startIndex goes 0,2,4,6 (> old mental model).
+    pages = [
+        _member("Kraków", 19.9, 50.1, "K1") + _member("Warszawa", 21.0, 52.2, "W1"),
+        _member("Gdańsk", 18.6, 54.3, "G1") + _member("Piaseczno", 21.02, 52.07, "P1"),
+        _member("Warszawa", 21.1, 52.25, "W2") + _member("Łódź", 19.4, 51.7, "L1"),
+        _member("Warszawa", 21.05, 52.23, "W3"),
+    ]
+    calls: list[int] = []
+
+    def fake_get(
+        _url: object, params: dict[str, object] | None = None, **_k: object
+    ) -> MagicMock:
+        assert params is not None
+        start = int(params["startIndex"])
+        calls.append(start)
+        idx = start // page_size
+        body = pages[idx] if idx < len(pages) else ""
+        resp = MagicMock()
+        resp.text = f"""<?xml version='1.0' encoding="UTF-8" ?>
+    <wfs:FeatureCollection xmlns:wfs="http://www.opengis.net/wfs/2.0"
+      xmlns:gml="http://www.opengis.net/gml/3.2"
+      xmlns:ms="http://mapserver.gis.umn.edu/mapserver"
+      numberMatched="7" numberReturned="{page_size if idx < 3 else 1}">
+      {body}
+    </wfs:FeatureCollection>
+    """
+        resp.raise_for_status = MagicMock()
+        return resp
+
+    monkeypatch.setattr("happy_housing.ingest.gunb.requests.get", fake_get)
+    monkeypatch.setattr("happy_housing.ingest.gunb.time.sleep", lambda _s: None)
+
+    frame = _fetch_wfs_city_layer("ms:pozwolenia_2025", page_size=page_size)
+    assert calls == [0, 2, 4, 6]
+    assert sorted(frame["numer_decyzji"].astype(str)) == ["P1", "W1", "W2", "W3"]

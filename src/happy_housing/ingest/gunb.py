@@ -40,6 +40,19 @@ _WFS_TIMEOUT_S: tuple[float, float] = (30.0, 300.0)
 _WFS_RETRIES: int = 3
 """Attempts per WFS page before abandoning the layer page."""
 
+_WFS_PAGE_SIZE: int = 2000
+"""Features per GetFeature page (server accepts at least 5000)."""
+
+_WFS_MAX_START_INDEX: int = 2_000_000
+"""Runaway guard only — national year layers are ~0.5M features."""
+
+# Lon/lat envelope around Warsaw + near suburbs (permits near listings matter).
+_WARSAW_METRO_BBOX: tuple[float, float, float, float] = (20.70, 51.95, 21.40, 52.45)
+"""``(lon_min, lat_min, lon_max, lat_max)`` client-side keep window."""
+
+_WARSAW_TERC_PREFIX: str = "1465"
+"""TERC prefix for m.st. Warszawa (districts share ``1465…``)."""
+
 _MEMBER_RE = re.compile(
     r"<wfs:member>(.*?)</wfs:member>",
     re.IGNORECASE | re.DOTALL,
@@ -104,6 +117,50 @@ def _wfs_get(
     raise last_exc
 
 
+def _keep_warsaw_metro_row(row: dict[str, object]) -> bool:
+    """Whether a WFS feature belongs in the Warsaw metro permit set.
+
+    GUGiK's MapServer build ignores ``CQL_FILTER`` / attribute filters, so the
+    national feed must be narrowed client-side via city name, TERC, or bbox.
+    """
+    city = str(row.get("miasto") or "").strip().casefold()
+    if "warszawa" in city:
+        return True
+    terc = str(row.get("terc") or "").strip()
+    if terc.startswith(_WARSAW_TERC_PREFIX):
+        return True
+    try:
+        lon = float(str(row.get("lon")))
+        lat = float(str(row.get("lat")))
+    except (TypeError, ValueError):
+        return False
+    lo0, la0, lo1, la1 = _WARSAW_METRO_BBOX
+    return lo0 <= lon <= lo1 and la0 <= lat <= la1
+
+
+def _filter_warsaw_metro(frame: pd.DataFrame) -> pd.DataFrame:
+    """Drop national WFS rows outside the Warsaw metro keep rules."""
+    if frame.empty:
+        return frame
+    if "miasto" in frame.columns:
+        city = frame["miasto"].astype(str).str.casefold()
+    else:
+        city = pd.Series("", index=frame.index, dtype=str)
+    if "terc" in frame.columns:
+        terc = frame["terc"].astype(str)
+    else:
+        terc = pd.Series("", index=frame.index, dtype=str)
+    lon = pd.to_numeric(frame.get("lon"), errors="coerce")
+    lat = pd.to_numeric(frame.get("lat"), errors="coerce")
+    lo0, la0, lo1, la1 = _WARSAW_METRO_BBOX
+    mask = (
+        city.str.contains("warszawa", regex=False)
+        | terc.str.startswith(_WARSAW_TERC_PREFIX)
+        | (lon.between(lo0, lo1) & lat.between(la0, la1))
+    )
+    return frame.loc[mask].reset_index(drop=True)
+
+
 def _centroid_lon_lat(pos_list: str) -> tuple[float, float] | None:
     """Average ``lat lon`` pairs from a GML posList into ``(lon, lat)``."""
     parts = pos_list.split()
@@ -162,14 +219,22 @@ def _fetch_wfs_city_layer(
     layer: str,
     *,
     city: str = "Warszawa",
-    page_size: int = 500,
+    page_size: int = _WFS_PAGE_SIZE,
     wfs_url: str = _GUNB_WFS,
     timeout_s: float | tuple[float, float] = _WFS_TIMEOUT_S,
     retries: int = _WFS_RETRIES,
+    max_start_index: int = _WFS_MAX_START_INDEX,
 ) -> pd.DataFrame:
-    """Paginate one GUGiK layer filtered to a city via CQL."""
+    """Paginate one GUGiK year layer; keep Warsaw-metro rows client-side.
+
+    ``city`` is retained for API compatibility; the remote CQL filter is a no-op
+    on this MapServer, so filtering uses :func:`_keep_warsaw_metro_row`.
+    """
+    del city  # Server ignores attribute filters; client filter is metro-wide.
     frames: list[pd.DataFrame] = []
     start = 0
+    matched: int | None = None
+    kept = 0
     while True:
         params: dict[str, object] = {
             "service": "WFS",
@@ -179,7 +244,6 @@ def _fetch_wfs_city_layer(
             "srsName": "EPSG:4326",
             "count": page_size,
             "startIndex": start,
-            "CQL_FILTER": f"miasto='{city}'",
         }
         response = _wfs_get(
             wfs_url,
@@ -187,16 +251,40 @@ def _fetch_wfs_city_layer(
             timeout_s=timeout_s,
             retries=retries,
         )
+        if matched is None:
+            match = re.search(r'numberMatched="([^"]+)"', response.text)
+            if match and match.group(1).isdigit():
+                matched = int(match.group(1))
+                logger.info(
+                    "GUNB WFS %s numberMatched=%s (national; filtering locally)",
+                    layer,
+                    matched,
+                )
         chunk = _frame_from_wfs_gml(response.text)
         if chunk.empty:
             break
-        frames.append(chunk)
+        local = _filter_warsaw_metro(chunk)
+        if not local.empty:
+            frames.append(local)
+            kept += len(local)
         if len(chunk) < page_size:
             break
         start += page_size
-        if start > 200_000:
-            logger.warning("GUNB WFS pagination stopped at startIndex=%s", start)
+        if matched is not None and start >= matched:
             break
+        if start > max_start_index:
+            logger.warning(
+                "GUNB WFS pagination stopped at startIndex=%s (runaway guard)",
+                start,
+            )
+            break
+        if start and start % (page_size * 25) == 0:
+            logger.info(
+                "GUNB WFS %s progress startIndex=%s kept=%s",
+                layer,
+                start,
+                kept,
+            )
     if not frames:
         return pd.DataFrame(columns=["lon", "lat", "adres", "numer_decyzji", "miasto"])
     return pd.concat(frames, ignore_index=True)
@@ -207,16 +295,40 @@ def fetch_gunb_warsaw_points(
     wfs_url: str = _GUNB_WFS,
     layers: tuple[str, ...] = _GUNB_WFS_LAYERS,
     city: str = "Warszawa",
+    cache_dir: Path | None = None,
+    use_cache: bool = True,
 ) -> pd.DataFrame:
-    """Download geolocated GUNB permits for one city from GUGiK WFS."""
+    """Download geolocated GUNB permits for Warsaw metro from GUGiK WFS."""
     frames: list[pd.DataFrame] = []
+    if cache_dir is not None:
+        cache_dir.mkdir(parents=True, exist_ok=True)
     for layer in layers:
-        try:
-            part = _fetch_wfs_city_layer(layer, city=city, wfs_url=wfs_url)
-        except Exception as exc:
-            logger.warning("GUNB WFS layer %s failed: %s", layer, exc)
-            continue
-        logger.info("GUNB WFS %s → %s rows", layer, len(part))
+        cache_path = None
+        if cache_dir is not None:
+            safe = layer.replace(":", "_").replace("/", "_")
+            cache_path = cache_dir / f"gunb_wfs_{safe}.parquet"
+        if (
+            use_cache
+            and cache_path is not None
+            and cache_path.exists()
+            and cache_path.stat().st_size > 0
+        ):
+            part = pd.read_parquet(cache_path)
+            logger.info(
+                "GUNB WFS %s → %s rows (cache %s)",
+                layer,
+                len(part),
+                cache_path.name,
+            )
+        else:
+            try:
+                part = _fetch_wfs_city_layer(layer, city=city, wfs_url=wfs_url)
+            except Exception as exc:
+                logger.warning("GUNB WFS layer %s failed: %s", layer, exc)
+                continue
+            logger.info("GUNB WFS %s → %s rows", layer, len(part))
+            if cache_path is not None:
+                part.to_parquet(cache_path, index=False)
         if not part.empty:
             frames.append(part)
     if not frames:
@@ -263,6 +375,8 @@ def download_gunb_mazowieckie(
     url: str = _GUNB_MAZ_ZIP,
     fixture_path: Path | None = None,
     wfs_url: str = _GUNB_WFS,
+    *,
+    refresh_wfs_cache: bool = False,
 ) -> pd.DataFrame:
     """Download full Mazowieckie GUNB dump + Warsaw WFS points for GIS.
 
@@ -283,8 +397,12 @@ def download_gunb_mazowieckie(
 
     frame = pd.DataFrame(columns=["lon", "lat", "adres", "numer_decyzji", "miasto"])
     try:
-        frame = fetch_gunb_warsaw_points(wfs_url=wfs_url)
-        logger.info("Loaded %s GUNB Warsaw points from WFS", len(frame))
+        frame = fetch_gunb_warsaw_points(
+            wfs_url=wfs_url,
+            cache_dir=raw_dir,
+            use_cache=not refresh_wfs_cache,
+        )
+        logger.info("Loaded %s GUNB Warsaw-metro points from WFS", len(frame))
     except Exception as exc:
         logger.warning("GUNB WFS fetch failed: %s", exc)
 
