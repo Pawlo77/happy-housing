@@ -68,7 +68,7 @@ def download_file(url: str, destination: Path, timeout_s: float = 120.0) -> Path
     """
     destination.parent.mkdir(parents=True, exist_ok=True)
     if destination.exists() and destination.stat().st_size > 0:
-        logger.info("Using cached download %s", destination)
+        logger.info("Reusing local archive %s (skip HTTP re-download)", destination)
         return destination
     logger.info("Downloading %s -> %s", url, destination)
     with requests.get(url, stream=True, timeout=timeout_s) as response:

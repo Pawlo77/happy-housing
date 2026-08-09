@@ -67,16 +67,14 @@ def count_parquet_rows(path: Path) -> int | None:
     """Return parquet row count from footer metadata (no full scan)."""
     if not path.exists():
         return None
-    return parquet_num_rows(str(path), file_mtime(path))  # type: ignore[no-any-return]
+    return parquet_num_rows(str(path), file_mtime(path))
 
 
 def count_json_records(path: Path) -> int | None:
     """Count GeoJSON features or JSON array / object rows."""
     if not path.exists():
         return None
-    return json_record_count(  # type: ignore[no-any-return]
-        str(path), file_mtime(path)
-    )
+    return json_record_count(str(path), file_mtime(path))
 
 
 def format_row_count(n: int | None, unit: str) -> str:

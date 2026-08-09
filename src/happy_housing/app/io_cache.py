@@ -1,17 +1,42 @@
-"""Streamlit mtime-keyed I/O caches shared by app data loaders."""
+"""Mtime-keyed I/O helpers; Streamlit-cached only inside a running app."""
 
 from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 import geopandas as gpd
 import pyarrow.parquet as pq
-import streamlit as st
 
 logger = logging.getLogger(__name__)
+
+F = TypeVar("F", bound=Callable[..., Any])
+
+
+def _cache_data(**_kwargs: Any) -> Callable[[F], F]:
+    """Use ``st.cache_data`` only when a Streamlit script runtime is active.
+
+    CLI / pytest imports otherwise get an identity decorator and never touch
+    Streamlit's cache storage (avoids ``No runtime found`` warnings).
+    """
+
+    def decorator(func: F) -> F:
+        try:
+            import streamlit as st
+            from streamlit.runtime.scriptrunner_utils.script_run_context import (
+                get_script_run_ctx,
+            )
+        except ImportError:
+            return func
+        if get_script_run_ctx(suppress_warning=True) is None:
+            return func
+        cached = st.cache_data(show_spinner=False)(func)
+        return cached  # type: ignore[no-any-return]
+
+    return decorator
 
 
 def file_mtime(path: Path) -> float:
@@ -22,28 +47,28 @@ def file_mtime(path: Path) -> float:
         return -1.0
 
 
-@st.cache_data(show_spinner=False)  # type: ignore[misc]
+@_cache_data()
 def read_text(path: str, mtime: float) -> str:
     """Cached UTF-8 text read keyed by path + mtime."""
     del mtime
     return Path(path).read_text(encoding="utf-8")
 
 
-@st.cache_data(show_spinner=False)  # type: ignore[misc]
+@_cache_data()
 def read_json(path: str, mtime: float) -> Any:
     """Cached ``json.loads`` of a UTF-8 file keyed by path + mtime."""
     del mtime
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
-@st.cache_data(show_spinner=False)  # type: ignore[misc]
+@_cache_data()
 def read_geojson_gdf(path: str, mtime: float) -> gpd.GeoDataFrame:
     """Cached GeoJSON / GeoPandas read keyed by path + mtime."""
     del mtime
     return gpd.read_file(path)
 
 
-@st.cache_data(show_spinner=False)  # type: ignore[misc]
+@_cache_data()
 def parquet_num_rows(path: str, mtime: float) -> int | None:
     """Cached parquet footer row count keyed by path + mtime."""
     del mtime
@@ -55,7 +80,7 @@ def parquet_num_rows(path: str, mtime: float) -> int | None:
         return None
 
 
-@st.cache_data(show_spinner=False)  # type: ignore[misc]
+@_cache_data()
 def json_record_count(path: str, mtime: float) -> int | None:
     """Cached GeoJSON / JSON array length keyed by path + mtime."""
     del mtime
@@ -76,6 +101,8 @@ def json_record_count(path: str, mtime: float) -> int | None:
 
 def clear_io_caches() -> None:
     """Drop all Streamlit data/resource caches used by the app."""
+    import streamlit as st
+
     st.cache_data.clear()
     st.cache_resource.clear()
     logger.info("Cleared Streamlit cache_data + cache_resource")
