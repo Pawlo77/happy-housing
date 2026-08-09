@@ -1,4 +1,4 @@
-"""Tests for snapping listing pins out of park polygons via OSM buildings."""
+"""Tests for snapping misplaced listing pins onto OSM buildings."""
 
 from __future__ import annotations
 
@@ -10,7 +10,9 @@ from shapely.geometry import Point, box
 
 from happy_housing.gis.location_fix import (
     listing_points_inside_parks,
+    listing_points_outside_buildings,
     snap_listings_out_of_parks,
+    snap_listings_to_buildings,
 )
 
 
@@ -21,12 +23,24 @@ def _park_square() -> gpd.GeoDataFrame:
 
 
 def _buildings() -> gpd.GeoDataFrame:
-    # One building inside the park, one outside to the east.
+    # One building inside the park, one outside to the east (footprints).
     return gpd.GeoDataFrame(
         {"building": ["yes", "apartments"]},
         geometry=[
-            Point(21.035, 52.210),  # inside
-            Point(21.039, 52.210),  # outside
+            box(21.0345, 52.2095, 21.0355, 52.2105),  # inside park
+            box(21.0385, 52.2095, 21.0395, 52.2105),  # outside park
+        ],
+        crs="EPSG:4326",
+    )
+
+
+def _building_centroids() -> gpd.GeoDataFrame:
+    """Legacy point buildings (centroid cache shape)."""
+    return gpd.GeoDataFrame(
+        {"building": ["yes", "apartments"]},
+        geometry=[
+            Point(21.035, 52.210),
+            Point(21.039, 52.210),
         ],
         crs="EPSG:4326",
     )
@@ -44,6 +58,40 @@ def test_listing_points_inside_parks_detects_containment() -> None:
     assert bool(mask.iloc[1]) is False
 
 
+def test_listing_points_outside_buildings_detects_road_pin() -> None:
+    buildings = _buildings()
+    listings = pd.DataFrame({
+        "listing_id": ["road", "inside"],
+        # Road-ish point west of the outside building footprint.
+        "lat": [52.210, 52.210],
+        "lon": [21.0375, 21.039],
+    })
+    mask = listing_points_outside_buildings(listings, buildings)
+    assert bool(mask.iloc[0]) is True
+    assert bool(mask.iloc[1]) is False
+
+
+def test_snap_listings_moves_road_center_pin_onto_building() -> None:
+    """Privacy-approx pin on the street snaps to nearest building footprint."""
+    listings = pd.DataFrame({
+        "listing_id": ["road-pin", "ok-inside"],
+        "lat": [52.210, 52.210],
+        "lon": [21.0375, 21.039],
+        "district": ["srodmiescie", "srodmiescie"],
+    })
+    out = snap_listings_to_buildings(
+        listings,
+        parks=_park_square(),
+        buildings=_buildings(),
+        max_snap_m=800.0,
+    )
+    assert bool(out.loc[0, "location_snapped"]) is True
+    assert abs(float(out.loc[0, "lon"]) - 21.039) < 1e-5
+    assert abs(float(out.loc[0, "lat"]) - 52.210) < 1e-5
+    assert bool(out.loc[1, "location_snapped"]) is False
+    assert abs(float(out.loc[1, "lon"]) - 21.039) < 1e-5
+
+
 def test_snap_listings_out_of_parks_moves_interior_pin() -> None:
     listings = pd.DataFrame({
         "listing_id": ["WWA-0028", "OK-1"],
@@ -58,8 +106,8 @@ def test_snap_listings_out_of_parks_moves_interior_pin() -> None:
         max_snap_m=800.0,
     )
     assert out.loc[0, "listing_id"] == "WWA-0028"
-    assert float(out.loc[0, "lat"]) == 52.210
-    assert float(out.loc[0, "lon"]) == 21.039
+    assert abs(float(out.loc[0, "lat"]) - 52.210) < 1e-5
+    assert abs(float(out.loc[0, "lon"]) - 21.039) < 1e-5
     assert bool(out.loc[0, "location_snapped"]) is True
     assert float(out.loc[1, "lat"]) == 52.220
     assert float(out.loc[1, "lon"]) == 21.050
@@ -74,7 +122,7 @@ def test_snap_listings_skips_when_no_building_within_max() -> None:
     })
     buildings = gpd.GeoDataFrame(
         {"building": ["yes"]},
-        geometry=[Point(21.060, 52.210)],  # ~1.7 km east
+        geometry=[box(21.0595, 52.2095, 21.0605, 52.2105)],  # ~1.7 km east
         crs="EPSG:4326",
     )
     out = snap_listings_out_of_parks(
@@ -109,6 +157,23 @@ def test_snap_listings_fetches_buildings_when_missing(
         buildings=None,
         cache_dir=tmp_path,
         bbox=(21.0, 52.2, 21.1, 52.3),
+        max_snap_m=800.0,
+    )
+    assert bool(out.loc[0, "location_snapped"]) is True
+    assert abs(float(out.loc[0, "lon"]) - 21.039) < 1e-6
+
+
+def test_snap_accepts_point_building_cache_for_park_pins() -> None:
+    """Centroid-only cache still snaps park-interior pins."""
+    listings = pd.DataFrame({
+        "listing_id": ["park"],
+        "lat": [52.210],
+        "lon": [21.035],
+    })
+    out = snap_listings_to_buildings(
+        listings,
+        parks=_park_square(),
+        buildings=_building_centroids(),
         max_snap_m=800.0,
     )
     assert bool(out.loc[0, "location_snapped"]) is True

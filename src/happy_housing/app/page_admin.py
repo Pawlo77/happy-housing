@@ -643,11 +643,12 @@ def _panel_sources(settings: AppSettings, settings_file: Path, proc: Path) -> No
         key="pipe_use_osm",
     )
     snap_out_of_parks = st.checkbox(
-        "Snap listing pins out of parks (OSM buildings)",
+        "Snap listing pins onto OSM buildings",
         value=bool(settings.snap_listings_out_of_parks),
         help=(
-            "Otodom/fixture/RCN pins that land inside UM park polygons move to "
-            "the nearest OpenStreetMap building centroid outside the park."
+            "Otodom/fixture/RCN pins that land in parks, on roads, or otherwise "
+            "outside building footprints move to the nearest OpenStreetMap "
+            "residential building centroid (outside park polygons)."
         ),
         key="pipe_snap_out_of_parks",
     )

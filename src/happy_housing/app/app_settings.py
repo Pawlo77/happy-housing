@@ -149,7 +149,7 @@ class AppSettings:
     use_osm: bool = True
     """Fetch OSM amenities + shops during pipeline."""
     snap_listings_out_of_parks: bool = True
-    """Snap park-interior listing pins to nearest OSM building."""
+    """Snap park/road/misplaced listing pins to nearest OSM building."""
     bike_path_coverage_radius_m: float = 500.0
     """Neighbourhood radius (m) for ``bike_path_coverage_m`` feature."""
     download_gtfs: bool = True
