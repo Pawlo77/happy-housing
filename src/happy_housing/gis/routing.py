@@ -56,7 +56,7 @@ def _osrm_table_chunk(
 def osrm_table_durations_seconds(
     origins: Iterable[tuple[float, float]],
     destination: tuple[float, float],
-    base_url: str = "http://127.0.0.1:5000",
+    base_url: str = "http://127.0.0.1:5001",
     timeout_s: float = 30.0,
 ) -> np.ndarray | None:
     """Query OSRM Table API for durations from origins to one destination.
@@ -111,11 +111,17 @@ def attach_commute_minutes(
     *,
     dest_lon: float,
     dest_lat: float,
-    osrm_url: str = "http://127.0.0.1:5000",
+    osrm_url: str = "http://127.0.0.1:5001",
     distance_col: str = "dist_daszynskiego_m",
     out_col: str = "commute_min",
+    require_osrm: bool = False,
 ) -> pd.DataFrame:
-    """Add peak-commute minutes via OSRM or 30 km/h distance proxy."""
+    """Add peak-commute minutes via OSRM or 30 km/h distance proxy.
+
+    Args:
+        require_osrm: When true, raise if the Table API is unreachable instead
+            of silently filling the 30 km/h distance proxy.
+    """
     out = frame.copy()
     origins = list(zip(out["lon"].astype(float), out["lat"].astype(float), strict=True))
     durations = osrm_table_durations_seconds(
@@ -124,6 +130,11 @@ def attach_commute_minutes(
     if durations is not None and len(durations) == len(out):
         out[out_col] = durations / 60.0
         return out
+    if require_osrm:
+        raise RuntimeError(
+            f"OSRM required but unavailable at {osrm_url!r} "
+            "(macOS AirPlay often occupies :5000 — use host port 5001)"
+        )
     if distance_col in out.columns:
         # Assume ~30 km/h average urban speed.
         out[out_col] = (out[distance_col].astype(float) / 1000.0) / 30.0 * 60.0

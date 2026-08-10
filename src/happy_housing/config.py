@@ -326,12 +326,14 @@ class LoggingConfig:
 class RoutingConfig:
     """Local routing service endpoints (OSRM car, OTP transit)."""
 
-    osrm_url: str = "http://127.0.0.1:5000"
-    """OSRM table API root for car commute minutes."""
+    osrm_url: str = "http://127.0.0.1:5001"
+    """OSRM table API root for car commute minutes (host :5001 vs AirPlay :5000)."""
     otp_url: str = "http://127.0.0.1:8080"
     """OpenTripPlanner 2 HTTP root for transit+walk plans."""
     use_otp_transit: bool = False
     """When true, pipeline fills ``transit_commute_min`` via OTP (slow if large)."""
+    require_osrm: bool = False
+    """When true, enrich fails instead of using the 30 km/h distance proxy."""
 
     def __post_init__(self) -> None:
         _require_str("osrm_url", self.osrm_url)
@@ -346,9 +348,10 @@ class RoutingConfig:
         """Build routing config from a mapping."""
         mapping = _extract_mapping(data, name="RoutingConfig")
         return cls(
-            osrm_url=str(mapping.get("osrm_url", "http://127.0.0.1:5000")),
+            osrm_url=str(mapping.get("osrm_url", "http://127.0.0.1:5001")),
             otp_url=str(mapping.get("otp_url", "http://127.0.0.1:8080")),
             use_otp_transit=bool(mapping.get("use_otp_transit", False)),
+            require_osrm=bool(mapping.get("require_osrm", False)),
         )
 
 

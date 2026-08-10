@@ -2,7 +2,8 @@ services:
   osrm:
     image: ghcr.io/project-osrm/osrm-backend:latest
     ports:
-      - "5000:5000"
+      # Host 5001 — macOS AirPlay Receiver owns :5000 (returns HTTP 403).
+      - "5001:5000"
     volumes:
       - ./data/osrm:/data
     # Prepare Mazowieckie extract offline first (see Makefile osrm-prepare).

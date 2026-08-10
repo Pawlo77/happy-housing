@@ -192,6 +192,7 @@ def recompute_commute_features(
         dest_lon=float(dest_lon),
         dest_lat=float(dest_lat),
         osrm_url=osrm_url,
+        require_osrm=bool(config.routing.require_osrm),
     )
     if use_otp_transit:
         work = attach_transit_commute_minutes(

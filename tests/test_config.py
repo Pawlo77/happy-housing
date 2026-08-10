@@ -26,9 +26,10 @@ def test_load_default_experiment_yaml() -> None:
     assert config.ingest.rcn_max_rows is None
     assert "wynik_mazowieckie.zip" in config.ingest_urls.gunb_zip
     assert config.logging.level == "INFO"
-    assert config.routing.osrm_url.endswith(":5000")
+    assert config.routing.osrm_url.endswith(":5001")
     assert config.routing.otp_url.endswith(":8080")
     assert config.routing.use_otp_transit is False
+    assert config.routing.require_osrm is True
 
 
 def test_logging_config_from_dict() -> None:

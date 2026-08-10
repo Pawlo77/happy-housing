@@ -9,10 +9,30 @@ from happy_housing.config import ModelConfig
 from happy_housing.gis import enrich_listings
 from happy_housing.ingest import load_listings_json
 from happy_housing.models.train import (
+    CATEGORICAL_FEATURE_COLUMNS,
+    FEATURE_COLUMNS,
     TrainSettings,
     shap_explanation_for_row,
     train_price_model,
 )
+from happy_housing.vision.photo_features import attach_photo_features
+
+
+def _with_all_features(frame: pd.DataFrame) -> pd.DataFrame:
+    extras: dict[str, object] = {}
+    for col in FEATURE_COLUMNS:
+        if col in frame.columns:
+            continue
+        if col in CATEGORICAL_FEATURE_COLUMNS:
+            extras[col] = "unknown"
+        else:
+            extras[col] = 0.0
+    if not extras:
+        return frame
+    return pd.concat(
+        [frame, pd.DataFrame(extras, index=frame.index)],
+        axis=1,
+    )
 
 
 def _enriched_frame(tmp_path: Path) -> pd.DataFrame:
@@ -44,7 +64,9 @@ def _enriched_frame(tmp_path: Path) -> pd.DataFrame:
         aircraft_lden_path=Path("data/fixtures/chopin_aircraft_lden.geojson"),
         aircraft_lnight_path=Path("data/fixtures/chopin_aircraft_lnight.geojson"),
     )
-    return pd.DataFrame(enriched.drop(columns=["geometry"], errors="ignore"))
+    frame = pd.DataFrame(enriched.drop(columns=["geometry"], errors="ignore"))
+    frame = attach_photo_features(frame)
+    return _with_all_features(frame)
 
 
 def test_train_and_shap(tmp_path: Path) -> None:

@@ -18,7 +18,6 @@ from sklearn.model_selection import ParameterSampler, train_test_split
 
 from happy_housing.config import ExperimentConfig, ModelConfig
 from happy_housing.gis.amenity_catalog import model_distance_feature_columns
-from happy_housing.gis.frame_util import assign_columns
 from happy_housing.models.metrics import (
     OptMetric,
     coerce_opt_metric,
@@ -207,11 +206,20 @@ class TrainResult:
     """Additive zł/m² correction by district (post-hoc)."""
 
 
-def active_feature_columns(*, use_neighborhood: bool = True) -> tuple[str, ...]:
-    """Feature list depending on whether neighborhood comps are enabled."""
-    if use_neighborhood:
-        return FEATURE_COLUMNS
-    return CORE_FEATURE_COLUMNS + PHOTO_FEATURE_COLUMNS
+def active_feature_columns(
+    *,
+    use_neighborhood: bool = True,
+    include_transit: bool = True,
+) -> tuple[str, ...]:
+    """Feature list depending on neighborhood comps / OTP transit availability."""
+    cols = (
+        FEATURE_COLUMNS
+        if use_neighborhood
+        else CORE_FEATURE_COLUMNS + PHOTO_FEATURE_COLUMNS
+    )
+    if include_transit:
+        return cols
+    return tuple(c for c in cols if c != "transit_commute_min")
 
 
 def model_feature_columns(model: lgb.Booster | lgb.LGBMRegressor) -> tuple[str, ...]:
@@ -234,13 +242,17 @@ def check_feature_coverage(
     max_missing_fraction: float = 0.85,
     min_usable: int = 8,
 ) -> None:
-    """Raise when too few feature columns have any non-null signal."""
+    """Raise when feature columns are absent or lack usable signal.
+
+    Missing columns are a hard error (no silent invent / zero-impute of
+    whole features). Row-level NaNs inside present columns are OK.
+    """
     del max_missing_fraction  # kept for call-site compat
     missing = [c for c in feature_columns if c not in frame.columns]
+    if missing:
+        raise ValueError(f"Model features absent on frame: {missing}")
     usable = 0
     for col in feature_columns:
-        if col not in frame.columns:
-            continue
         if col in CATEGORICAL_FEATURE_COLUMNS:
             if frame[col].notna().any():
                 usable += 1
@@ -250,10 +262,8 @@ def check_feature_coverage(
     if usable < min_usable:
         raise ValueError(
             f"Feature coverage too low: only {usable} usable columns "
-            f"(need ≥{min_usable}); missing={missing[:12]}"
+            f"(need ≥{min_usable})"
         )
-    if missing:
-        logger.warning("Model features absent on frame: %s", missing)
 
 
 def build_feature_matrix(
@@ -558,10 +568,6 @@ def train_price_model(
         random_state=model_config.random_state,
     )
     opt_metric = coerce_opt_metric(settings.opt_metric)
-    feature_cols = active_feature_columns(use_neighborhood=settings.use_neighborhood)
-    if model_config.target not in frame.columns:
-        raise ValueError(f"Target column missing: {model_config.target}")
-
     work = frame
     if settings.train_otodom_labels_only and "source" in frame.columns:
         sources = frame["source"].astype(str).str.lower()
@@ -572,10 +578,18 @@ def train_price_model(
             len(work),
         )
 
+    include_transit = False
+    if "transit_commute_min" in work.columns:
+        transit = pd.to_numeric(work["transit_commute_min"], errors="coerce")
+        include_transit = bool(transit.notna().any())
+    feature_cols = active_feature_columns(
+        use_neighborhood=settings.use_neighborhood,
+        include_transit=include_transit,
+    )
+    if model_config.target not in work.columns:
+        raise ValueError(f"Target column missing: {model_config.target}")
+
     check_feature_coverage(work, feature_cols, max_missing_fraction=0.9)
-    if "transit_commute_min" not in work.columns:
-        work = work.copy()
-        work["transit_commute_min"] = float("nan")
 
     # Unfilled matrix — medians from train fold only after split.
     raw_features = _raw_feature_frame(work, feature_cols)
@@ -750,15 +764,15 @@ def _raw_feature_frame(
     frame: pd.DataFrame,
     feature_columns: tuple[str, ...],
 ) -> pd.DataFrame:
-    """Feature frame with NaNs preserved (no impute) for split-then-impute."""
-    work = frame
-    missing = {
-        col: (float("nan") if col not in CATEGORICAL_FEATURE_COLUMNS else None)
-        for col in feature_columns
-        if col not in work.columns
-    }
+    """Feature frame with NaNs preserved (no impute) for split-then-impute.
+
+    Raises:
+        ValueError: If any requested column is missing from ``frame``.
+    """
+    missing = [col for col in feature_columns if col not in frame.columns]
     if missing:
-        work = assign_columns(work, missing)
+        raise ValueError(f"Model features absent on frame: {missing}")
+    work = frame
     pieces: list[pd.Series] = []
     for col in feature_columns:
         if col in CATEGORICAL_FEATURE_COLUMNS:
@@ -831,7 +845,14 @@ def oof_predict_price_per_m2(
     from sklearn.model_selection import KFold
 
     settings = train_settings
-    feature_cols = active_feature_columns(use_neighborhood=settings.use_neighborhood)
+    include_transit = False
+    if "transit_commute_min" in frame.columns:
+        transit = pd.to_numeric(frame["transit_commute_min"], errors="coerce")
+        include_transit = bool(transit.notna().any())
+    feature_cols = active_feature_columns(
+        use_neighborhood=settings.use_neighborhood,
+        include_transit=include_transit,
+    )
     preds = np.full(len(frame), np.nan, dtype=float)
     label_mask = pd.Series(True, index=frame.index)
     if settings.train_otodom_labels_only and "source" in frame.columns:

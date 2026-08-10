@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import lightgbm as lgb
@@ -113,6 +114,10 @@ def test_recompute_updates_distance_commute_and_fingerprint(tmp_path: Path) -> N
     save_app_settings(settings_file, settings)
 
     config = load_experiment_config(Path("configs/experiment.yaml"))
+    config = replace(
+        config,
+        routing=replace(config.routing, require_osrm=False),
+    )
     result = recompute_commute_features(
         tmp_path,
         dest_lon=20.983,

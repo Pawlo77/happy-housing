@@ -140,8 +140,8 @@ class AppSettings:
     """Train on log1p(zł/m²); report metrics in zł/m²."""
     model_district_calibration: bool = True
     """Apply district median residual offsets after fit."""
-    photo_cv_enabled: bool = False
-    """Attach pretrained CLIP photo features during pipeline enrich."""
+    photo_cv_enabled: bool = True
+    """Attach pretrained CLIP/heuristic photo features during pipeline enrich."""
     photo_cv_max_photos: int = 8
     """Max listing photos to score with CLIP."""
     photo_cv_model_id: str = "openai/clip-vit-base-patch32"

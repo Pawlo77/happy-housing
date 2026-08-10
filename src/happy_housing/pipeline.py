@@ -116,6 +116,7 @@ from happy_housing.pipeline_cache import (
     pipeline_steps_path,
 )
 from happy_housing.storage import write_geoparquet
+from happy_housing.vision.photo_features import attach_photo_features
 
 logger = logging.getLogger(__name__)
 
@@ -511,13 +512,14 @@ def run_pipeline(
         "aq_power": float(app_settings.aq_idw_power),
         "extract": bool(app_settings.extract_attrs_enabled),
         "extract_workers": int(app_settings.extract_lm_workers),
-        "photo": bool(app_settings.photo_cv_enabled),
+        "photo": True,
         "photo_n": int(app_settings.photo_cv_max_photos),
         "photo_model": str(app_settings.photo_cv_model_id),
         "nbhd": bool(app_settings.model_use_neighborhood),
         "nbhd_r": float(app_settings.model_nbhd_radius_m),
         "otp": bool(config.routing.use_otp_transit),
         "osrm": str(config.routing.osrm_url),
+        "require_osrm": bool(config.routing.require_osrm),
         "n_features": len(FEATURE_COLUMNS),
     }
     enrich_fp = fingerprint(
@@ -616,6 +618,7 @@ def run_pipeline(
             dest_lon=commute.lon,
             dest_lat=commute.lat,
             osrm_url=config.routing.osrm_url,
+            require_osrm=bool(config.routing.require_osrm),
         )
         if config.routing.use_otp_transit:
             train_frame = attach_transit_commute_minutes(
@@ -626,14 +629,11 @@ def run_pipeline(
             )
         if "transit_commute_min" not in train_frame.columns:
             train_frame["transit_commute_min"] = float("nan")
-        if app_settings.photo_cv_enabled:
-            from happy_housing.vision.photo_features import attach_photo_features
-
-            train_frame = attach_photo_features(
-                train_frame,
-                max_photos=int(app_settings.photo_cv_max_photos),
-                model_id=str(app_settings.photo_cv_model_id),
-            )
+        train_frame = attach_photo_features(
+            train_frame,
+            max_photos=int(app_settings.photo_cv_max_photos),
+            model_id=str(app_settings.photo_cv_model_id),
+        )
 
         def _write_enriched_geoparquet(frame: pd.DataFrame) -> None:
             """Persist attribute frame with Hilbert-sorted GeoParquet geometry."""

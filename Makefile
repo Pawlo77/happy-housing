@@ -76,6 +76,7 @@ osrm-prepare: ## Download Mazowieckie PBF and build OSRM MLD graph into docker/d
 	@echo "Then: docker run --rm -v \"$$(pwd)/docker/data/osrm:/data\" ghcr.io/project-osrm/osrm-backend:latest osrm-partition /data/mazowieckie-latest.osrm"
 	@echo "Then: docker run --rm -v \"$$(pwd)/docker/data/osrm:/data\" ghcr.io/project-osrm/osrm-backend:latest osrm-customize /data/mazowieckie-latest.osrm"
 	@echo "Start: docker compose -f docker/docker-compose.osrm.yml up"
+	@echo "OSRM listens on http://127.0.0.1:5001 (not :5000 — AirPlay on macOS)"
 
 pipeline: ## Full ingest → GIS → train/score → recommend (FORCE=1 to recompute)
 	uv run python -m happy_housing.pipeline $(if $(filter 1,$(FORCE)),--force,)

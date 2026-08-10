@@ -7,12 +7,32 @@ import pytest
 
 from happy_housing.config import ModelConfig
 from happy_housing.models.train import (
+    CATEGORICAL_FEATURE_COLUMNS,
+    FEATURE_COLUMNS,
     TrainSettings,
     build_feature_matrix,
     check_feature_coverage,
     split_train_val_test,
     train_price_model,
 )
+
+
+def _with_all_features(frame: pd.DataFrame) -> pd.DataFrame:
+    """Pad missing model columns so unit tests exercise train without full GIS."""
+    extras: dict[str, object] = {}
+    for col in FEATURE_COLUMNS:
+        if col in frame.columns:
+            continue
+        if col in CATEGORICAL_FEATURE_COLUMNS:
+            extras[col] = "unknown"
+        else:
+            extras[col] = 0.0
+    if not extras:
+        return frame
+    return pd.concat(
+        [frame, pd.DataFrame(extras, index=frame.index)],
+        axis=1,
+    )
 
 
 def test_build_feature_matrix_uses_provided_medians() -> None:
@@ -32,7 +52,7 @@ def test_build_feature_matrix_uses_provided_medians() -> None:
 
 def test_check_feature_coverage_raises_when_core_missing() -> None:
     frame = pd.DataFrame({"area_m2": [50.0, 60.0]})
-    with pytest.raises(ValueError, match="too low"):
+    with pytest.raises(ValueError, match="absent on frame"):
         check_feature_coverage(
             frame,
             ("area_m2", "rooms", "year_built"),
@@ -125,7 +145,7 @@ def test_train_otodom_only_excludes_rcn_labels() -> None:
         "price_per_m2": [12_000.0 + i * 10 for i in range(40)],
     })
     result = train_price_model(
-        frame,
+        _with_all_features(frame),
         ModelConfig(n_estimators=20, num_leaves=7, test_size=0.25),
         TrainSettings(
             hpo_trials=1,
