@@ -147,6 +147,7 @@ def test_card_needs_detail_refresh_for_new_or_price_change() -> None:
             "price_pln": 100.0,
             "lat": 52.0,
             "lon": 21.0,
+            "image_urls_json": '["https://cdn.example/1.jpg"]',
         }
     }
     assert card_needs_detail_refresh(
@@ -281,6 +282,8 @@ def test_scrape_incremental_skips_unchanged_detail(
             "has_lift": 0,
             "has_terrace": 0,
             "has_garden": 0,
+            "image_urls_json": '["https://cdn.example/a.jpg"]',
+            "floor_plan_urls_json": "[]",
         }
     ])
     out = tmp_path / "otodom.parquet"

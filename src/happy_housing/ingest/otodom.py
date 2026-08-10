@@ -651,14 +651,50 @@ def _existing_by_id(frame: pd.DataFrame) -> dict[str, dict[str, Any]]:
     return out
 
 
+def listing_photo_count(row: dict[str, Any] | pd.Series) -> int:
+    """Count listing photo URLs (``image_urls_json`` preferred, else cover)."""
+    raw = row.get("image_urls_json")
+    if isinstance(raw, str) and raw.strip():
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
+            payload = None
+        if isinstance(payload, list):
+            urls = [str(u) for u in payload if str(u).startswith("http")]
+            if urls:
+                return len(urls)
+    cover = row.get("image_url")
+    if isinstance(cover, str) and cover.startswith("http"):
+        return 1
+    return 0
+
+
+def listing_needs_media_backfill(row: dict[str, Any] | pd.Series) -> bool:
+    """True when gallery JSON was never persisted (cover-only legacy rows)."""
+    raw = row.get("image_urls_json")
+    if raw is None:
+        return True
+    if isinstance(raw, float) and raw != raw:  # NaN
+        return True
+    if not isinstance(raw, str) or not raw.strip():
+        return True
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return True
+    return not isinstance(payload, list)
+
+
 def card_needs_detail_refresh(
     card: dict[str, Any],
     existing_by_id: dict[str, dict[str, Any]],
 ) -> bool:
-    """True when listing is new, missing coords, or search price changed."""
+    """True when listing is new, missing coords/media, or search price changed."""
     lid = str(card.get("listing_id") or "")
     prior = existing_by_id.get(lid)
     if prior is None:
+        return True
+    if listing_needs_media_backfill(prior):
         return True
     lat = prior.get("lat")
     lon = prior.get("lon")
@@ -672,6 +708,104 @@ def card_needs_detail_refresh(
         return abs(float(new_price) - float(old_price)) > 0.5
     except (TypeError, ValueError):
         return True
+
+
+def backfill_otodom_media(
+    frame: pd.DataFrame,
+    *,
+    detail_workers: int = 8,
+    timeout_s: float | tuple[float, float] = DEFAULT_TIMEOUT,
+    max_listings: int | None = None,
+) -> pd.DataFrame:
+    """Fetch Otodom detail galleries for rows missing ``image_urls_json``.
+
+    Updates ``image_url`` / ``image_urls_json`` / ``floor_plan_urls_json`` (and
+    description when empty) in place on a copy. Rows without a usable slug are
+    skipped.
+    """
+    if frame.empty:
+        out = frame.copy()
+        if "image_urls_json" not in out.columns:
+            out["image_urls_json"] = "[]"
+        if "floor_plan_urls_json" not in out.columns:
+            out["floor_plan_urls_json"] = "[]"
+        return out
+
+    out = frame.copy()
+    if "image_urls_json" not in out.columns:
+        out["image_urls_json"] = pd.NA
+    if "floor_plan_urls_json" not in out.columns:
+        out["floor_plan_urls_json"] = pd.NA
+
+    pending_idx = [
+        idx
+        for idx, row in out.iterrows()
+        if listing_needs_media_backfill(row.to_dict())
+        and isinstance(row.get("slug"), str)
+        and bool(str(row.get("slug") or "").strip())
+    ]
+    if max_listings is not None:
+        pending_idx = pending_idx[: max(0, int(max_listings))]
+    if not pending_idx:
+        logger.info("Otodom media backfill: nothing pending")
+        return out
+
+    logger.info(
+        "Otodom media backfill: fetching galleries for %s / %s listings",
+        len(pending_idx),
+        len(out),
+    )
+
+    def _fetch(idx: Any) -> tuple[Any, dict[str, Any] | None]:
+        slug = str(out.at[idx, "slug"]).strip()
+        session = _session()
+        try:
+            detail = fetch_listing_detail(session, slug, timeout_s=timeout_s)
+        except Exception as exc:
+            logger.warning("Media backfill failed for %s: %s", slug, exc)
+            return idx, None
+        return idx, detail
+
+    updates = 0
+    with ThreadPoolExecutor(max_workers=max(1, int(detail_workers))) as pool:
+        futures = [pool.submit(_fetch, idx) for idx in pending_idx]
+        for fut in as_completed(futures):
+            idx, detail = fut.result()
+            if detail is None:
+                # Persist empty gallery JSON so we do not hammer forever.
+                out.at[idx, "image_urls_json"] = "[]"
+                if not isinstance(out.at[idx, "floor_plan_urls_json"], str):
+                    out.at[idx, "floor_plan_urls_json"] = "[]"
+                continue
+            urls_raw = detail.get("image_urls_json")
+            if isinstance(urls_raw, str) and urls_raw.strip():
+                out.at[idx, "image_urls_json"] = urls_raw
+            else:
+                out.at[idx, "image_urls_json"] = "[]"
+            cover = detail.get("image_url")
+            if isinstance(cover, str) and cover.startswith("http"):
+                out.at[idx, "image_url"] = cover
+            plans = detail.get("floor_plan_urls_json")
+            if isinstance(plans, str) and plans.strip():
+                out.at[idx, "floor_plan_urls_json"] = plans
+            elif not isinstance(out.at[idx, "floor_plan_urls_json"], str):
+                out.at[idx, "floor_plan_urls_json"] = "[]"
+            desc = detail.get("description")
+            existing = (
+                out.at[idx, "description"] if "description" in out.columns else None
+            )
+            if (
+                isinstance(desc, str)
+                and desc.strip()
+                and not (isinstance(existing, str) and existing.strip())
+            ):
+                if "description" not in out.columns:
+                    out["description"] = pd.NA
+                out.at[idx, "description"] = desc.strip()
+            updates += 1
+
+    logger.info("Otodom media backfill: updated %s listings", updates)
+    return out
 
 
 def merge_otodom_frames(
