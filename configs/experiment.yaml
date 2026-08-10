@@ -56,9 +56,9 @@ logging:
   level: INFO
 
 # Local routers (Docker). Host :5001 avoids macOS AirPlay on :5000.
-# use_otp_transit=true fills transit_commute_min (slow on big sets).
+# use_otp_transit=true fills transit_commute_min (needs OTP graph in data/otp/).
 routing:
   osrm_url: http://127.0.0.1:5001
   otp_url: http://127.0.0.1:8080
-  use_otp_transit: false
+  use_otp_transit: true
   require_osrm: true

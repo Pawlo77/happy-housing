@@ -658,6 +658,72 @@ def _existing_by_id(frame: pd.DataFrame) -> dict[str, dict[str, Any]]:
     return out
 
 
+_DETAIL_FILL_COLUMNS: tuple[str, ...] = (
+    "year_built",
+    "listed_at",
+    "description",
+    "market",
+    "market_primary",
+    "building_type",
+    "estate",
+    "floor_no",
+    "building_floors_num",
+    "construction_status",
+    "building_material",
+    "windows_type",
+    "building_ownership",
+    "heating",
+    "rent",
+    "rooms",
+    "has_balcony",
+    "has_garage",
+    "has_outdoor_parking",
+    "has_lift",
+    "has_terrace",
+    "has_garden",
+    "has_basement",
+    "is_attic",
+    "is_private_owner",
+    "advertiser_type",
+    "characteristics_json",
+    "additional_information_json",
+    "lat",
+    "lon",
+)
+"""Detail fields merged into sparse Otodom rows during media backfill."""
+
+
+def _cell_empty(value: object) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, float) and value != value:
+        return True
+    if not isinstance(value, str):
+        return False
+    text = value.strip()
+    if not text:
+        return True
+    return text.lower() in {"nan", "none", "unknown"}
+
+
+def merge_otodom_detail_into_row(
+    row: pd.Series,
+    detail: dict[str, Any],
+) -> pd.Series:
+    """Fill empty Otodom columns from a detail-page payload (no overwrite)."""
+    out = row.copy()
+    for col in _DETAIL_FILL_COLUMNS:
+        if col not in detail:
+            continue
+        new_val = detail.get(col)
+        if _cell_empty(new_val):
+            continue
+        if col in out.index and not _cell_empty(out.get(col)):
+            continue
+        out[col] = new_val
+    return out
+
+
 def listing_photo_count(row: dict[str, Any] | pd.Series) -> int:
     """Count listing photo URLs (``image_urls_json`` preferred, else cover)."""
     raw = row.get("image_urls_json")
@@ -674,6 +740,24 @@ def listing_photo_count(row: dict[str, Any] | pd.Series) -> int:
     if isinstance(cover, str) and cover.startswith("http"):
         return 1
     return 0
+
+
+def listing_needs_attr_backfill(row: dict[str, Any] | pd.Series) -> bool:
+    """True when gallery exists but key structural attrs are still empty."""
+    if listing_needs_media_backfill(row):
+        return False
+    for col in (
+        "building_material",
+        "heating",
+        "building_type",
+        "construction_status",
+        "floor_no",
+        "building_floors_num",
+        "year_built",
+    ):
+        if _cell_empty(row.get(col)):
+            return True
+    return False
 
 
 def listing_needs_media_backfill(row: dict[str, Any] | pd.Series) -> bool:
@@ -726,12 +810,13 @@ def backfill_otodom_media(
     sleep_s: float = 0.15,
     checkpoint_path: Path | None = None,
     checkpoint_every: int = 50,
+    include_sparse_attrs: bool = True,
 ) -> pd.DataFrame:
     """Fetch Otodom detail galleries for rows missing ``image_urls_json``.
 
-    Updates ``image_url`` / ``image_urls_json`` / ``floor_plan_urls_json`` (and
-    description when empty) in place on a copy. Rows without a usable slug are
-    skipped.
+    Updates ``image_url`` / ``image_urls_json`` / ``floor_plan_urls_json`` and
+    fills empty structural attrs from the detail payload. Rows without a usable
+    slug are skipped.
 
     Transient failures (403/429/network) leave the row pending so a later run
     can retry. Permanent gone (404/410) writes an empty gallery JSON.
@@ -750,13 +835,21 @@ def backfill_otodom_media(
     if "floor_plan_urls_json" not in out.columns:
         out["floor_plan_urls_json"] = pd.NA
 
-    pending_idx = [
-        idx
-        for idx, row in out.iterrows()
-        if listing_needs_media_backfill(row.to_dict())
-        and isinstance(row.get("slug"), str)
-        and bool(str(row.get("slug") or "").strip())
-    ]
+    pending_idx: list[Any] = []
+    seen: set[Any] = set()
+    for idx, row in out.iterrows():
+        payload = row.to_dict()
+        slug_ok = isinstance(row.get("slug"), str) and bool(
+            str(row.get("slug") or "").strip()
+        )
+        if not slug_ok:
+            continue
+        need = listing_needs_media_backfill(payload)
+        if include_sparse_attrs and listing_needs_attr_backfill(payload):
+            need = True
+        if need and idx not in seen:
+            pending_idx.append(idx)
+            seen.add(idx)
     if max_listings is not None:
         pending_idx = pending_idx[: max(0, int(max_listings))]
     if not pending_idx:
@@ -764,7 +857,7 @@ def backfill_otodom_media(
         return out
 
     logger.info(
-        "Otodom media backfill: fetching galleries for %s / %s listings",
+        "Otodom media backfill: fetching galleries/attrs for %s / %s listings",
         len(pending_idx),
         len(out),
     )
@@ -802,7 +895,9 @@ def backfill_otodom_media(
         for fut in as_completed(futures):
             idx, detail, status = fut.result()
             if detail is None:
-                if status in {404, 410}:
+                if status in {404, 410} and listing_needs_media_backfill(
+                    out.loc[idx].to_dict()
+                ):
                     out.at[idx, "image_urls_json"] = "[]"
                     if not isinstance(out.at[idx, "floor_plan_urls_json"], str):
                         out.at[idx, "floor_plan_urls_json"] = "[]"
@@ -829,18 +924,13 @@ def backfill_otodom_media(
                 out.at[idx, "floor_plan_urls_json"] = plans
             elif not isinstance(out.at[idx, "floor_plan_urls_json"], str):
                 out.at[idx, "floor_plan_urls_json"] = "[]"
-            desc = detail.get("description")
-            existing = (
-                out.at[idx, "description"] if "description" in out.columns else None
-            )
-            if (
-                isinstance(desc, str)
-                and desc.strip()
-                and not (isinstance(existing, str) and existing.strip())
-            ):
-                if "description" not in out.columns:
-                    out["description"] = pd.NA
-                out.at[idx, "description"] = desc.strip()
+            merged = merge_otodom_detail_into_row(out.loc[idx], detail)
+            for col in _DETAIL_FILL_COLUMNS:
+                if col not in merged.index:
+                    continue
+                if col not in out.columns:
+                    out[col] = pd.NA
+                out.at[idx, col] = merged[col]
             updates += 1
             since_checkpoint += 1
             if checkpoint_path is not None and since_checkpoint >= max(

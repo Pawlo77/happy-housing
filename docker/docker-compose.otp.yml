@@ -1,15 +1,26 @@
 # Optional OpenTripPlanner 2 stack for transit routing.
 # Primary commute path remains OSRM (car) + GTFS stop proximity in-app.
-# Build a graph from data/raw/gtfs_warsaw.zip before starting.
+#
+# Build (once, slow): put mazowieckie-latest.osm.pbf + gtfs_warsaw.zip in data/otp/
+#   docker compose -f docker/docker-compose.otp.yml --profile otp-build run --rm otp-build
+# Serve:
+#   docker compose -f docker/docker-compose.otp.yml --profile otp up -d
 
 services:
+  otp-build:
+    image: opentripplanner/opentripplanner:2.5.0
+    volumes:
+      - ../data/otp:/var/opentripplanner
+    command: ["--build", "--save"]
+    profiles:
+      - otp-build
+
   otp:
     image: opentripplanner/opentripplanner:2.5.0
     ports:
       - "8080:8080"
     volumes:
-      - ../data/raw:/var/opentripplanner
-    command: >
-      --load --serve
+      - ../data/otp:/var/opentripplanner
+    command: ["--load", "--serve"]
     profiles:
       - otp

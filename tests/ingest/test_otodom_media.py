@@ -81,6 +81,30 @@ def test_listing_needs_media_backfill_when_gallery_json_absent() -> None:
     )
 
 
+def test_merge_otodom_detail_fills_empty_attrs_only() -> None:
+    import pandas as pd
+
+    from happy_housing.ingest.otodom import merge_otodom_detail_into_row
+
+    row = pd.Series({
+        "heating": "",
+        "building_material": "brick",
+        "floor_no": None,
+        "year_built": 2001.0,
+    })
+    detail = {
+        "heating": "gas",
+        "building_material": "concrete",
+        "floor_no": 3.0,
+        "year_built": 1990.0,
+    }
+    merged = merge_otodom_detail_into_row(row, detail)
+    assert merged["heating"] == "gas"
+    assert merged["building_material"] == "brick"  # keep existing
+    assert float(merged["floor_no"]) == 3.0
+    assert float(merged["year_built"]) == 2001.0
+
+
 def test_backfill_skips_marking_transient_failures(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
