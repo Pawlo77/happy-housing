@@ -1,5 +1,8 @@
 """Tests for GIS enrichment on fixture listings."""
 
+from __future__ import annotations
+
+import warnings
 from pathlib import Path
 
 import geopandas as gpd
@@ -7,6 +10,7 @@ import pandas as pd
 from shapely.geometry import Polygon
 
 from happy_housing.gis import enrich_listings
+from happy_housing.gis.frame_util import assign_columns
 from happy_housing.ingest import load_listings_json
 
 
@@ -176,3 +180,42 @@ def test_enrich_listings_school_falls_back_to_osm_amenity() -> None:
     )
     assert enriched["dist_school_m"].notna().all()
     assert float(enriched["dist_school_m"].iloc[0]) < 1_000.0
+
+
+def test_assign_columns_joins_without_fragmentation() -> None:
+    frame = pd.DataFrame({"a": [1, 2]})
+    out = assign_columns(frame, {"b": [3, 4], "c": [5, 6]})
+    assert list(out.columns) == ["a", "b", "c"]
+    assert out["b"].tolist() == [3, 4]
+
+
+def test_enrich_listings_no_fragmentation_warning(tmp_path: Path) -> None:
+    """Many amenity distance columns must not trigger pandas PerformanceWarning."""
+    listings = load_listings_json(Path("data/fixtures/listings.json"))
+    amenities = gpd.GeoDataFrame(
+        {"amenity": ["hospital", "fire_station", "police", "subway"]},
+        geometry=gpd.points_from_xy(
+            [21.0, 20.98, 21.02, 21.01],
+            [52.22, 52.21, 52.23, 52.229],
+        ),
+        crs="EPSG:4326",
+    )
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", category=pd.errors.PerformanceWarning)
+        enriched = enrich_listings(
+            listings,
+            projected_crs="EPSG:2180",
+            amenities=amenities,
+            gios_stations=pd.DataFrame(columns=["lon", "lat"]),
+            gtfs_stops=pd.DataFrame({
+                "stop_id": ["A"],
+                "stop_lat": [52.23],
+                "stop_lon": [21.00],
+            }),
+            commute_lon=20.983,
+            commute_lat=52.23,
+        )
+    perf = [w for w in caught if issubclass(w.category, pd.errors.PerformanceWarning)]
+    assert not perf
+    assert "dist_transit_stop_m" in enriched.columns
+    assert "dist_gym_m" in enriched.columns

@@ -21,6 +21,8 @@ import pandas as pd
 import pyproj
 from PIL import Image
 
+from happy_housing.gis.frame_util import assign_columns
+
 logger = logging.getLogger(__name__)
 
 AQ_CACHE_DIR_NAME: str = "gios_aq_field"
@@ -276,7 +278,7 @@ def attach_gios_aq_field_features(
     out = frame.copy()
     if not rasters or "lon" not in out.columns or "lat" not in out.columns:
         if "in_poor_air" not in out.columns:
-            out["in_poor_air"] = 0
+            return assign_columns(out, {"in_poor_air": 0})
         return out
     lon = pd.to_numeric(out["lon"], errors="coerce").to_numpy(dtype=float)
     lat = pd.to_numeric(out["lat"], errors="coerce").to_numpy(dtype=float)
@@ -284,16 +286,20 @@ def attach_gios_aq_field_features(
     transformer = pyproj.Transformer.from_crs("EPSG:4326", first.crs, always_xy=True)
     xs, ys = transformer.transform(lon, lat)
     xy = np.column_stack([xs, ys])
+    cols: dict[str, object] = {}
     for station_col, listing_col in AQ_VALUE_SPECS:
         raster = rasters.get(station_col)
         if raster is None:
             if listing_col not in out.columns:
-                out[listing_col] = np.nan
+                cols[listing_col] = np.nan
             continue
-        out[listing_col] = sample_aq_field(raster, lon, lat, xy=xy)
+        cols[listing_col] = sample_aq_field(raster, lon, lat, xy=xy)
+    out = assign_columns(out, cols)
     aq = pd.to_numeric(out.get("air_aq_index"), errors="coerce")
-    out["in_poor_air"] = (aq >= AQ_POOR_INDEX_THRESHOLD).fillna(False).astype(int)
-    return out
+    return assign_columns(
+        out,
+        {"in_poor_air": (aq >= AQ_POOR_INDEX_THRESHOLD).fillna(False).astype(int)},
+    )
 
 
 def _meta_path(cache_root: Path) -> Path:

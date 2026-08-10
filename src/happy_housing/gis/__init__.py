@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import geopandas as gpd
+import numpy as np
 import pandas as pd
 from shapely.geometry import Point
 
@@ -16,6 +17,7 @@ from happy_housing.gis.bike_paths import (
     BIKE_PATH_COVERAGE_RADIUS_M,
     attach_bike_path_features,
 )
+from happy_housing.gis.frame_util import assign_columns
 from happy_housing.gis.traffic import (
     TRAFFIC_NEIGHBOURHOOD_RADIUS_M,
     attach_traffic_features,
@@ -180,21 +182,39 @@ def nearest_distance_meters(
     attr_rename: dict[str, str] | None = None,
     left_projected: gpd.GeoDataFrame | None = None,
     copy: bool = True,
+    target: dict[str, Any] | None = None,
 ) -> gpd.GeoDataFrame:
     """Distance from each listing to nearest point; optionally copy attributes.
 
     Pass ``left_projected`` (listings already in ``projected_crs``) and
     ``copy=False`` from enrich loops to avoid reprojecting / copying the full
     frame on every amenity type.
+
+    When ``target`` is set, write new columns into that dict instead of
+    mutating ``listings`` (caller joins once via :func:`assign_columns`).
     """
     rename = dict(attr_rename or {})
     wanted = [c for c in attr_cols if c in points.columns]
-    out = listings.copy() if copy else listings
-    if points.empty:
-        out[out_col] = float("nan")
+    out = listings.copy() if copy and target is None else listings
+    n = len(listings)
+
+    def _empty_values() -> dict[str, Any]:
+        vals: dict[str, Any] = {out_col: np.full(n, np.nan, dtype=float)}
         for col in wanted:
-            out[rename.get(col, col)] = float("nan")
+            vals[rename.get(col, col)] = np.full(n, np.nan, dtype=object)
+        return vals
+
+    if points.empty:
+        values = _empty_values()
+        if target is not None:
+            target.update(values)
+            return out
+        if copy:
+            return assign_columns(out, values)
+        for key, value in values.items():
+            out[key] = value
         return out
+
     left = (
         left_projected if left_projected is not None else listings.to_crs(projected_crs)
     )
@@ -203,10 +223,17 @@ def nearest_distance_meters(
     matched = left.sjoin_nearest(right, how="left", distance_col=out_col)
     matched = matched[~matched.index.duplicated(keep="first")]
     aligned = matched.reindex(listings.index)
-    out[out_col] = aligned[out_col].to_numpy()
+    filled: dict[str, Any] = {out_col: aligned[out_col].to_numpy()}
     for col in wanted:
         dest = rename.get(col, col)
-        out[dest] = aligned[col].to_numpy()
+        filled[dest] = aligned[col].to_numpy()
+    if target is not None:
+        target.update(filled)
+        return out
+    if copy:
+        return assign_columns(out, filled)
+    for key, value in filled.items():
+        out[key] = value
     return out
 
 
@@ -566,6 +593,8 @@ def enrich_listings(
 
     # One projected frame for all nearest-distance joins (avoids Nx reproject/copy).
     left_proj = gdf.to_crs(projected_crs)
+    # Collect distance / AQ columns and join once (avoids fragmented inserts).
+    extras: dict[str, Any] = {}
 
     def _near(
         points: gpd.GeoDataFrame,
@@ -583,6 +612,7 @@ def enrich_listings(
             attr_rename=attr_rename,
             left_projected=left_proj,
             copy=False,
+            target=extras,
         )
 
     amenity_cols = (
@@ -603,7 +633,7 @@ def enrich_listings(
     if parks is not None and not parks.empty:
         _near(parks, "dist_park_m")
     else:
-        gdf["dist_park_m"] = float("nan")
+        extras["dist_park_m"] = float("nan")
 
     paths = (
         bike_paths
@@ -622,17 +652,17 @@ def enrich_listings(
     if rail_areas is not None and not rail_areas.empty:
         _near(rail_areas, "dist_rail_area_m")
     else:
-        gdf["dist_rail_area_m"] = float("nan")
+        extras["dist_rail_area_m"] = float("nan")
 
     if military is not None and not military.empty:
         _near(military, "dist_military_m")
     else:
-        gdf["dist_military_m"] = float("nan")
+        extras["dist_military_m"] = float("nan")
 
     if airport_areas is not None and not airport_areas.empty:
         _near(airport_areas, "dist_airport_area_m")
     else:
-        gdf["dist_airport_area_m"] = float("nan")
+        extras["dist_airport_area_m"] = float("nan")
 
     traffic = traffic_sample if traffic_sample is not None else pd.DataFrame()
     gdf = attach_traffic_features(
@@ -653,12 +683,12 @@ def enrich_listings(
     if school_src is not None:
         _near(school_src, "dist_school_m")
     else:
-        gdf["dist_school_m"] = float("nan")
+        extras["dist_school_m"] = float("nan")
 
     if shops is not None and not shops.empty:
         _near(_points_for_nearest(shops), "dist_shop_m")
     else:
-        gdf["dist_shop_m"] = float("nan")
+        extras["dist_shop_m"] = float("nan")
 
     if (
         city_pois is not None
@@ -675,14 +705,14 @@ def enrich_listings(
         for key in sorted(city_keys):
             col = dist_column(key)
             if key not in present:
-                gdf[col] = float("nan")
+                extras[col] = float("nan")
                 continue
             subset = typed[typed["object_type"].astype(str) == key]
             _near(subset, col)
     else:
         for t in AMENITY_TYPES:
             if t.source in {"sports", "wfs"} and t.key != "school":
-                gdf[dist_column(t.key)] = float("nan")
+                extras[dist_column(t.key)] = float("nan")
 
     if not gios_stations.empty:
         air = gpd.GeoDataFrame(
@@ -697,9 +727,9 @@ def enrich_listings(
             attr_rename=_GIOS_AQ_RENAME,
         )
     else:
-        gdf["dist_air_station_m"] = float("nan")
+        extras["dist_air_station_m"] = float("nan")
         for col in _GIOS_AQ_RENAME.values():
-            gdf[col] = float("nan")
+            extras[col] = float("nan")
 
     if not gtfs_stops.empty:
         stops = gpd.GeoDataFrame(
@@ -712,17 +742,16 @@ def enrich_listings(
         )
         _near(stops, "dist_transit_stop_m")
     else:
-        gdf["dist_transit_stop_m"] = float("nan")
+        extras["dist_transit_stop_m"] = float("nan")
 
     if gunb_points is not None and not gunb_points.empty:
         _near(gunb_points, "dist_gunb_m")
     else:
-        gdf["dist_gunb_m"] = float("nan")
+        extras["dist_gunb_m"] = float("nan")
 
     target = gpd.GeoDataFrame(
         geometry=[Point(commute_lon, commute_lat)],
         crs="EPSG:4326",
     )
     _near(target, "dist_daszynskiego_m")
-    # Single copy collapses fragmented column blocks from many inserts.
-    return gdf.copy()
+    return assign_columns(gdf, extras)

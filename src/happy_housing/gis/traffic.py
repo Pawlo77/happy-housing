@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 from shapely.geometry import LineString, MultiLineString
 
+from happy_housing.gis.frame_util import assign_columns
 from happy_housing.gis.spatial_query import (
     balltree_nearest,
     balltree_nearest_distances,
@@ -404,9 +405,7 @@ def attach_traffic_features(
         "nearest_highway": "unknown",
     }
     if sample.empty or not {"lon", "lat", "base_weight"}.issubset(sample.columns):
-        for col, value in empty_cols.items():
-            out[col] = value
-        return out
+        return assign_columns(out, empty_cols)
 
     left = left_projected if left_projected is not None else out.to_crs(projected_crs)
     pts = gpd.GeoDataFrame(
@@ -418,17 +417,19 @@ def attach_traffic_features(
     data_xy = np.column_stack([pts.geometry.x.to_numpy(), pts.geometry.y.to_numpy()])
     weights = pts["base_weight"].to_numpy(dtype=float)
     dist_all, nearest_idx = balltree_nearest(query_xy, data_xy)
-    out["dist_traffic_road_m"] = dist_all
-    out["traffic_weight_nearby"] = balltree_radius_weight_sums(
-        query_xy, data_xy, weights, float(neighbourhood_radius_m)
-    )
+    cols: dict[str, object] = {
+        "dist_traffic_road_m": dist_all,
+        "traffic_weight_nearby": balltree_radius_weight_sums(
+            query_xy, data_xy, weights, float(neighbourhood_radius_m)
+        ),
+    }
     if "highway" in pts.columns:
         hwy = pts["highway"].astype(str).to_numpy()
-        out["nearest_highway"] = [
+        cols["nearest_highway"] = [
             hwy[i] if 0 <= int(i) < len(hwy) else "unknown" for i in nearest_idx
         ]
     else:
-        out["nearest_highway"] = "unknown"
+        cols["nearest_highway"] = "unknown"
 
     major_mask = (
         pts["highway"].astype(str).isin(_MAJOR_HIGHWAYS)
@@ -442,11 +443,11 @@ def attach_traffic_features(
             major_pts.geometry.y.to_numpy(),
         ])
         major_w = major_pts["base_weight"].to_numpy(dtype=float)
-        out["dist_major_road_m"] = balltree_nearest_distances(query_xy, major_xy)
-        out["major_traffic_weight_nearby"] = balltree_radius_weight_sums(
+        cols["dist_major_road_m"] = balltree_nearest_distances(query_xy, major_xy)
+        cols["major_traffic_weight_nearby"] = balltree_radius_weight_sums(
             query_xy, major_xy, major_w, float(neighbourhood_radius_m)
         )
     else:
-        out["dist_major_road_m"] = float("nan")
-        out["major_traffic_weight_nearby"] = 0.0
-    return out
+        cols["dist_major_road_m"] = float("nan")
+        cols["major_traffic_weight_nearby"] = 0.0
+    return assign_columns(out, cols)

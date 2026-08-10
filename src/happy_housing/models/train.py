@@ -18,6 +18,7 @@ from sklearn.model_selection import ParameterSampler, train_test_split
 
 from happy_housing.config import ExperimentConfig, ModelConfig
 from happy_housing.gis.amenity_catalog import model_distance_feature_columns
+from happy_housing.gis.frame_util import assign_columns
 from happy_housing.models.metrics import (
     OptMetric,
     coerce_opt_metric,
@@ -750,10 +751,14 @@ def _raw_feature_frame(
     feature_columns: tuple[str, ...],
 ) -> pd.DataFrame:
     """Feature frame with NaNs preserved (no impute) for split-then-impute."""
-    work = frame.copy()
-    for col in feature_columns:
-        if col not in work.columns:
-            work[col] = float("nan") if col not in CATEGORICAL_FEATURE_COLUMNS else None
+    work = frame
+    missing = {
+        col: (float("nan") if col not in CATEGORICAL_FEATURE_COLUMNS else None)
+        for col in feature_columns
+        if col not in work.columns
+    }
+    if missing:
+        work = assign_columns(work, missing)
     pieces: list[pd.Series] = []
     for col in feature_columns:
         if col in CATEGORICAL_FEATURE_COLUMNS:

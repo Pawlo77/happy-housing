@@ -21,6 +21,8 @@ import pyproj
 import requests
 from PIL import Image
 
+from happy_housing.gis.frame_util import assign_columns
+
 logger = logging.getLogger(__name__)
 
 WARSAW_WMS_URL: str = "https://wms.um.warszawa.pl/serwis"
@@ -487,13 +489,15 @@ def attach_warsaw_noise_features(
         )
         xs, ys = transformer.transform(lon, lat)
         xy = np.column_stack([xs, ys])
+    cols: dict[str, object] = {}
     for spec in NOISE_LAYER_SPECS:
         raster = rasters.get(spec.key)
         if raster is None:
-            out[spec.out_col] = 0.0
+            cols[spec.out_col] = 0.0
             continue
-        out[spec.out_col] = raster_sample_db(raster, lon, lat, xy=xy)
+        cols[spec.out_col] = raster_sample_db(raster, lon, lat, xy=xy)
 
+    out = assign_columns(out, cols)
     lden_stack = np.column_stack([
         pd.to_numeric(out[c], errors="coerce").fillna(0.0).to_numpy(dtype=float)
         for c in _LDEN_COLS
@@ -502,13 +506,17 @@ def attach_warsaw_noise_features(
         pd.to_numeric(out[c], errors="coerce").fillna(0.0).to_numpy(dtype=float)
         for c in _LNIGHT_COLS
     ])
-    out["noise_total_lden_db"] = energy_sum_db_rows(lden_stack)
-    out["noise_total_lnight_db"] = energy_sum_db_rows(lnight_stack)
-    # High-noise flag for Explore filters (total Lden ≥ 55 dB).
-    out["in_high_noise"] = (out["noise_total_lden_db"] >= 55.0).astype(int)
-    # Keep legacy aircraft OOU flag aligned with UM aircraft Lden.
-    out["in_oou"] = (out["aircraft_lden_db"] >= 55.0).astype(int)
-    return out
+    total_lden = energy_sum_db_rows(lden_stack)
+    aircraft = pd.to_numeric(out["aircraft_lden_db"], errors="coerce").fillna(0.0)
+    return assign_columns(
+        out,
+        {
+            "noise_total_lden_db": total_lden,
+            "noise_total_lnight_db": energy_sum_db_rows(lnight_stack),
+            "in_high_noise": (total_lden >= 55.0).astype(int),
+            "in_oou": (aircraft >= 55.0).astype(int),
+        },
+    )
 
 
 def prepare_noise_map_points(

@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 from shapely.geometry import LineString, MultiLineString
 
+from happy_housing.gis.frame_util import assign_columns
 from happy_housing.gis.spatial_query import balltree_radius_weight_sums
 
 logger = logging.getLogger(__name__)
@@ -115,24 +116,27 @@ def attach_bike_path_features(
     """
     out = listings
     if paths.empty:
-        out["dist_bike_path_m"] = float("nan")
-        out["bike_path_coverage_m"] = 0.0
-        return out
+        return assign_columns(
+            out,
+            {"dist_bike_path_m": float("nan"), "bike_path_coverage_m": 0.0},
+        )
 
     left = left_projected if left_projected is not None else out.to_crs(projected_crs)
     right = paths.to_crs(projected_crs)[["geometry"]]
     matched = left.sjoin_nearest(right, how="left", distance_col="dist_bike_path_m")
     matched = matched[~matched.index.duplicated(keep="first")]
     aligned = matched.reindex(out.index)
-    out["dist_bike_path_m"] = aligned["dist_bike_path_m"].to_numpy(dtype=float)
+    cols: dict[str, object] = {
+        "dist_bike_path_m": aligned["dist_bike_path_m"].to_numpy(dtype=float),
+    }
 
     if sample_points is None:
         sample_points = densify_bike_paths(
             paths, step_m=sample_step_m, projected_crs=projected_crs
         )
     if sample_points.empty:
-        out["bike_path_coverage_m"] = 0.0
-        return out
+        cols["bike_path_coverage_m"] = 0.0
+        return assign_columns(out, cols)
 
     pts = gpd.GeoDataFrame(
         sample_points,
@@ -150,8 +154,8 @@ def attach_bike_path_features(
     coverage = balltree_radius_weight_sums(
         query_xy, data_xy, weights, float(coverage_radius_m)
     )
-    out["bike_path_coverage_m"] = coverage
-    return out
+    cols["bike_path_coverage_m"] = coverage
+    return assign_columns(out, cols)
 
 
 def _download_osm_bike_paths(
