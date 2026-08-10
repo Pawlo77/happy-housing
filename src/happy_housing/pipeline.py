@@ -665,10 +665,12 @@ def run_pipeline(
         test_size=float(config.model.test_size),
         hpo_trials=int(app_settings.model_hpo_trials),
         use_neighborhood=bool(app_settings.model_use_neighborhood),
+        use_engineered=bool(app_settings.model_use_engineered),
         random_state=int(config.model.random_state),
         train_otodom_labels_only=bool(app_settings.train_otodom_labels_only),
         log_target=bool(app_settings.model_log_target),
         district_calibration=bool(app_settings.model_district_calibration),
+        early_stopping_rounds=int(app_settings.model_early_stopping_rounds),
     )
     train_score_fp = fingerprint(
         file_token(enriched_path),
@@ -678,6 +680,8 @@ def run_pipeline(
             "test": train_settings.test_size,
             "hpo": train_settings.hpo_trials,
             "nbhd": train_settings.use_neighborhood,
+            "eng": train_settings.use_engineered,
+            "early": train_settings.early_stopping_rounds,
             "seed": train_settings.random_state,
             "oto_only": train_settings.train_otodom_labels_only,
             "log": train_settings.log_target,
@@ -723,6 +727,10 @@ def run_pipeline(
                 use_neighborhood=bool(app_settings.model_use_neighborhood),
                 log_target=result.log_target,
                 district_offsets=result.district_offsets,
+                use_engineered=result.use_engineered,
+                district_ppm_stats=result.district_ppm_stats,
+                district_global_median=result.district_global_median,
+                district_global_mean=result.district_global_mean,
             )
         train_frame["delta_price_per_m2"] = (
             train_frame["price_per_m2"] - train_frame["model_price_per_m2"]

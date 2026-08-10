@@ -126,20 +126,24 @@ class AppSettings:
     """How many features to show on importance / SHAP charts."""
     log_level: str = "INFO"
     """Package log level for the Streamlit app (DEBUG/INFO/WARNING/ERROR)."""
-    model_opt_metric: str = "mae"
+    model_opt_metric: str = "mape"
     """Validation metric for LightGBM HPO (mae/rmse/MAPE/medae/r2)."""
     model_val_size: float = 0.15
     """Fraction of data used as HPO validation (test held out separately)."""
-    model_hpo_trials: int = 40
+    model_hpo_trials: int = 80
     """Random hyperparameter trials (1 disables search)."""
     model_use_neighborhood: bool = True
     """Attach RCN neighborhood comps and log IDW baseline in MLflow."""
+    model_use_engineered: bool = True
+    """Interaction / log / district train-fold engineered features."""
     model_nbhd_radius_m: float = 800.0
     """Search radius (metres) for local RCN comparable sales."""
     model_log_target: bool = True
     """Train on log1p(zł/m²); report metrics in zł/m²."""
     model_district_calibration: bool = True
     """Apply district median residual offsets after fit."""
+    model_early_stopping_rounds: int = 80
+    """LightGBM early-stopping patience during HPO validation."""
     photo_cv_enabled: bool = True
     """Attach pretrained CLIP/heuristic photo features during pipeline enrich."""
     photo_cv_max_photos: int = 8
@@ -494,6 +498,9 @@ def load_app_settings(path: Path) -> AppSettings:
         model_use_neighborhood=bool(
             payload.get("model_use_neighborhood", defaults.model_use_neighborhood)
         ),
+        model_use_engineered=bool(
+            payload.get("model_use_engineered", defaults.model_use_engineered)
+        ),
         model_nbhd_radius_m=max(
             100.0,
             float(payload.get("model_nbhd_radius_m", defaults.model_nbhd_radius_m)),
@@ -506,6 +513,15 @@ def load_app_settings(path: Path) -> AppSettings:
                 "model_district_calibration",
                 defaults.model_district_calibration,
             )
+        ),
+        model_early_stopping_rounds=max(
+            0,
+            int(
+                payload.get(
+                    "model_early_stopping_rounds",
+                    defaults.model_early_stopping_rounds,
+                )
+            ),
         ),
         photo_cv_enabled=bool(
             payload.get("photo_cv_enabled", defaults.photo_cv_enabled)

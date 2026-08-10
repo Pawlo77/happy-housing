@@ -802,16 +802,19 @@ def _panel_sources(settings: AppSettings, settings_file: Path, proc: Path) -> No
 def _panel_model(settings: AppSettings, settings_file: Path, proc: Path) -> None:
     """Price-model HPO metric, validation split, neighborhood comps."""
     del proc
+    from happy_housing.models.feature_eng import ENGINEERED_FEATURE_COLUMNS
     from happy_housing.models.train import CORE_FEATURE_COLUMNS, FEATURE_COLUMNS
 
     n_core = len(CORE_FEATURE_COLUMNS)
     n_full = len(FEATURE_COLUMNS)
+    n_eng = len(ENGINEERED_FEATURE_COLUMNS)
     nbhd_note = (
         f" · **{n_full}** with RCN nbhd" if settings.model_use_neighborhood else ""
     )
+    eng_note = f" · **{n_eng}** engineered" if settings.model_use_engineered else ""
     st.caption(
-        f"Fair-price LightGBM · **{n_core}** core features{nbhd_note}. "
-        "HPO on validation; test held out. "
+        f"Fair-price LightGBM · **{n_core}** core features{nbhd_note}{eng_note}. "
+        "HPO on validation; test held out. Target ≤1% MAPE. "
         "Retrain via Admin → Run after feature or data changes. "
         "Scored deltas use out-of-fold predictions for train labels."
     )
@@ -837,10 +840,18 @@ def _panel_model(settings: AppSettings, settings_file: Path, proc: Path) -> None
     trials = st.number_input(
         "HPO trials",
         min_value=1,
-        max_value=80,
+        max_value=200,
         value=int(settings.model_hpo_trials),
-        help="1 = use YAML defaults only (no search).",
+        help="1 = use YAML defaults only (no search). Wider space needs ≥80.",
         key="settings_model_hpo_trials",
+    )
+    early_stop = st.number_input(
+        "Early stopping rounds (HPO val)",
+        min_value=0,
+        max_value=300,
+        value=int(settings.model_early_stopping_rounds),
+        help="0 disables early stopping during HPO trials.",
+        key="settings_model_early_stop",
     )
     log_target = st.checkbox(
         "Log-target training (log1p zł/m²)",
@@ -851,6 +862,15 @@ def _panel_model(settings: AppSettings, settings_file: Path, proc: Path) -> None
         "District residual calibration",
         value=bool(settings.model_district_calibration),
         key="settings_model_district_cal",
+    )
+    use_eng = st.checkbox(
+        "Engineered features (ratios / logs / district train stats)",
+        value=bool(settings.model_use_engineered),
+        help=(
+            "Adds area/room ratios, log distances, listing calendar, and "
+            "train-fold district median/mean zł/m² (no test leakage)."
+        ),
+        key="settings_model_use_engineered",
     )
     photo_cv = st.checkbox(
         "Photo CV features (pretrained CLIP / heuristic)",
@@ -895,7 +915,9 @@ def _panel_model(settings: AppSettings, settings_file: Path, proc: Path) -> None
         settings.model_opt_metric = coerce_opt_metric(metric)
         settings.model_val_size = float(val_size)
         settings.model_hpo_trials = int(trials)
+        settings.model_early_stopping_rounds = int(early_stop)
         settings.model_use_neighborhood = bool(use_nbhd)
+        settings.model_use_engineered = bool(use_eng)
         settings.model_nbhd_radius_m = float(radius)
         settings.train_otodom_labels_only = bool(train_asks_only)
         settings.model_log_target = bool(log_target)
@@ -907,6 +929,7 @@ def _panel_model(settings: AppSettings, settings_file: Path, proc: Path) -> None
             f"Model settings saved · optimize {settings.model_opt_metric} "
             f"({metric_direction(coerce_opt_metric(settings.model_opt_metric))}) "
             f"· {settings.model_hpo_trials} trials"
+            f"{' · engineered' if use_eng else ''}"
             f"{' · Otodom labels only' if train_asks_only else ''}."
         )
 

@@ -211,6 +211,10 @@ def recompute_commute_features(
             work,
             log_target=bool(meta.get("log_target", True)),
             district_offsets=meta.get("district_offsets") or {},
+            use_engineered=bool(meta.get("use_engineered", False)),
+            district_ppm_stats=meta.get("district_ppm_stats") or {},
+            district_global_median=meta.get("district_global_median"),
+            district_global_mean=meta.get("district_global_mean"),
         )
         work["delta_price_per_m2"] = (
             pd.to_numeric(work["price_per_m2"], errors="coerce")
