@@ -1,6 +1,7 @@
 data/raw/
 data/processed/
 data/cache/
+data/otp/
 # Keep committed fixtures under data/fixtures/
 
 # Local OSRM graph / PBF (see make osrm-prepare)
