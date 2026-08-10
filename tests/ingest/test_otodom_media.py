@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from happy_housing.ingest.otodom import (
     card_needs_detail_refresh,
     extract_image_urls,
@@ -77,6 +79,64 @@ def test_listing_needs_media_backfill_when_gallery_json_absent() -> None:
         })
         is False
     )
+
+
+def test_backfill_skips_marking_transient_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """403/network fails must stay pending; 410 may close with empty gallery."""
+    import pandas as pd
+    import requests
+
+    from happy_housing.ingest.otodom import backfill_otodom_media
+
+    frame = pd.DataFrame([
+        {
+            "listing_id": "A",
+            "slug": "gone-listing",
+            "image_url": "https://cdn.example/a.jpg",
+        },
+        {
+            "listing_id": "B",
+            "slug": "blocked-listing",
+            "image_url": "https://cdn.example/b.jpg",
+        },
+        {
+            "listing_id": "C",
+            "slug": "ok-listing",
+            "image_url": "https://cdn.example/c.jpg",
+        },
+    ])
+
+    def fake_detail(session: object, slug: str, **kwargs: object) -> dict[str, object]:
+        _ = session, kwargs
+        if slug == "gone-listing":
+            resp = requests.Response()
+            resp.status_code = 410
+            raise requests.HTTPError("Gone", response=resp)
+        if slug == "blocked-listing":
+            resp = requests.Response()
+            resp.status_code = 403
+            raise requests.HTTPError("Forbidden", response=resp)
+        return {
+            "image_url": "https://cdn.example/c2.jpg",
+            "image_urls_json": json.dumps([
+                "https://cdn.example/c2.jpg",
+                "https://cdn.example/c3.jpg",
+            ]),
+            "floor_plan_urls_json": "[]",
+            "description": "",
+        }
+
+    monkeypatch.setattr("happy_housing.ingest.otodom.fetch_listing_detail", fake_detail)
+    monkeypatch.setattr("happy_housing.ingest.otodom.time.sleep", lambda _s: None)
+    out = backfill_otodom_media(frame, detail_workers=1, sleep_s=0.0)
+    assert out.loc[0, "image_urls_json"] == "[]"  # 410 → closed
+    assert listing_needs_media_backfill(out.loc[1].to_dict()) is True  # 403 pending
+    assert json.loads(str(out.loc[2, "image_urls_json"])) == [
+        "https://cdn.example/c2.jpg",
+        "https://cdn.example/c3.jpg",
+    ]
 
 
 def test_card_needs_detail_refresh_when_prior_lacks_gallery_json() -> None:

@@ -449,8 +449,11 @@ def _http_get(
                 sleep_for,
             )
             time.sleep(sleep_for)
+    if isinstance(last_exc, requests.HTTPError):
+        raise last_exc
     if last_exc is not None:
         logger.debug("Last error for %s: %s", label, last_exc)
+        raise last_exc
     return None
 
 
@@ -486,13 +489,17 @@ def fetch_search_page(
     if sort_by:
         params["by"] = sort_by
     url = f"{_SEARCH_URL}?{urlencode(params)}"
-    response = _http_get(
-        session,
-        url,
-        timeout=timeout_s,
-        retries=retries,
-        label=f"Otodom search page {page}",
-    )
+    try:
+        response = _http_get(
+            session,
+            url,
+            timeout=timeout_s,
+            retries=retries,
+            label=f"Otodom search page {page}",
+        )
+    except requests.RequestException as exc:
+        logger.warning("Otodom search page %s fetch failed: %s", page, exc)
+        return None
     if response is None:
         return None
     try:
@@ -717,12 +724,17 @@ def backfill_otodom_media(
     timeout_s: float | tuple[float, float] = DEFAULT_TIMEOUT,
     max_listings: int | None = None,
     sleep_s: float = 0.15,
+    checkpoint_path: Path | None = None,
+    checkpoint_every: int = 50,
 ) -> pd.DataFrame:
     """Fetch Otodom detail galleries for rows missing ``image_urls_json``.
 
     Updates ``image_url`` / ``image_urls_json`` / ``floor_plan_urls_json`` (and
     description when empty) in place on a copy. Rows without a usable slug are
     skipped.
+
+    Transient failures (403/429/network) leave the row pending so a later run
+    can retry. Permanent gone (404/410) writes an empty gallery JSON.
     """
     if frame.empty:
         out = frame.copy()
@@ -757,29 +769,52 @@ def backfill_otodom_media(
         len(out),
     )
 
-    def _fetch(idx: Any) -> tuple[Any, dict[str, Any] | None]:
+    def _fetch(idx: Any) -> tuple[Any, dict[str, Any] | None, int | None]:
         slug = str(out.at[idx, "slug"]).strip()
         if sleep_s > 0:
             time.sleep(float(sleep_s))
         session = _session()
         try:
             detail = fetch_listing_detail(session, slug, timeout_s=timeout_s)
+        except requests.HTTPError as exc:
+            status = int(exc.response.status_code) if exc.response is not None else None
+            logger.warning("Media backfill failed for %s: %s", slug, exc)
+            return idx, None, status
         except Exception as exc:
             logger.warning("Media backfill failed for %s: %s", slug, exc)
-            return idx, None
-        return idx, detail
+            return idx, None, None
+        return idx, detail, None
+
+    def _checkpoint() -> None:
+        if checkpoint_path is None:
+            return
+        checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+        out.to_parquet(checkpoint_path, index=False)
+        logger.info("Otodom media backfill checkpoint → %s", checkpoint_path)
 
     updates = 0
+    closed_gone = 0
+    transient_fail = 0
+    since_checkpoint = 0
     workers = max(1, int(detail_workers))
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = [pool.submit(_fetch, idx) for idx in pending_idx]
         for fut in as_completed(futures):
-            idx, detail = fut.result()
+            idx, detail, status = fut.result()
             if detail is None:
-                # Persist empty gallery JSON so we do not hammer forever.
-                out.at[idx, "image_urls_json"] = "[]"
-                if not isinstance(out.at[idx, "floor_plan_urls_json"], str):
-                    out.at[idx, "floor_plan_urls_json"] = "[]"
+                if status in {404, 410}:
+                    out.at[idx, "image_urls_json"] = "[]"
+                    if not isinstance(out.at[idx, "floor_plan_urls_json"], str):
+                        out.at[idx, "floor_plan_urls_json"] = "[]"
+                    closed_gone += 1
+                    since_checkpoint += 1
+                else:
+                    transient_fail += 1
+                if checkpoint_path is not None and since_checkpoint >= max(
+                    1, int(checkpoint_every)
+                ):
+                    _checkpoint()
+                    since_checkpoint = 0
                 continue
             urls_raw = detail.get("image_urls_json")
             if isinstance(urls_raw, str) and urls_raw.strip():
@@ -807,8 +842,22 @@ def backfill_otodom_media(
                     out["description"] = pd.NA
                 out.at[idx, "description"] = desc.strip()
             updates += 1
+            since_checkpoint += 1
+            if checkpoint_path is not None and since_checkpoint >= max(
+                1, int(checkpoint_every)
+            ):
+                _checkpoint()
+                since_checkpoint = 0
 
-    logger.info("Otodom media backfill: updated %s listings", updates)
+    if checkpoint_path is not None and since_checkpoint > 0:
+        _checkpoint()
+
+    logger.info(
+        "Otodom media backfill: updated=%s gone_closed=%s transient_fail=%s",
+        updates,
+        closed_gone,
+        transient_fail,
+    )
     return out
 
 
