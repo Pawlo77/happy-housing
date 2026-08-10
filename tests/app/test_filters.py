@@ -26,6 +26,18 @@ def test_offer_age_months_from_listed_at() -> None:
     assert float(ages.iloc[3]) == 79.0
 
 
+def test_offer_age_months_utc_listed_at_with_month_fallback() -> None:
+    """UTC ``listed_at`` + naive YYYY-MM ``listed_month`` must not break ``.dt``."""
+    frame = pd.DataFrame({
+        "listed_at": ["2026-07-19T19:36:32Z", None, "bad"],
+        "listed_month": ["2026-07", "2020-01", "unknown"],
+    })
+    ages = offer_age_months(frame, as_of=date(2026, 8, 8))
+    assert float(ages.iloc[0]) == 0.0
+    assert float(ages.iloc[1]) == 79.0
+    assert pd.isna(ages.iloc[2])
+
+
 def test_apply_filters_max_offer_age_months() -> None:
     """Keep offers no older than max_age_months."""
     frame = pd.DataFrame({

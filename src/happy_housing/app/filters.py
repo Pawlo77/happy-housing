@@ -70,9 +70,10 @@ def offer_age_months(
         return ages
 
     if "listed_at" in frame.columns:
-        listed = pd.to_datetime(frame["listed_at"], errors="coerce", utc=False)
+        # utc=True so ISO-Z strings stay tz-aware and mix cleanly with month fallback.
+        listed = pd.to_datetime(frame["listed_at"], errors="coerce", utc=True)
     else:
-        listed = pd.Series(pd.NaT, index=frame.index)
+        listed = pd.Series(pd.NaT, index=frame.index, dtype="datetime64[ns, UTC]")
 
     if "listed_month" in frame.columns:
         month_raw = frame["listed_month"].astype(str)
@@ -80,8 +81,12 @@ def offer_age_months(
             month_raw.where(~month_raw.isin({"unknown", "NaT", "nan", "None"})),
             format="%Y-%m",
             errors="coerce",
+            utc=True,
         )
         listed = listed.fillna(month_dates)
+
+    # Aware + naive fillna can yield object; re-coerce before ``.dt``.
+    listed = pd.to_datetime(listed, errors="coerce", utc=True)
 
     valid = listed.notna()
     if not valid.any():
