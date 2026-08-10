@@ -28,7 +28,7 @@ def test_load_default_experiment_yaml() -> None:
     assert config.logging.level == "INFO"
     assert config.routing.osrm_url.endswith(":5001")
     assert config.routing.otp_url.endswith(":8080")
-    assert config.routing.use_otp_transit is False
+    assert config.routing.use_otp_transit is True
     assert config.routing.require_osrm is True
 
 
