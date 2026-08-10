@@ -3,6 +3,9 @@ data/processed/
 data/cache/
 # Keep committed fixtures under data/fixtures/
 
+# Local OSRM graph / PBF (see make osrm-prepare)
+docker/data/
+
 # Runtime log files (pipeline / ingest / app redirects)
 logs/
 
