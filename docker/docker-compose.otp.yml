@@ -11,6 +11,8 @@ services:
     image: opentripplanner/opentripplanner:2.5.0
     volumes:
       - ../data/otp:/var/opentripplanner
+    environment:
+      JAVA_TOOL_OPTIONS: -Xmx12g
     command: ["--build", "--save"]
     profiles:
       - otp-build
@@ -21,6 +23,8 @@ services:
       - "8080:8080"
     volumes:
       - ../data/otp:/var/opentripplanner
+    environment:
+      JAVA_TOOL_OPTIONS: -Xmx4g
     command: ["--load", "--serve"]
     profiles:
       - otp
