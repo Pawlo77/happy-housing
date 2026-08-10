@@ -713,9 +713,10 @@ def card_needs_detail_refresh(
 def backfill_otodom_media(
     frame: pd.DataFrame,
     *,
-    detail_workers: int = 8,
+    detail_workers: int = 4,
     timeout_s: float | tuple[float, float] = DEFAULT_TIMEOUT,
     max_listings: int | None = None,
+    sleep_s: float = 0.15,
 ) -> pd.DataFrame:
     """Fetch Otodom detail galleries for rows missing ``image_urls_json``.
 
@@ -758,6 +759,8 @@ def backfill_otodom_media(
 
     def _fetch(idx: Any) -> tuple[Any, dict[str, Any] | None]:
         slug = str(out.at[idx, "slug"]).strip()
+        if sleep_s > 0:
+            time.sleep(float(sleep_s))
         session = _session()
         try:
             detail = fetch_listing_detail(session, slug, timeout_s=timeout_s)
@@ -767,7 +770,8 @@ def backfill_otodom_media(
         return idx, detail
 
     updates = 0
-    with ThreadPoolExecutor(max_workers=max(1, int(detail_workers))) as pool:
+    workers = max(1, int(detail_workers))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = [pool.submit(_fetch, idx) for idx in pending_idx]
         for fut in as_completed(futures):
             idx, detail = fut.result()
