@@ -9,12 +9,15 @@ import pandas as pd
 import requests
 
 from happy_housing.ingest.gunb import (
+    _GUNB_WFS_LAYERS_ALL,
+    _GUNB_WFS_LAYERS_RECENT,
     _centroid_lon_lat,
     _fetch_wfs_city_layer,
     _frame_from_wfs_geojson,
     _frame_from_wfs_gml,
     _keep_warsaw_metro_row,
     gunb_points_gdf,
+    resolve_gunb_wfs_layers,
 )
 
 
@@ -215,3 +218,16 @@ def test_fetch_wfs_filters_client_side_and_past_old_cap(monkeypatch: Any) -> Non
     frame = _fetch_wfs_city_layer("ms:pozwolenia_2025", page_size=page_size)
     assert calls == [0, 2, 4, 6]
     assert sorted(frame["numer_decyzji"].astype(str)) == ["P1", "W1", "W2", "W3"]
+
+
+def test_resolve_gunb_wfs_layers_recent_by_default() -> None:
+    recent = resolve_gunb_wfs_layers(full_history=False)
+    assert recent == _GUNB_WFS_LAYERS_RECENT
+    assert "ms:pozwolenia_pozostale" not in recent
+    assert len(recent) == 3
+
+
+def test_resolve_gunb_wfs_layers_full_includes_pozostale() -> None:
+    full = resolve_gunb_wfs_layers(full_history=True)
+    assert full == _GUNB_WFS_LAYERS_ALL
+    assert full[-1] == "ms:pozwolenia_pozostale"

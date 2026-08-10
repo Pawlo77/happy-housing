@@ -52,5 +52,16 @@ def test_step_manifest_skip_and_mark(tmp_path: Path) -> None:
     assert not reloaded.should_skip("train_score", fingerprint("other"), [out])
 
 
+def test_step_manifest_mark_and_save_persists_immediately(tmp_path: Path) -> None:
+    path = tmp_path / "pipeline_steps.json"
+    manifest = StepManifest.load(path)
+    out = tmp_path / "scored.parquet"
+    out.write_text("x", encoding="utf-8")
+    fp = fingerprint("inputs-v1")
+    manifest.mark_and_save("train_score", fp)
+    reloaded = StepManifest.load(path)
+    assert reloaded.should_skip("train_score", fp, [out])
+
+
 def test_payload_token_changes() -> None:
     assert payload_token({"a": 1}) != payload_token({"a": 2})

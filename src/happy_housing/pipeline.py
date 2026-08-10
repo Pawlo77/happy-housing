@@ -358,7 +358,7 @@ def run_pipeline(
         else:
             try:
                 extract_rcn_transactions(zip_path, rcn_parquet, max_rows=rcn_cap)
-                manifest.mark("extract_rcn", rcn_fp)
+                manifest.mark_and_save("extract_rcn", rcn_fp)
             except Exception as exc:
                 logger.warning("RCN extract failed: %s", exc)
                 pd.DataFrame(columns=["lon", "lat", "price_pln", "area_m2"]).to_parquet(
@@ -374,6 +374,7 @@ def run_pipeline(
             url=urls.gunb_zip,
             fixture_path=fixtures / "gunb_points.json",
             refresh_wfs_cache=bool(force_gis_refresh or force),
+            wfs_full_history=bool(app_settings.gunb_wfs_full_history),
         )
     else:
         _ensure_empty(gunb_parquet, ["lon", "lat"])
@@ -509,6 +510,7 @@ def run_pipeline(
         "aq": bool(app_settings.aq_field_enabled),
         "aq_power": float(app_settings.aq_idw_power),
         "extract": bool(app_settings.extract_attrs_enabled),
+        "extract_workers": int(app_settings.extract_lm_workers),
         "photo": bool(app_settings.photo_cv_enabled),
         "photo_n": int(app_settings.photo_cv_max_photos),
         "photo_model": str(app_settings.photo_cv_model_id),
@@ -607,6 +609,7 @@ def run_pipeline(
                 use_llm=True,
                 metrics_path=llm_metrics_path(processed),
                 max_llm_calls=cap,
+                lm_workers=int(app_settings.extract_lm_workers),
             )
         train_frame = attach_commute_minutes(
             train_frame,
@@ -651,7 +654,7 @@ def run_pipeline(
                 radius_m=float(app_settings.model_nbhd_radius_m),
             )
             _write_enriched_geoparquet(train_frame)
-        manifest.mark("enrich", enrich_fp)
+        manifest.mark_and_save("enrich", enrich_fp)
 
     rcn_for_model = (
         pd.read_parquet(rcn_parquet) if rcn_parquet.exists() else pd.DataFrame()
@@ -727,7 +730,7 @@ def run_pipeline(
         train_frame.to_parquet(scored_path, index=False)
         model_metrics = dict(result.metrics)
         feature_names = list(result.feature_names)
-        manifest.mark("train_score", train_score_fp)
+        manifest.mark_and_save("train_score", train_score_fp)
 
     prefs = load_preferences(preferences_path(processed))
     rec_settings = {
@@ -768,9 +771,10 @@ def run_pipeline(
             w_overprice=float(app_settings.recommender_w_overprice),
             otodom_pool_default=bool(app_settings.recommender_otodom_pool_default),
         )
-        manifest.mark("recommender", rec_fp)
+        manifest.mark_and_save("recommender", rec_fp)
 
-    manifest.save()
+    if manifest.steps:
+        manifest.save()
     if skipped_steps:
         logger.info("Incremental skips: %s", ", ".join(skipped_steps))
 

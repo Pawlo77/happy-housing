@@ -76,7 +76,8 @@ repos:
     hooks:
       - id: mypy
         files: ^src/
-        additional_dependencies: []
+        additional_dependencies:
+          - types-tqdm>=4.67.0
         args: [--config-file=pyproject.toml]
 
   - repo: https://github.com/PyCQA/bandit

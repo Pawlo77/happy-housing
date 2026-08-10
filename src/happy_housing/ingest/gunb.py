@@ -12,6 +12,8 @@ import geopandas as gpd
 import pandas as pd
 import requests
 
+from happy_housing.pipeline_progress import pipeline_tqdm
+
 logger = logging.getLogger(__name__)
 
 _GUNB_MAZ_ZIP = "https://wyszukiwarka.gunb.gov.pl/pliki_pobranie/wynik_mazowieckie.zip"
@@ -22,7 +24,7 @@ _GUNB_WFS = (
 )
 """GUGiK WFS exposing RWDZ geometries (parcel polygons)."""
 
-_GUNB_WFS_LAYERS: tuple[str, ...] = (
+_GUNB_WFS_LAYERS_ALL: tuple[str, ...] = (
     "ms:pozwolenia_2026",
     "ms:pozwolenia_2025",
     "ms:pozwolenia_2024",
@@ -32,7 +34,17 @@ _GUNB_WFS_LAYERS: tuple[str, ...] = (
     "ms:pozwolenia_2020",
     "ms:pozwolenia_pozostale",
 )
-"""Year-partitioned WFS type names published by GUGiK."""
+"""All year-partitioned WFS type names published by GUGiK."""
+
+_GUNB_WFS_LAYERS_RECENT: tuple[str, ...] = (
+    "ms:pozwolenia_2026",
+    "ms:pozwolenia_2025",
+    "ms:pozwolenia_2024",
+)
+"""Default WFS layers — recent permits only (GUGiK ignores server-side filters)."""
+
+_GUNB_WFS_LAYERS: tuple[str, ...] = _GUNB_WFS_LAYERS_RECENT
+"""Default layers for :func:`fetch_gunb_warsaw_points` (recent years)."""
 
 _WFS_TIMEOUT_S: tuple[float, float] = (30.0, 300.0)
 """Connect / read timeout for GUGiK GetFeature (geoportal is often slow)."""
@@ -40,8 +52,8 @@ _WFS_TIMEOUT_S: tuple[float, float] = (30.0, 300.0)
 _WFS_RETRIES: int = 3
 """Attempts per WFS page before abandoning the layer page."""
 
-_WFS_PAGE_SIZE: int = 2000
-"""Features per GetFeature page (server accepts at least 5000)."""
+_WFS_PAGE_SIZE: int = 5000
+"""Features per GetFeature page (fewer round-trips on slow geoportal)."""
 
 _WFS_MAX_START_INDEX: int = 2_000_000
 """Runaway guard only — national year layers are ~0.5M features."""
@@ -73,6 +85,18 @@ _TAG_RE = re.compile(
 
 _SKIP_TAGS = frozenset({"msgeometry", "boundedby"})
 """Geometry / envelope tags skipped when flattening WFS attributes."""
+
+
+def resolve_gunb_wfs_layers(*, full_history: bool = False) -> tuple[str, ...]:
+    """Return WFS layer list for pipeline fetch.
+
+    GUGiK MapServer ignores attribute/bbox filters, so each layer is paginated
+    nationally. ``full_history`` adds older year buckets and ``pozostale`` (2M+
+    features) — first fetch can take many hours; recent-only is the default.
+    """
+    if full_history:
+        return _GUNB_WFS_LAYERS_ALL
+    return _GUNB_WFS_LAYERS_RECENT
 
 
 def _is_retryable_wfs_error(exc: BaseException) -> bool:
@@ -235,74 +259,92 @@ def _fetch_wfs_city_layer(
     start = 0
     matched: int | None = None
     kept = 0
-    while True:
-        params: dict[str, object] = {
-            "service": "WFS",
-            "version": "2.0.0",
-            "request": "GetFeature",
-            "typeNames": layer,
-            "srsName": "EPSG:4326",
-            "count": page_size,
-            "startIndex": start,
-        }
-        response = _wfs_get(
-            wfs_url,
-            params,
-            timeout_s=timeout_s,
-            retries=retries,
-        )
-        if matched is None:
-            match = re.search(r'numberMatched="([^"]+)"', response.text)
-            if match and match.group(1).isdigit():
-                matched = int(match.group(1))
-                logger.info(
-                    "GUNB WFS %s numberMatched=%s (national; filtering locally)",
-                    layer,
-                    matched,
+    page_bar = pipeline_tqdm(
+        total=None,
+        desc=layer.replace("ms:", ""),
+        unit="feat",
+        leave=False,
+    )
+    try:
+        while True:
+            params: dict[str, object] = {
+                "service": "WFS",
+                "version": "2.0.0",
+                "request": "GetFeature",
+                "typeNames": layer,
+                "srsName": "EPSG:4326",
+                "count": page_size,
+                "startIndex": start,
+            }
+            response = _wfs_get(
+                wfs_url,
+                params,
+                timeout_s=timeout_s,
+                retries=retries,
+            )
+            if matched is None:
+                match = re.search(r'numberMatched="([^"]+)"', response.text)
+                if match and match.group(1).isdigit():
+                    matched = int(match.group(1))
+                    page_bar.total = matched
+                    page_bar.refresh()
+                    logger.info(
+                        "GUNB WFS %s numberMatched=%s (national; filtering locally)",
+                        layer,
+                        matched,
+                    )
+            chunk = _frame_from_wfs_gml(response.text)
+            if chunk.empty:
+                break
+            page_bar.update(len(chunk))
+            local = _filter_warsaw_metro(chunk)
+            if not local.empty:
+                frames.append(local)
+                kept += len(local)
+            if len(chunk) < page_size:
+                break
+            start += page_size
+            if matched is not None and start >= matched:
+                break
+            if start > max_start_index:
+                logger.warning(
+                    "GUNB WFS pagination stopped at startIndex=%s (runaway guard)",
+                    start,
                 )
-        chunk = _frame_from_wfs_gml(response.text)
-        if chunk.empty:
-            break
-        local = _filter_warsaw_metro(chunk)
-        if not local.empty:
-            frames.append(local)
-            kept += len(local)
-        if len(chunk) < page_size:
-            break
-        start += page_size
-        if matched is not None and start >= matched:
-            break
-        if start > max_start_index:
-            logger.warning(
-                "GUNB WFS pagination stopped at startIndex=%s (runaway guard)",
-                start,
-            )
-            break
-        if start and start % (page_size * 25) == 0:
-            logger.info(
-                "GUNB WFS %s progress startIndex=%s kept=%s",
-                layer,
-                start,
-                kept,
-            )
+                break
+    finally:
+        page_bar.close()
     if not frames:
         return pd.DataFrame(columns=["lon", "lat", "adres", "numer_decyzji", "miasto"])
+    logger.info("GUNB WFS %s kept %s Warsaw-metro rows", layer, kept)
     return pd.concat(frames, ignore_index=True)
 
 
 def fetch_gunb_warsaw_points(
     *,
     wfs_url: str = _GUNB_WFS,
-    layers: tuple[str, ...] = _GUNB_WFS_LAYERS,
+    layers: tuple[str, ...] | None = None,
+    full_history: bool = False,
     city: str = "Warszawa",
     cache_dir: Path | None = None,
     use_cache: bool = True,
 ) -> pd.DataFrame:
     """Download geolocated GUNB permits for Warsaw metro from GUGiK WFS."""
+    layer_list = (
+        layers
+        if layers is not None
+        else resolve_gunb_wfs_layers(full_history=full_history)
+    )
+    mode = "full history" if full_history else "recent years"
+    logger.info(
+        "GUNB WFS fetch (%s): %s layer(s)",
+        mode,
+        len(layer_list),
+    )
     frames: list[pd.DataFrame] = []
     if cache_dir is not None:
         cache_dir.mkdir(parents=True, exist_ok=True)
-    for layer in layers:
+    for layer in pipeline_tqdm(layer_list, desc="GUNB WFS layers", unit="layer"):
         cache_path = None
         if cache_dir is not None:
             safe = layer.replace(":", "_").replace("/", "_")
@@ -377,12 +419,17 @@ def download_gunb_mazowieckie(
     wfs_url: str = _GUNB_WFS,
     *,
     refresh_wfs_cache: bool = False,
+    wfs_full_history: bool = False,
 ) -> pd.DataFrame:
     """Download full Mazowieckie GUNB dump + Warsaw WFS points for GIS.
 
     Prefers GUGiK WFS centroids for ``lon``/``lat`` (map + distance features).
     Always attempts the official bulk zip for raw archival under ``raw_dir``.
     Falls back to ``fixture_path`` when both live sources fail.
+
+    By default only recent WFS year layers are fetched (see
+    :func:`resolve_gunb_wfs_layers`); set ``wfs_full_history=True`` for all
+    buckets including ``pozostale`` (very slow first run).
     """
     raw_dir.mkdir(parents=True, exist_ok=True)
     try:
@@ -399,6 +446,7 @@ def download_gunb_mazowieckie(
     try:
         frame = fetch_gunb_warsaw_points(
             wfs_url=wfs_url,
+            full_history=wfs_full_history,
             cache_dir=raw_dir,
             use_cache=not refresh_wfs_cache,
         )

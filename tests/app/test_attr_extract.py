@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+from typing import Any
+
+import pandas as pd
+
 from happy_housing.app.attr_extract import (
     EXTRACT_FIELDS,
     ListingAttrExtract,
     build_extract_user_prompt,
+    enrich_frame_listing_attrs,
     merge_structured_and_extract,
     parse_extract_line,
 )
@@ -155,3 +160,41 @@ def test_enrich_frame_without_llm_keeps_plumbing() -> None:
     out = enrich_frame_listing_attrs(frame, use_llm=False)
     assert int(out.iloc[0]["plumbing_replaced"]) == 1
     assert int(out.iloc[0]["wiring_replaced"]) == 0
+
+
+def test_enrich_frame_parallel_lm_workers(monkeypatch: Any) -> None:
+    """Parallel workers fill the same cache as sequential calls."""
+    calls: list[str] = []
+
+    def fake_extract(desc: str, **_k: object) -> ListingAttrExtract:
+        calls.append(desc)
+        return ListingAttrExtract(
+            object_type="flat",
+            plumbing_replaced=1,
+            wiring_replaced=0,
+        )
+
+    monkeypatch.setattr(
+        "happy_housing.app.attr_extract.extract_attrs_from_description",
+        fake_extract,
+    )
+    frame = pd.DataFrame({
+        "description": ["same text", "same text", "other text"],
+        "has_basement": [None, None, None],
+        "has_outdoor_parking": [None, None, None],
+        "is_attic": [None, None, None],
+        "ownership": [None, None, None],
+        "needs_renovation": [None, None, None],
+        "year_built": [None, None, None],
+        "year_renovated": [None, None, None],
+        "plumbing_replaced": [None, None, None],
+        "wiring_replaced": [None, None, None],
+        "object_type": [None, None, None],
+        "floor_no": [None, None, None],
+        "has_garden": [None, None, None],
+        "has_garage": [None, None, None],
+        "has_balcony": [None, None, None],
+    })
+    out = enrich_frame_listing_attrs(frame, lm_workers=2)
+    assert len(out) == 3
+    assert sorted(calls) == ["other text", "same text"]

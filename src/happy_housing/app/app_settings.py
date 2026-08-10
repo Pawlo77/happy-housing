@@ -48,6 +48,8 @@ class AppSettings:
     """Max tokens for extract responses (CSV line only)."""
     extract_max_listings: int = 200
     """Cap LM extract calls per pipeline/Admin run (0 = unlimited)."""
+    extract_lm_workers: int = 2
+    """Parallel LMS attr-extract workers (same model; keep low for LM Studio)."""
     ai_review_on_offer_open: bool = True
     """Auto-request AI review when opening Offer → AI review."""
     ai_review_system_prompt: str = DEFAULT_AI_REVIEW_SYSTEM_PROMPT
@@ -188,6 +190,8 @@ class AppSettings:
     """Re-download RCN during pipeline."""
     download_gunb: bool = True
     """Re-download GUNB during pipeline."""
+    gunb_wfs_full_history: bool = False
+    """Fetch all GUNB WFS year layers incl. pozostale (slow; default recent 3y)."""
     download_crime: bool = True
     """Re-download GUS Panorama dzielnic crime rates during pipeline."""
     gtfs_zip_url: str = ""
@@ -284,6 +288,13 @@ def load_app_settings(path: Path) -> AppSettings:
         extract_max_listings=max(
             0,
             int(payload.get("extract_max_listings", defaults.extract_max_listings)),
+        ),
+        extract_lm_workers=max(
+            1,
+            min(
+                8,
+                int(payload.get("extract_lm_workers", defaults.extract_lm_workers)),
+            ),
         ),
         ai_review_on_offer_open=bool(
             payload.get("ai_review_on_offer_open", defaults.ai_review_on_offer_open)
@@ -577,6 +588,9 @@ def load_app_settings(path: Path) -> AppSettings:
         ),
         download_rcn=bool(payload.get("download_rcn", defaults.download_rcn)),
         download_gunb=bool(payload.get("download_gunb", defaults.download_gunb)),
+        gunb_wfs_full_history=bool(
+            payload.get("gunb_wfs_full_history", defaults.gunb_wfs_full_history)
+        ),
         download_crime=bool(payload.get("download_crime", defaults.download_crime)),
         gtfs_zip_url=str(payload.get("gtfs_zip_url", defaults.gtfs_zip_url) or ""),
         gios_stations_url=str(

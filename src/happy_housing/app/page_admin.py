@@ -374,6 +374,7 @@ def _apply_pipeline_widgets(
     aq_idw_power: float,
     download_gunb: bool,
     gunb_zip_url: str,
+    gunb_wfs_full_history: bool,
     download_crime: bool,
     crime_panorama_7z_url: str,
     use_osm: bool,
@@ -398,6 +399,7 @@ def _apply_pipeline_widgets(
     settings.aq_idw_power = float(aq_idw_power)
     settings.download_gunb = bool(download_gunb)
     settings.gunb_zip_url = str(gunb_zip_url).strip()
+    settings.gunb_wfs_full_history = bool(gunb_wfs_full_history)
     settings.download_crime = bool(download_crime)
     settings.crime_panorama_7z_url = str(crime_panorama_7z_url).strip()
     settings.use_osm = bool(use_osm)
@@ -651,6 +653,16 @@ def _panel_sources(settings: AppSettings, settings_file: Path, proc: Path) -> No
             help="GUS Panorama dzielnic — police crime rates by district.",
             key="pipe_download_crime",
         )
+    gunb_wfs_full_history = st.checkbox(
+        "GUNB WFS full history (all year layers + pozostale)",
+        value=bool(settings.gunb_wfs_full_history),
+        help=(
+            "Off (default): recent 3 year layers only (~1h first fetch). "
+            "On: scans every national bucket incl. pozostale (2M+ features; "
+            "can take 12h+). Cached per-layer parquets under data/raw/."
+        ),
+        key="pipe_gunb_wfs_full_history",
+    )
 
     aq_field_enabled = st.checkbox(
         "Build GIOŚ air-quality IDW field (model + map)",
@@ -774,6 +786,7 @@ def _panel_sources(settings: AppSettings, settings_file: Path, proc: Path) -> No
             aq_idw_power=aq_idw_power,
             download_gunb=download_gunb,
             gunb_zip_url=gunb_zip_url,
+            gunb_wfs_full_history=gunb_wfs_full_history,
             download_crime=download_crime,
             crime_panorama_7z_url=crime_panorama_7z_url,
             use_osm=use_osm,
@@ -1401,7 +1414,7 @@ def _panel_extract(settings: AppSettings, settings_file: Path, proc: Path) -> No
         value=settings.extract_attrs_enabled,
         key="settings_extract_enabled",
     )
-    e1, e2, e3 = st.columns(3)
+    e1, e2, e3, e4 = st.columns(4)
     with e1:
         extract_chars = st.number_input(
             "Max description chars",
@@ -1428,6 +1441,15 @@ def _panel_extract(settings: AppSettings, settings_file: Path, proc: Path) -> No
             key="settings_extract_cap",
             help="0 = unlimited. Prefer a cap for first runs.",
         )
+    with e4:
+        extract_workers = st.number_input(
+            "Parallel LMS workers",
+            min_value=1,
+            max_value=8,
+            value=int(settings.extract_lm_workers),
+            key="settings_extract_workers",
+            help="Concurrent attr-extract calls to LM Studio (2-4 typical).",
+        )
     s1, s2 = st.columns(2)
     with s1:
         if st.button(
@@ -1442,6 +1464,7 @@ def _panel_extract(settings: AppSettings, settings_file: Path, proc: Path) -> No
             settings.extract_max_chars = int(extract_chars)
             settings.extract_max_tokens = int(extract_tokens)
             settings.extract_max_listings = int(extract_cap)
+            settings.extract_lm_workers = int(extract_workers)
             save_app_settings(settings_file, settings)
             st.success("Extract settings saved.")
     with s2:
@@ -1464,6 +1487,7 @@ def _panel_extract(settings: AppSettings, settings_file: Path, proc: Path) -> No
                         use_llm=True,
                         metrics_path=llm_metrics_path(proc),
                         max_llm_calls=cap,
+                        lm_workers=int(extract_workers),
                     )
                     out_path = processed_dir() / "listings_scored.parquet"
                     work.to_parquet(out_path, index=False)

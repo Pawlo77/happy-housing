@@ -127,6 +127,11 @@ class StepManifest:
             "written_at": datetime.now(tz=UTC).isoformat(),
         }
 
+    def mark_and_save(self, step_id: str, inputs_fp: str) -> None:
+        """Record a step fingerprint and persist immediately (safe on interrupt)."""
+        self.mark(step_id, inputs_fp)
+        self.save()
+
 
 def pipeline_steps_path(processed: Path) -> Path:
     """Default manifest path under processed data."""

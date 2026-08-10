@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -14,11 +15,15 @@ import pandas as pd
 
 from happy_housing.app.llm_metrics import PURPOSE_ATTR_EXTRACT, record_timed_llm_call
 from happy_housing.app.lmstudio_models import get_lmstudio_llm
+from happy_housing.pipeline_progress import pipeline_tqdm
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_EXTRACT_LM_MODEL: str = "gemma-3-4b-it"
 """Default lightweight LM Studio model for attribute extraction."""
+
+DEFAULT_EXTRACT_LM_WORKERS: int = 2
+"""Concurrent LMS attr-extract calls (same model; 2-4 typical on local LM Studio)."""
 
 EXTRACT_FIELDS: tuple[str, ...] = (
     "object_type",
@@ -377,6 +382,83 @@ def extract_attrs_from_description(
     return parse_extract_line(str(raw))
 
 
+def _pending_lm_jobs(
+    frame: pd.DataFrame,
+    *,
+    columns: set[str],
+    cache: dict[str, ListingAttrExtract | None],
+    max_chars: int,
+    use_llm: bool,
+    max_llm_calls: int | None,
+) -> list[tuple[str, str]]:
+    """Unique (fingerprint, description) pairs still needing an LMS call."""
+    pending: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    llm_calls = 0
+    for _, row in frame.iterrows():
+        structured = row.to_dict()
+        desc = str(
+            structured.get("description") or structured.get("short_description") or ""
+        ).strip()
+        if not desc:
+            continue
+        fp = description_fingerprint(desc[:max_chars])
+        if not row_needs_attr_llm(structured, columns, desc_fingerprint=fp):
+            continue
+        if not use_llm or fp in cache or fp in seen:
+            continue
+        if max_llm_calls is not None and llm_calls >= max_llm_calls:
+            continue
+        pending.append((fp, desc))
+        seen.add(fp)
+        llm_calls += 1
+    return pending
+
+
+def _run_lm_jobs(
+    jobs: list[tuple[str, str]],
+    *,
+    model: str,
+    max_chars: int,
+    max_tokens: int,
+    metrics_path: Path | None,
+    lm_workers: int,
+) -> dict[str, ListingAttrExtract | None]:
+    """Execute pending extract jobs, optionally in parallel."""
+    if not jobs:
+        return {}
+
+    def _one(item: tuple[str, str]) -> tuple[str, ListingAttrExtract | None]:
+        fp, desc = item
+        return fp, extract_attrs_from_description(
+            desc,
+            model=model,
+            max_chars=max_chars,
+            max_tokens=max_tokens,
+            metrics_path=metrics_path,
+        )
+
+    results: dict[str, ListingAttrExtract | None] = {}
+    workers = max(1, int(lm_workers))
+    if workers == 1:
+        for item in pipeline_tqdm(jobs, desc="LMS attr extract", unit="call"):
+            fp, extract = _one(item)
+            results[fp] = extract
+        return results
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(_one, item) for item in jobs]
+        for fut in pipeline_tqdm(
+            as_completed(futures),
+            total=len(futures),
+            desc="LMS attr extract",
+            unit="call",
+        ):
+            fp, extract = fut.result()
+            results[fp] = extract
+    return results
+
+
 def enrich_frame_listing_attrs(
     frame: pd.DataFrame,
     *,
@@ -387,6 +469,7 @@ def enrich_frame_listing_attrs(
     metrics_path: Path | None = None,
     cache: dict[str, ListingAttrExtract | None] | None = None,
     max_llm_calls: int | None = None,
+    lm_workers: int = DEFAULT_EXTRACT_LM_WORKERS,
 ) -> pd.DataFrame:
     """Attach merged listing attrs; optional LLM only when gaps remain.
 
@@ -395,11 +478,31 @@ def enrich_frame_listing_attrs(
     """
     out = frame.copy()
     cache = cache if cache is not None else {}
-    llm_calls = 0
     columns = set(out.columns)
     if "attr_extract_fp" not in out.columns:
         out["attr_extract_fp"] = pd.NA
         columns.add("attr_extract_fp")
+
+    jobs = _pending_lm_jobs(
+        out,
+        columns=columns,
+        cache=cache,
+        max_chars=max_chars,
+        use_llm=use_llm,
+        max_llm_calls=max_llm_calls,
+    )
+    if jobs:
+        cache.update(
+            _run_lm_jobs(
+                jobs,
+                model=model,
+                max_chars=max_chars,
+                max_tokens=max_tokens,
+                metrics_path=metrics_path,
+                lm_workers=lm_workers,
+            )
+        )
+
     rows: list[dict[str, Any]] = []
     fps: list[object] = []
     for _, row in out.iterrows():
@@ -415,19 +518,8 @@ def enrich_frame_listing_attrs(
             and row_needs_attr_llm(structured, columns, desc_fingerprint=fp)
         )
         used_llm = False
-        if needs_llm and (max_llm_calls is None or llm_calls < max_llm_calls):
-            if fp in cache:
-                extract = cache[fp]
-            else:
-                extract = extract_attrs_from_description(
-                    desc,
-                    model=model,
-                    max_chars=max_chars,
-                    max_tokens=max_tokens,
-                    metrics_path=metrics_path,
-                )
-                cache[fp] = extract
-                llm_calls += 1
+        if needs_llm and fp in cache:
+            extract = cache[fp]
             used_llm = True
         rows.append(merge_structured_and_extract(structured, extract))
         if used_llm:
@@ -440,8 +532,9 @@ def enrich_frame_listing_attrs(
         out[col] = attrs[col]
     out["attr_extract_fp"] = fps
     logger.info(
-        "Listing attrs enriched · llm_calls=%s · rows=%s",
-        llm_calls,
+        "Listing attrs enriched · llm_calls=%s · rows=%s · workers=%s",
+        len(jobs),
         len(out),
+        max(1, int(lm_workers)),
     )
     return out

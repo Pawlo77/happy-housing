@@ -92,6 +92,7 @@ dev = [
   "ruff>=0.15.20",
   "types-pyyaml>=6.0.12.20250915",
   "types-requests>=2.32.0",
+  "types-tqdm>=4.67.0",
 ]
 
 [tool.uv]
