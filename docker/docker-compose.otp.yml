@@ -12,7 +12,7 @@ services:
     volumes:
       - ../data/otp:/var/opentripplanner
     environment:
-      JAVA_TOOL_OPTIONS: -Xmx8g
+      JAVA_TOOL_OPTIONS: -Xmx3g
     command: ["--build", "--save"]
     profiles:
       - otp-build
