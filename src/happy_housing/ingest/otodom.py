@@ -703,7 +703,7 @@ def _cell_empty(value: object) -> bool:
     text = value.strip()
     if not text:
         return True
-    return text.lower() in {"nan", "none", "unknown"}
+    return text.lower() in {"nan", "none", "unknown", "[]"}
 
 
 def merge_otodom_detail_into_row(
@@ -743,8 +743,16 @@ def listing_photo_count(row: dict[str, Any] | pd.Series) -> int:
 
 
 def listing_needs_attr_backfill(row: dict[str, Any] | pd.Series) -> bool:
-    """True when gallery exists but key structural attrs are still empty."""
+    """True once for gallery-complete rows that never received a detail merge.
+
+    Sparse seller fields (heating/material) often stay empty forever — do not
+    re-fetch those listings on every backfill batch.
+    """
     if listing_needs_media_backfill(row):
+        return False
+    # ``characteristics_json`` is written on every successful detail flatten.
+    raw = row.get("characteristics_json")
+    if isinstance(raw, str) and raw.strip() and raw.strip() not in {"null", "None"}:
         return False
     for col in (
         "building_material",
