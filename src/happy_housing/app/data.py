@@ -101,16 +101,19 @@ def load_scored() -> pd.DataFrame:
     """Load scored listings with listed_month and market_primary derived."""
     path = scored_path()
     if not path.exists():
+        logger.error("Missing scored listings at %s", path)
         raise FileNotFoundError(
             f"Missing {path}. Run pipeline from Admin or: make pipeline"
         )
     oto = processed_dir() / "otodom_listings.parquet"
-    return _read_scored(
+    frame = _read_scored(
         str(path),
         path.stat().st_mtime,
         str(oto) if oto.exists() else "",
         oto.stat().st_mtime if oto.exists() else 0.0,
     )
+    logger.debug("Loaded scored listings n=%s from %s", len(frame), path.name)
+    return frame
 
 
 def load_metadata() -> RunMetadata | None:

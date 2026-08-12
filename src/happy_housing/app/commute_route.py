@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -12,6 +13,8 @@ from happy_housing.app.commute_modes import (
 )
 from happy_housing.gis.polyline import decode_google_polyline
 from happy_housing.gis.routing import osrm_route_geojson, otp_plan_best_itinerary
+
+logger = logging.getLogger(__name__)
 
 _LEG_RGBA: dict[str, tuple[int, int, int, int]] = {
     "WALK": (100, 116, 139, 220),
@@ -199,6 +202,15 @@ def fetch_offer_commute_route(
     display = coerce_commute_display_mode(mode)
     origin = (float(origin_lon), float(origin_lat))
     dest = (float(dest_lon), float(dest_lat))
+    logger.info(
+        "Offer commute route mode=%s hour=%s origin=(%.5f,%.5f) dest=(%.5f,%.5f)",
+        display,
+        int(hour),
+        origin[0],
+        origin[1],
+        dest[0],
+        dest[1],
+    )
     if display == "transit":
         itinerary = otp_plan_best_itinerary(
             origin,
@@ -207,8 +219,18 @@ def fetch_offer_commute_route(
             hour=int(hour),
         )
         if itinerary is None:
+            logger.warning("OTP itinerary empty for offer commute route")
             return None
-        return parse_otp_itinerary(dict(itinerary), mode="transit")
+        plan = parse_otp_itinerary(dict(itinerary), mode="transit")
+        if plan is None:
+            logger.warning("OTP itinerary parse failed for offer commute route")
+            return None
+        logger.debug(
+            "OTP route duration_s=%s legs=%s",
+            plan.duration_s,
+            len(plan.legs),
+        )
+        return plan
     profile = {"car": "driving", "bike": "bike", "walk": "foot"}[display]
     payload = osrm_route_geojson(
         origin,
@@ -217,9 +239,11 @@ def fetch_offer_commute_route(
         profile=profile,
     )
     if payload is None:
+        logger.warning("OSRM %s route empty for offer commute", profile)
         return None
     coords = payload.get("coordinates")
     if not isinstance(coords, list) or len(coords) < 2:
+        logger.warning("OSRM %s route missing coordinates", profile)
         return None
     path = [[float(p[0]), float(p[1])] for p in coords if isinstance(p, list)]
     dur_raw = payload.get("duration", 0.0)
@@ -238,13 +262,20 @@ def fetch_offer_commute_route(
         headsign="",
         path=path,
     )
-    return CommuteRoutePlan(
+    plan = CommuteRoutePlan(
         mode=display,
         duration_s=duration_s,
         distance_m=distance_m,
         legs=(leg,),
         summary=f"{label} · {duration_s / 60.0:.0f} min · {distance_m / 1000.0:.1f} km",
     )
+    logger.debug(
+        "OSRM %s route duration_s=%s distance_m=%s",
+        profile,
+        duration_s,
+        distance_m,
+    )
+    return plan
 
 
 def commute_route_mode_options() -> list[tuple[str, str]]:

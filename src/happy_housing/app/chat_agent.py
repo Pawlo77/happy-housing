@@ -328,6 +328,12 @@ def run_chat_turn(
             assistant_text="", open_listing_id=None, error="Empty message"
         )
 
+    logger.info(
+        "Assistant turn start conv=%s chars=%s model=%s",
+        conversation_id,
+        len(text),
+        settings.lm_model,
+    )
     append_message(path, conversation_id, role="user", content=text)
 
     system = (settings.chat_system_prompt or "").strip() or DEFAULT_CHAT_SYSTEM_PROMPT

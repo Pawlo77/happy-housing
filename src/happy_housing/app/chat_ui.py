@@ -86,6 +86,7 @@ def _handle_prompt(
         settings=settings,
     )
     with st.spinner("Assistant thinking…"):
+        logger.info("Assistant UI submitting turn conv=%s", conversation_id)
         result = run_chat_turn(
             db_path=db,
             conversation_id=conversation_id,
@@ -95,6 +96,7 @@ def _handle_prompt(
             metrics_path=llm_metrics_path(processed),
         )
     if result.error:
+        logger.error("Assistant UI turn error: %s", result.error)
         st.error(result.error)
     if result.open_listing_id:
         open_explore_offer(result.open_listing_id)

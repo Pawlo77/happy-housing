@@ -303,6 +303,13 @@ def retrain_recommender(
     commute_mode: object | None = None,
 ) -> dict[str, float]:
     """Rescore the universe, persist metrics, return summary stats."""
+    logger.info(
+        "Retrain recommender: n=%s top_n=%s demotion_alpha=%.3f commute_mode=%s",
+        len(frame),
+        int(top_n),
+        float(demotion_alpha),
+        commute_mode,
+    )
     impressions = load_impressions(impressions_path(processed_dir))
     ranked = score_offers(
         frame,
@@ -336,6 +343,13 @@ def retrain_recommender(
     path = metrics_path(processed_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(metrics, indent=2) + "\n", encoding="utf-8")
+    logger.info(
+        "Retrain recommender done: recommended=%s/%s mean_confidence=%.3f → %s",
+        int(metrics["n_recommended"]),
+        int(metrics["n_candidates"]),
+        float(metrics["mean_confidence"]),
+        path,
+    )
     return metrics
 
 

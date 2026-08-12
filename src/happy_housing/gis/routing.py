@@ -154,6 +154,13 @@ def attach_commute_minutes(
     )
     if durations is not None and len(durations) == len(out):
         out[out_col] = durations / 60.0
+        logger.info(
+            "OSRM %s filled %s/%s rows → %s",
+            profile,
+            len(out),
+            len(out),
+            out_col,
+        )
         return out
     if require_osrm:
         raise RuntimeError(
@@ -161,6 +168,13 @@ def attach_commute_minutes(
             f"(profile={profile!r}; macOS AirPlay often occupies :5000 — "
             "use host port 5001)"
         )
+    logger.warning(
+        "OSRM %s unavailable at %s — using %.0f km/h proxy for %s",
+        profile,
+        osrm_url,
+        float(proxy_speed_kmh),
+        out_col,
+    )
     speed = float(proxy_speed_kmh) if float(proxy_speed_kmh) > 0 else 30.0
     if distance_col in out.columns:
         out[out_col] = (out[distance_col].astype(float) / 1000.0) / speed * 60.0
@@ -185,6 +199,13 @@ def attach_active_mode_commutes(
     ``bike`` / ``foot`` when those graphs exist; otherwise speed proxies.
     Transit uses OTP when enabled.
     """
+    logger.info(
+        "Attach multi-mode commute for %s rows → (%.5f, %.5f) otp=%s",
+        len(frame),
+        float(dest_lon),
+        float(dest_lat),
+        bool(use_otp_transit),
+    )
     out = attach_commute_minutes(
         frame,
         dest_lon=dest_lon,
@@ -216,12 +237,17 @@ def attach_active_mode_commutes(
         proxy_speed_kmh=5.0,
     )
     if use_otp_transit:
+        logger.info("Querying OTP transit minutes at %s", otp_url)
         out = attach_transit_commute_minutes(
             out,
             dest_lon=dest_lon,
             dest_lat=dest_lat,
             otp_url=otp_url,
         )
+        filled = int(
+            pd.to_numeric(out.get("transit_commute_min"), errors="coerce").notna().sum()
+        )
+        logger.info("OTP transit filled %s/%s rows", filled, len(out))
     elif "transit_commute_min" not in out.columns:
         out["transit_commute_min"] = float("nan")
     return out
