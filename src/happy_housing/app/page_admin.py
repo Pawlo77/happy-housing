@@ -41,6 +41,11 @@ from happy_housing.app.data import (
     load_scored,
     processed_dir,
 )
+from happy_housing.app.filter_presets import (
+    clear_filter_presets,
+    filter_presets_path,
+    load_filter_presets,
+)
 from happy_housing.app.geocode import (
     format_place_option_labels,
     live_search_ready,
@@ -1548,13 +1553,16 @@ def _panel_lms_metrics(settings: AppSettings, settings_file: Path, proc: Path) -
 
 
 def _panel_stars_news(settings: AppSettings, settings_file: Path, proc: Path) -> None:
-    """Starred offers and News feed memory."""
+    """Starred offers, News feed memory, and Explore filter presets."""
     stars_file = stars_path(proc)
     starred = load_stars(stars_file)
     news_items = load_news(news_path(proc))
-    s1, s2 = st.columns(2)
+    presets_file = filter_presets_path(proc)
+    presets = load_filter_presets(presets_file)
+    s1, s2, s3 = st.columns(3)
     s1.metric("Starred offers", f"{len(starred):,}")
     s2.metric("News events", f"{len(news_items):,}")
+    s3.metric("Filter presets", f"{len(presets):,}")
     cap = st.number_input(
         "News history cap",
         min_value=10,
@@ -1562,12 +1570,21 @@ def _panel_stars_news(settings: AppSettings, settings_file: Path, proc: Path) ->
         value=int(settings.news_history_cap),
         key="settings_news_cap",
     )
-    a1, a2, a3 = st.columns(3)
+    preset_cap = st.number_input(
+        "Max saved Explore filter presets",
+        min_value=1,
+        max_value=100,
+        value=int(settings.filter_presets_max),
+        key="settings_filter_presets_max",
+        help="Oldest presets drop when saving beyond this cap.",
+    )
+    a1, a2, a3, a4 = st.columns(4)
     with a1:
-        if st.button("Save news settings", key="save_news_settings"):
+        if st.button("Save news / preset settings", key="save_news_settings"):
             settings.news_history_cap = int(cap)
+            settings.filter_presets_max = int(preset_cap)
             save_app_settings(settings_file, settings)
-            st.success("News settings saved.")
+            st.success("Stars & News settings saved.")
     with a2:
         if st.button("Clear starred offers", key="clear_stars"):
             clear_stars(stars_file)
@@ -1576,6 +1593,11 @@ def _panel_stars_news(settings: AppSettings, settings_file: Path, proc: Path) ->
         if st.button("Clear starred news + snapshots", key="clear_star_news"):
             clear_star_news_memory(proc)
             st.success("Starred news memory cleared.")
+    with a4:
+        if st.button("Clear filter presets", key="clear_filter_presets"):
+            clear_filter_presets(presets_file)
+            st.success("Explore filter presets cleared.")
+            st.rerun()
 
 
 def _panel_stats(settings: AppSettings, settings_file: Path, proc: Path) -> None:

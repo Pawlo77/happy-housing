@@ -72,6 +72,16 @@ from happy_housing.app.explore_nav import (
     prepare_offer_select_state,
     request_explore_section,
 )
+from happy_housing.app.filter_presets import (
+    FilterPreset,
+    apply_filter_preset_to_session,
+    delete_filter_preset,
+    filter_presets_path,
+    load_filter_presets,
+    snapshot_filter_preset_from_session,
+    suggest_filter_preset_name,
+    upsert_filter_preset,
+)
 from happy_housing.app.filters import (
     FilterState,
     apply_filters,
@@ -275,6 +285,120 @@ _BOARD_COLUMNS: tuple[str, ...] = (
 EXPLORE_SIDEBAR_TABS: tuple[str, str] = ("Filters", "Map layers")
 """Sidebar tab labels: filters vs map overlays (avoids long stacked scroll)."""
 
+FILTER_PRESET_PENDING_KEY: str = "explore_filter_preset_pending"
+"""Session key holding a ``FilterPreset.to_dict()`` to apply before widgets render."""
+
+FILTER_PRESET_NAME_KEY: str = "explore_filter_preset_name"
+"""Text input key for the preset name when saving."""
+
+
+def _apply_pending_filter_preset(*, age_max: int, ppm_max: int) -> None:
+    """Hydrate Explore filter widgets from a pending saved preset, if any."""
+    raw = st.session_state.pop(FILTER_PRESET_PENDING_KEY, None)
+    if not isinstance(raw, dict):
+        return
+    preset = FilterPreset.from_dict(raw)
+    if preset is None:
+        return
+    apply_filter_preset_to_session(
+        st.session_state,
+        preset,
+        age_max=age_max,
+        ppm_max=ppm_max,
+    )
+    st.session_state[FILTER_PRESET_NAME_KEY] = preset.name
+
+
+def _render_filter_presets_ui(*, ppm_ceiling: int, age_max: int) -> None:
+    """Save / load / delete named Explore filter presets (top of Filters tab)."""
+    proc = processed_dir()
+    presets_file = filter_presets_path(proc)
+    settings = load_app_settings(settings_path(proc))
+    max_presets = int(settings.filter_presets_max)
+    presets = load_filter_presets(presets_file)
+    names = [p.name for p in presets]
+    current = snapshot_filter_preset_from_session(
+        st.session_state,
+        age_max=age_max,
+        ppm_max=ppm_ceiling,
+    )
+    suggested = suggest_filter_preset_name(
+        current.filters,
+        starred_only=current.starred_only,
+        ppm_ceiling=float(ppm_ceiling),
+    )
+    with st.expander("Saved filters", expanded=bool(names)):
+        st.caption(
+            "Save the current Map filters under a name, or load a previous set. "
+            "Leave the name blank and click Suggest for an auto title from "
+            "active filters (e.g. district · quiet · garage)."
+        )
+        if names:
+            pick = st.selectbox(
+                "Saved preset",
+                options=names,
+                key="explore_filter_preset_pick",
+                help="Choose a saved filter set to load or delete.",
+            )
+            c_load, c_del = st.columns(2)
+            with c_load:
+                if st.button("Load", key="explore_filter_preset_load", width="stretch"):
+                    chosen = next((p for p in presets if p.name == pick), None)
+                    if chosen is not None:
+                        st.session_state[FILTER_PRESET_PENDING_KEY] = chosen.to_dict()
+                        st.rerun()
+            with c_del:
+                if st.button(
+                    "Delete",
+                    key="explore_filter_preset_delete",
+                    width="stretch",
+                ) and delete_filter_preset(presets_file, str(pick)):
+                    st.success(f"Deleted “{pick}”.")
+                    st.rerun()
+        else:
+            st.caption("No saved filter sets yet.")
+
+        name_value = st.text_input(
+            "Preset name",
+            key=FILTER_PRESET_NAME_KEY,
+            placeholder=suggested,
+            help=(
+                "Type your own name, or use Suggest for a title built from "
+                "the active filters."
+            ),
+        )
+        c_sug, c_save = st.columns(2)
+        with c_sug:
+            if st.button(
+                "Suggest name",
+                key="explore_filter_preset_suggest",
+                width="stretch",
+            ):
+                st.session_state[FILTER_PRESET_NAME_KEY] = suggested
+                st.rerun()
+        with c_save:
+            if st.button(
+                "Save current",
+                key="explore_filter_preset_save",
+                width="stretch",
+            ):
+                label = str(name_value or "").strip() or suggested
+                # Re-read after widgets below may have updated session on prior run.
+                snap = snapshot_filter_preset_from_session(
+                    st.session_state,
+                    age_max=age_max,
+                    ppm_max=ppm_ceiling,
+                    name=label,
+                )
+                upsert_filter_preset(
+                    presets_file,
+                    snap,
+                    max_presets=max_presets,
+                )
+                st.session_state[FILTER_PRESET_NAME_KEY] = label
+                st.success(f"Saved “{label}”.")
+                st.rerun()
+
 
 def _sidebar_filters(frame: pd.DataFrame) -> tuple[FilterState, bool]:
     """Render Explore filters; call inside the Filters sidebar tab."""
@@ -295,6 +419,9 @@ def _sidebar_filters(frame: pd.DataFrame) -> tuple[FilterState, bool]:
     ages = offer_age_months(frame)
     age_finite = ages.dropna()
     age_max = int(age_finite.max()) if not age_finite.empty else 0
+    ppm_ceiling = max(ppm_max, ppm_min + 1)
+    _apply_pending_filter_preset(age_max=age_max, ppm_max=ppm_ceiling)
+    _render_filter_presets_ui(ppm_ceiling=ppm_ceiling, age_max=age_max)
 
     district = st.selectbox(
         "District",
@@ -360,8 +487,8 @@ def _sidebar_filters(frame: pd.DataFrame) -> tuple[FilterState, bool]:
     max_ppm = st.slider(
         "Max listing zł/m²",
         min_value=ppm_min,
-        max_value=max(ppm_max, ppm_min + 1),
-        value=max(ppm_max, ppm_min + 1),
+        max_value=ppm_ceiling,
+        value=ppm_ceiling,
         help=FILTER_HELP["max_ppm"],
         key="explore_max_ppm",
     )

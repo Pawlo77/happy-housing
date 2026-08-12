@@ -2,12 +2,54 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import asdict, dataclass, fields
 from datetime import date
+from typing import Any, Self
 
 import pandas as pd
 
 from happy_housing.app.listing_attrs import apply_property_attr_filters
+
+_STR_FIELDS: frozenset[str] = frozenset({
+    "district",
+    "source",
+    "oou",
+    "high_noise",
+    "poor_air",
+    "frontage",
+    "object_type",
+    "ownership",
+    "has_garage",
+    "has_outdoor_parking",
+    "has_basement",
+    "has_balcony",
+    "has_garden",
+    "has_terrace",
+    "has_lift",
+    "is_attic",
+    "needs_renovation",
+    "plumbing_replaced",
+    "wiring_replaced",
+})
+"""String filter fields (selectbox values)."""
+
+_FLOAT_FIELDS: frozenset[str] = frozenset({
+    "max_noise_total_lden_db",
+    "max_traffic_weight_nearby",
+    "max_major_traffic_weight_nearby",
+    "max_price_per_m2",
+})
+"""Optional float filter fields."""
+
+_INT_FIELDS: frozenset[str] = frozenset({
+    "max_age_months",
+    "floor_min",
+    "floor_max",
+    "year_built_min",
+    "year_renovated_min",
+})
+"""Optional int filter fields."""
 
 
 @dataclass(slots=True)
@@ -55,6 +97,55 @@ class FilterState:
     floor_max: int | None = None
     year_built_min: int | None = None
     year_renovated_min: int | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """JSON-serializable payload for filter presets."""
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, payload: Mapping[str, Any] | object) -> Self:
+        """Build filter state from a mapping; unknown keys ignored."""
+        if not isinstance(payload, Mapping):
+            return cls()
+        known = {f.name for f in fields(cls)}
+        data: dict[str, Any] = {}
+        for key, value in payload.items():
+            name = str(key)
+            if name not in known:
+                continue
+            data[name] = value
+        for str_key in _STR_FIELDS:
+            if str_key in data:
+                text = str(data[str_key] if data[str_key] is not None else "(all)")
+                data[str_key] = text.strip() or "(all)"
+        for float_key in _FLOAT_FIELDS:
+            if float_key in data:
+                data[float_key] = _opt_float(data[float_key])
+        for int_key in _INT_FIELDS:
+            if int_key in data:
+                data[int_key] = _opt_int(data[int_key])
+        return cls(**data)
+
+
+def _opt_float(value: object) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        number = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    if number != number:
+        return None
+    return number
+
+
+def _opt_int(value: object) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        return int(float(value))  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
 
 
 def offer_age_months(

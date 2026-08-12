@@ -100,6 +100,8 @@ class AppSettings:
     """Free-text must-haves (balcony, garage, quiet street, …)."""
     news_history_cap: int = 200
     """Max starred-news events retained on disk."""
+    filter_presets_max: int = 30
+    """Max named Explore map filter presets retained on disk."""
     recommender_top_n: int = 15
     """How many promising offers to surface after retrain."""
     recommender_demotion_alpha: float = 1.0
@@ -417,6 +419,9 @@ def load_app_settings(path: Path) -> AppSettings:
         ),
         news_history_cap=max(
             10, int(payload.get("news_history_cap", defaults.news_history_cap))
+        ),
+        filter_presets_max=max(
+            1, int(payload.get("filter_presets_max", defaults.filter_presets_max))
         ),
         recommender_top_n=max(
             1, int(payload.get("recommender_top_n", defaults.recommender_top_n))
