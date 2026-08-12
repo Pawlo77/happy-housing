@@ -38,22 +38,19 @@ def test_offer_age_months_utc_listed_at_with_month_fallback() -> None:
     assert pd.isna(ages.iloc[2])
 
 
-def test_apply_filters_max_offer_age_months() -> None:
-    """Keep offers no older than max_age_months."""
+def test_apply_filters_max_price_pln() -> None:
+    """Cap total asking price (PLN), independent of zł/m²."""
     frame = pd.DataFrame({
-        "listing_id": ["fresh", "mid", "old"],
+        "listing_id": ["cheap", "mid", "dear"],
         "district": ["wola", "wola", "wola"],
         "source": ["otodom", "otodom", "otodom"],
         "in_oou": [0, 0, 0],
-        "price_per_m2": [10000.0, 10000.0, 10000.0],
-        "listed_at": ["2026-07-01", "2026-02-01", "2024-01-01"],
+        "price_pln": [600_000.0, 900_000.0, 1_400_000.0],
+        "price_per_m2": [15000.0, 12000.0, 10000.0],
+        "listed_at": ["2026-07-01", "2026-07-01", "2026-07-01"],
     })
-    out = apply_filters(
-        frame,
-        FilterState(max_age_months=6),
-        as_of=date(2026, 8, 8),
-    )
-    assert list(out["listing_id"]) == ["fresh", "mid"]
+    out = apply_filters(frame, FilterState(max_price_pln=1_000_000.0))
+    assert list(out["listing_id"]) == ["cheap", "mid"]
 
 
 def test_apply_filters_district_source_oou() -> None:

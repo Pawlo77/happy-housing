@@ -22,3 +22,18 @@ def test_map_layer_transit_and_shop_toggles_always_declared() -> None:
     assert '"Groceries"' in source
     assert '"  Metro lines"' not in source
     assert '"  Groceries"' not in source
+
+
+def test_explore_filters_grouped_with_section_headers() -> None:
+    """Filters tab uses ##### sections like Map layers."""
+    import inspect
+
+    from happy_housing.app import page_explore
+
+    source = inspect.getsource(page_explore._sidebar_filters)
+    assert "##### Location & source" in source
+    assert "##### Price & freshness" in source
+    assert "##### Livability" in source
+    assert "Max total price (PLN)" in source
+    assert "explore_max_price_pln" in source
+    assert "max_price_pln=" in source

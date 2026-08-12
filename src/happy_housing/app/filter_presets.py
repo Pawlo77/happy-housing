@@ -178,6 +178,7 @@ def suggest_filter_preset_name(
     *,
     starred_only: bool = False,
     ppm_ceiling: float | None = None,
+    price_ceiling: float | None = None,
 ) -> str:
     """Build a short human-readable name from active filter facets."""
     parts: list[str] = []
@@ -214,6 +215,14 @@ def suggest_filter_preset_name(
         parts.append(f"traffic≤{int(state.max_traffic_weight_nearby)}")
     if state.max_major_traffic_weight_nearby is not None:
         parts.append(f"major≤{int(state.max_major_traffic_weight_nearby)}")
+    if state.max_price_pln is not None and (
+        price_ceiling is None or float(state.max_price_pln) < float(price_ceiling) - 0.5
+    ):
+        pln = float(state.max_price_pln)
+        if pln >= 1_000_000:
+            parts.append(f"≤{pln / 1_000_000:.1f}".rstrip("0").rstrip(".") + "M PLN")
+        else:
+            parts.append(f"≤{round(pln / 1000)}k PLN")
     if state.max_price_per_m2 is not None and (
         ppm_ceiling is None or float(state.max_price_per_m2) < float(ppm_ceiling) - 0.5
     ):
@@ -242,6 +251,7 @@ def apply_filter_preset_to_session(
     *,
     age_max: int,
     ppm_max: int,
+    price_max: int,
 ) -> None:
     """Write Streamlit widget keys so the next Filters render matches ``preset``."""
     state = preset.filters
@@ -258,6 +268,11 @@ def apply_filter_preset_to_session(
         state.max_major_traffic_weight_nearby or 0.0
     )
     session["explore_frontage"] = state.frontage
+    price = state.max_price_pln
+    if price is None:
+        session["explore_max_price_pln"] = int(price_max)
+    else:
+        session["explore_max_price_pln"] = round(float(price))
     ppm = state.max_price_per_m2
     if ppm is None:
         session["explore_max_ppm"] = int(ppm_max)
@@ -303,6 +318,7 @@ def snapshot_filter_preset_from_session(
     *,
     age_max: int,
     ppm_max: int,
+    price_max: int,
     name: str = "",
 ) -> FilterPreset:
     """Build a preset from Explore widget session keys (defaults when missing)."""
@@ -319,6 +335,12 @@ def snapshot_filter_preset_from_session(
         except (TypeError, ValueError):
             return None
         return value if value > 0 else None
+
+    price_raw = session.get("explore_max_price_pln", price_max)
+    try:
+        price_value = float(price_raw)
+    except (TypeError, ValueError):
+        price_value = float(price_max)
 
     ppm_raw = session.get("explore_max_ppm", ppm_max)
     try:
@@ -366,6 +388,7 @@ def snapshot_filter_preset_from_session(
         max_traffic_weight_nearby=_float_cap("explore_max_traffic_weight"),
         max_major_traffic_weight_nearby=_float_cap("explore_max_major_traffic_weight"),
         frontage=_str("explore_frontage"),
+        max_price_pln=price_value,
         max_price_per_m2=ppm_value,
         max_age_months=max_age,
         object_type=_str("explore_object_type"),

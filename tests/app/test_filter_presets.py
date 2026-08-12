@@ -63,11 +63,13 @@ def test_suggest_filter_preset_name_meaningful() -> None:
             oou="outside",
             frontage="quiet",
             has_garage="yes",
+            max_price_pln=950_000.0,
             max_price_per_m2=17000.0,
             max_age_months=4,
         ),
         starred_only=True,
         ppm_ceiling=25000.0,
+        price_ceiling=2_000_000.0,
     )
     lower = name.lower()
     assert "mokotow" in lower
@@ -76,11 +78,15 @@ def test_suggest_filter_preset_name_meaningful() -> None:
     assert "garage" in lower
     assert "star" in lower
     assert "17" in name or "zł" in lower
+    assert "950" in name or "pln" in lower
 
 
 def test_suggest_filter_preset_name_defaults() -> None:
     name = suggest_filter_preset_name(
-        FilterState(), starred_only=False, ppm_ceiling=20000.0
+        FilterState(),
+        starred_only=False,
+        ppm_ceiling=20000.0,
+        price_ceiling=2_000_000.0,
     )
     assert name == "All offers"
 
@@ -151,6 +157,7 @@ def test_apply_filter_preset_to_session() -> None:
             district="wola",
             oou="outside",
             max_noise_total_lden_db=55.0,
+            max_price_pln=900_000.0,
             max_price_per_m2=15000.0,
             max_age_months=6,
             has_garage="yes",
@@ -164,10 +171,12 @@ def test_apply_filter_preset_to_session() -> None:
         preset,
         age_max=24,
         ppm_max=30000,
+        price_max=2_500_000,
     )
     assert session["explore_district"] == "wola"
     assert session["explore_oou"] == "outside"
     assert session["explore_max_noise_total"] == 55.0
+    assert session["explore_max_price_pln"] == 900_000
     assert session["explore_max_ppm"] == 15000
     assert session["explore_max_age_months"] == 6
     assert session["explore_starred_only"] is True
@@ -185,6 +194,7 @@ def test_snapshot_filter_preset_from_session_round_trip() -> None:
         filters=FilterState(
             district="wola",
             frontage="quiet",
+            max_price_pln=1_100_000.0,
             max_price_per_m2=16000.0,
             max_age_months=3,
             has_balcony="yes",
@@ -193,17 +203,25 @@ def test_snapshot_filter_preset_from_session_round_trip() -> None:
             year_built_min=2000,
         ),
     )
-    apply_filter_preset_to_session(session, original, age_max=36, ppm_max=40000)
+    apply_filter_preset_to_session(
+        session,
+        original,
+        age_max=36,
+        ppm_max=40000,
+        price_max=3_000_000,
+    )
     snap = snapshot_filter_preset_from_session(
         session,
         age_max=36,
         ppm_max=40000,
+        price_max=3_000_000,
         name="Quiet Wola",
     )
     assert snap.name == "Quiet Wola"
     assert snap.starred_only is True
     assert snap.filters.district == "wola"
     assert snap.filters.frontage == "quiet"
+    assert snap.filters.max_price_pln == 1_100_000.0
     assert snap.filters.max_price_per_m2 == 16000.0
     assert snap.filters.max_age_months == 3
     assert snap.filters.has_balcony == "yes"

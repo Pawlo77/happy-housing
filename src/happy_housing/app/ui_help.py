@@ -219,6 +219,10 @@ FILTER_HELP: dict[str, str] = {
         "Cap asking zł/m². Hard budget filter on price attractiveness; "
         "does not change livability overlays."
     ),
+    "max_price_pln": (
+        "Cap total asking price in PLN (not zł/m²). Use for an overall "
+        "purchase budget; works together with max zł/m² when both are set."
+    ),
     "max_age_months": (
         "Keep offers no older than this many months (from listed_at / "
         "listed_month). Fresher asks ≈ current market; stale asks may be "

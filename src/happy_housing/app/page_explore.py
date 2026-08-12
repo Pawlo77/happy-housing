@@ -308,7 +308,12 @@ MAP_VIEW_PRESET_NAME_KEY: str = "explore_map_view_preset_name"
 """Text input key for the map-view preset name when saving."""
 
 
-def _apply_pending_filter_preset(*, age_max: int, ppm_max: int) -> None:
+def _apply_pending_filter_preset(
+    *,
+    age_max: int,
+    ppm_max: int,
+    price_max: int,
+) -> None:
     """Hydrate Explore filter widgets from a pending saved preset, if any."""
     raw = st.session_state.pop(FILTER_PRESET_PENDING_KEY, None)
     if not isinstance(raw, dict):
@@ -321,11 +326,17 @@ def _apply_pending_filter_preset(*, age_max: int, ppm_max: int) -> None:
         preset,
         age_max=age_max,
         ppm_max=ppm_max,
+        price_max=price_max,
     )
     st.session_state[FILTER_PRESET_NAME_KEY] = preset.name
 
 
-def _render_filter_presets_ui(*, ppm_ceiling: int, age_max: int) -> None:
+def _render_filter_presets_ui(
+    *,
+    ppm_ceiling: int,
+    price_ceiling: int,
+    age_max: int,
+) -> None:
     """Save / load / delete named Explore filter presets (top of Filters tab)."""
     proc = processed_dir()
     presets_file = filter_presets_path(proc)
@@ -337,11 +348,13 @@ def _render_filter_presets_ui(*, ppm_ceiling: int, age_max: int) -> None:
         st.session_state,
         age_max=age_max,
         ppm_max=ppm_ceiling,
+        price_max=price_ceiling,
     )
     suggested = suggest_filter_preset_name(
         current.filters,
         starred_only=current.starred_only,
         ppm_ceiling=float(ppm_ceiling),
+        price_ceiling=float(price_ceiling),
     )
     with st.expander("Saved filters", expanded=bool(names)):
         st.caption(
@@ -404,6 +417,7 @@ def _render_filter_presets_ui(*, ppm_ceiling: int, age_max: int) -> None:
                     st.session_state,
                     age_max=age_max,
                     ppm_max=ppm_ceiling,
+                    price_max=price_ceiling,
                     name=label,
                 )
                 upsert_filter_preset(
@@ -532,13 +546,27 @@ def _sidebar_filters(frame: pd.DataFrame) -> tuple[FilterState, bool]:
     finite = ppm[ppm.notna()]
     ppm_min = int(finite.min()) if not finite.empty else 0
     ppm_max = int(finite.max()) + 1 if not finite.empty else 1
+    price = pd.to_numeric(frame.get("price_pln"), errors="coerce")
+    price_finite = price[price.notna()]
+    price_min = int(price_finite.min()) if not price_finite.empty else 0
+    price_max = int(price_finite.max()) + 1 if not price_finite.empty else 1
     ages = offer_age_months(frame)
     age_finite = ages.dropna()
     age_max = int(age_finite.max()) if not age_finite.empty else 0
     ppm_ceiling = max(ppm_max, ppm_min + 1)
-    _apply_pending_filter_preset(age_max=age_max, ppm_max=ppm_ceiling)
-    _render_filter_presets_ui(ppm_ceiling=ppm_ceiling, age_max=age_max)
+    price_ceiling = max(price_max, price_min + 1)
+    _apply_pending_filter_preset(
+        age_max=age_max,
+        ppm_max=ppm_ceiling,
+        price_max=price_ceiling,
+    )
+    _render_filter_presets_ui(
+        ppm_ceiling=ppm_ceiling,
+        price_ceiling=price_ceiling,
+        age_max=age_max,
+    )
 
+    st.markdown("##### Location & source")
     district = st.selectbox(
         "District",
         ["(all)", *districts],
@@ -551,6 +579,47 @@ def _sidebar_filters(frame: pd.DataFrame) -> tuple[FilterState, bool]:
         help=FILTER_HELP["source"],
         key="explore_source",
     )
+    starred_only = st.checkbox(
+        "Starred only",
+        value=False,
+        key="explore_starred_only",
+        help=(
+            "Map and Board show only starred offers. "
+            "Offer tab stays unfiltered by star."
+        ),
+    )
+
+    st.markdown("##### Price & freshness")
+    max_price = st.slider(
+        "Max total price (PLN)",
+        min_value=price_min,
+        max_value=price_ceiling,
+        value=price_ceiling,
+        help=FILTER_HELP["max_price_pln"],
+        key="explore_max_price_pln",
+    )
+    max_ppm = st.slider(
+        "Max listing zł/m²",
+        min_value=ppm_min,
+        max_value=ppm_ceiling,
+        value=ppm_ceiling,
+        help=FILTER_HELP["max_ppm"],
+        key="explore_max_ppm",
+    )
+    max_age_months: int | None = None
+    if age_max > 0:
+        picked_age = st.slider(
+            "Offer age (months)",
+            min_value=0,
+            max_value=age_max,
+            value=age_max,
+            help=FILTER_HELP["max_age_months"],
+            key="explore_max_age_months",
+        )
+        if picked_age < age_max:
+            max_age_months = int(picked_age)
+
+    st.markdown("##### Livability")
     oou = st.selectbox(
         "Aircraft Lden ≥ 55 dB",
         ["(all)", "inside", "outside"],
@@ -600,35 +669,7 @@ def _sidebar_filters(frame: pd.DataFrame) -> tuple[FilterState, bool]:
         help=FILTER_HELP["frontage"],
         key="explore_frontage",
     )
-    max_ppm = st.slider(
-        "Max listing zł/m²",
-        min_value=ppm_min,
-        max_value=ppm_ceiling,
-        value=ppm_ceiling,
-        help=FILTER_HELP["max_ppm"],
-        key="explore_max_ppm",
-    )
-    max_age_months: int | None = None
-    if age_max > 0:
-        picked_age = st.slider(
-            "Offer age (months)",
-            min_value=0,
-            max_value=age_max,
-            value=age_max,
-            help=FILTER_HELP["max_age_months"],
-            key="explore_max_age_months",
-        )
-        if picked_age < age_max:
-            max_age_months = int(picked_age)
-    starred_only = st.checkbox(
-        "Starred only",
-        value=False,
-        key="explore_starred_only",
-        help=(
-            "Map and Board show only starred offers. "
-            "Offer tab stays unfiltered by star."
-        ),
-    )
+
     prop = render_property_attr_filters("explore")
     return (
         FilterState(
@@ -645,6 +686,7 @@ def _sidebar_filters(frame: pd.DataFrame) -> tuple[FilterState, bool]:
                 float(major_traffic_cap) if float(major_traffic_cap) > 0 else None
             ),
             frontage=str(frontage),
+            max_price_pln=float(max_price),
             max_price_per_m2=float(max_ppm),
             max_age_months=max_age_months,
             **prop,

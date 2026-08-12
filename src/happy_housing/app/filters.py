@@ -39,6 +39,7 @@ _FLOAT_FIELDS: frozenset[str] = frozenset({
     "max_traffic_weight_nearby",
     "max_major_traffic_weight_nearby",
     "max_price_per_m2",
+    "max_price_pln",
 })
 """Optional float filter fields."""
 
@@ -74,6 +75,8 @@ class FilterState:
     """Upper bound on major-road traffic weight sum; ``None`` = no cap."""
     frontage: str = "(all)"
     """``(all)``, ``street`` (street_facing_hint), or ``quiet`` (quiet_side_hint)."""
+    max_price_pln: float | None = None
+    """Upper bound on total asking price (PLN)."""
     max_price_per_m2: float | None = None
     """Upper bound on listing zł/m²."""
     max_age_months: int | None = None
@@ -243,6 +246,10 @@ def apply_filters(
         mask &= pd.to_numeric(frame["street_facing_hint"], errors="coerce").eq(1)
     elif state.frontage == "quiet" and "quiet_side_hint" in frame.columns:
         mask &= pd.to_numeric(frame["quiet_side_hint"], errors="coerce").eq(1)
+    if state.max_price_pln is not None and "price_pln" in frame.columns:
+        mask &= pd.to_numeric(frame["price_pln"], errors="coerce").le(
+            float(state.max_price_pln)
+        )
     if state.max_price_per_m2 is not None and "price_per_m2" in frame.columns:
         mask &= pd.to_numeric(frame["price_per_m2"], errors="coerce").le(
             float(state.max_price_per_m2)

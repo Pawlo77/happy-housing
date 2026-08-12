@@ -12,7 +12,7 @@ _YES_NO: tuple[str, ...] = ("(all)", "yes", "no")
 
 def render_property_attr_filters(key_prefix: str) -> dict[str, Any]:
     """Render property/amenity filter controls; return kwargs for filter state."""
-    st.markdown("**Property**")
+    st.markdown("##### Property")
     object_type = st.selectbox(
         "Object type",
         options=["(all)", "flat", "house"],
@@ -61,7 +61,7 @@ def render_property_attr_filters(key_prefix: str) -> dict[str, Any]:
             help="99 = no maximum (includes attic sentinel).",
         )
 
-    st.caption("Amenities (yes / no / all)")
+    st.markdown("##### Amenities")
     has_garage = st.selectbox("Garage", _YES_NO, key=f"{key_prefix}_garage")
     has_outdoor_parking = st.selectbox(
         "Outdoor parking", _YES_NO, key=f"{key_prefix}_outdoor_parking"
