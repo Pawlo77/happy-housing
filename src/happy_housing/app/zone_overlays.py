@@ -1,4 +1,4 @@
-"""City / military / rail / airport polygon overlays for Explore maps."""
+"""City / district / military / rail / airport polygon overlays for Explore maps."""
 
 from __future__ import annotations
 
@@ -8,14 +8,16 @@ import geopandas as gpd
 
 ZONE_FILL: dict[str, list[int]] = {
     "city_boundary": [55, 65, 81, 18],
+    "district_boundaries": [70, 95, 130, 28],
     "military": [133, 119, 58, 115],
     "rail_areas": [51, 112, 168, 105],
     "airport": [126, 78, 168, 110],
 }
-"""RGBA fills — olive military, steel-blue rail, violet airport."""
+"""RGBA fills — steel districts, olive military, steel-blue rail, violet airport."""
 
 ZONE_LINE: dict[str, list[int]] = {
     "city_boundary": [31, 41, 55, 230],
+    "district_boundaries": [45, 70, 110, 210],
     "military": [90, 78, 30, 220],
     "rail_areas": [30, 75, 125, 220],
     "airport": [88, 45, 125, 220],

@@ -47,6 +47,7 @@ from happy_housing.app.data import (
     load_city_boundary,
     load_city_pois,
     load_config,
+    load_district_boundaries,
     load_gios_aq_overlay,
     load_gios_stations,
     load_gtfs_hourly,
@@ -747,6 +748,12 @@ def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
         help=layer_help("city_boundary"),
         key="explore_ly_city_boundary",
     )
+    district_boundaries = st.checkbox(
+        "District boundaries",
+        value=False,
+        help=layer_help("district_boundaries"),
+        key="explore_ly_district_boundaries",
+    )
     commute_target = st.checkbox(
         "Commute target",
         value=False,
@@ -986,6 +993,7 @@ def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
     flags = LayerFlags(
         offers=offers,
         city_boundary=city_boundary,
+        district_boundaries=district_boundaries,
         military=military,
         rail_areas=rail_areas,
         airport=airport,
@@ -1164,6 +1172,7 @@ def _tab_map(
     parks: gpd.GeoDataFrame,
     bike_paths: gpd.GeoDataFrame,
     city_boundary: gpd.GeoDataFrame,
+    district_boundaries: gpd.GeoDataFrame,
     military: gpd.GeoDataFrame,
     rail_areas: gpd.GeoDataFrame,
     airport: gpd.GeoDataFrame,
@@ -1200,6 +1209,7 @@ def _tab_map(
         parks=parks,
         bike_paths=bike_paths,
         city_boundary=city_boundary,
+        district_boundaries=district_boundaries,
         military=military,
         rail_areas=rail_areas,
         airport=airport,
@@ -1280,6 +1290,7 @@ def _tab_spatial(
     commute_lon: float,
     commute_lat: float,
     city_boundary: gpd.GeoDataFrame,
+    district_boundaries: gpd.GeoDataFrame,
     military: gpd.GeoDataFrame,
     rail_areas: gpd.GeoDataFrame,
     airport: gpd.GeoDataFrame,
@@ -1353,6 +1364,7 @@ def _tab_spatial(
             hour=hour,
             show_hex=bool(show_hex) and metric_key != "traffic",
             city_boundary=city_boundary,
+            district_boundaries=district_boundaries,
             military=military,
             rail_areas=rail_areas,
             airport=airport,
@@ -1686,6 +1698,7 @@ def _tab_offer(
     parks: gpd.GeoDataFrame,
     bike_paths: gpd.GeoDataFrame,
     city_boundary: gpd.GeoDataFrame,
+    district_boundaries: gpd.GeoDataFrame,
     military: gpd.GeoDataFrame,
     rail_areas: gpd.GeoDataFrame,
     airport: gpd.GeoDataFrame,
@@ -1813,6 +1826,7 @@ def _tab_offer(
                 parks=parks,
                 bike_paths=bike_paths,
                 city_boundary=city_boundary,
+                district_boundaries=district_boundaries,
                 military=military,
                 rail_areas=rail_areas,
                 airport=airport,
@@ -2563,6 +2577,9 @@ def render_explore() -> None:
     parks = load_parks() if "parks" in needed else empty_gdf
     city_pois = load_city_pois() if "city_pois" in needed else empty_gdf
     city_boundary = load_city_boundary() if "city_boundary" in needed else empty_gdf
+    district_boundaries = (
+        load_district_boundaries() if "district_boundaries" in needed else empty_gdf
+    )
     military = load_military_areas() if "military" in needed else empty_gdf
     rail_areas = load_rail_areas() if "rail_areas" in needed else empty_gdf
     airport = load_airport_areas() if "airport" in needed else empty_gdf
@@ -2595,6 +2612,7 @@ def render_explore() -> None:
         "bike_paths": bike_paths,
         "city_pois": city_pois,
         "city_boundary": city_boundary,
+        "district_boundaries": district_boundaries,
         "military": military,
         "rail_areas": rail_areas,
         "airport": airport,
@@ -2646,6 +2664,7 @@ def render_explore() -> None:
                 commute_lon=float(commute.lon),
                 commute_lat=float(commute.lat),
                 city_boundary=city_boundary,
+                district_boundaries=district_boundaries,
                 military=military,
                 rail_areas=rail_areas,
                 airport=airport,

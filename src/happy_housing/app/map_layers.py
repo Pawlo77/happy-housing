@@ -53,6 +53,7 @@ _LAYER_BOOL_FIELDS: frozenset[str] = frozenset({
     "gunb",
     "parks",
     "city_boundary",
+    "district_boundaries",
     "military",
     "rail_areas",
     "airport",
@@ -158,6 +159,8 @@ class LayerFlags:
     """Selected city / sports / civic object_type keys for map markers."""
     city_boundary: bool = False
     """Warsaw administrative boundary outline."""
+    district_boundaries: bool = False
+    """Warsaw dzielnica (district) administrative polygons."""
     military: bool = True
     """OSM landuse=military polygons (olive)."""
     rail_areas: bool = True
@@ -226,13 +229,22 @@ def explore_datasets_needed(
     needed: set[str] = set()
     # Spatial always draws zone context + traffic heat for metrics.
     if name == "Spatial":
-        needed.update({"city_boundary", "military", "rail_areas", "airport", "traffic"})
+        needed.update({
+            "city_boundary",
+            "district_boundaries",
+            "military",
+            "rail_areas",
+            "airport",
+            "traffic",
+        })
     if flags.noise_overlay and flags.noise_overlay != "off":
         needed.add("warsaw_noise")
     if flags.aq_overlay and flags.aq_overlay != "off":
         needed.add("gios_aq")
     if flags.city_boundary:
         needed.add("city_boundary")
+    if flags.district_boundaries:
+        needed.add("district_boundaries")
     if flags.military:
         needed.add("military")
     if flags.rail_areas:

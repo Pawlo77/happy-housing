@@ -76,6 +76,7 @@ def test_explore_datasets_needed_includes_defaults_for_map() -> None:
     flags = LayerFlags(
         noise_overlay="total_lden",
         city_boundary=True,
+        district_boundaries=True,
         military=True,
         rail_areas=True,
         airport=True,
@@ -85,6 +86,7 @@ def test_explore_datasets_needed_includes_defaults_for_map() -> None:
     assert "oou" not in needed
     assert "warsaw_noise" in needed
     assert "city_boundary" in needed
+    assert "district_boundaries" in needed
     assert "military" in needed
     assert "city_pois" in needed
 

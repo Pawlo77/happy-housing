@@ -193,6 +193,11 @@ def load_city_boundary() -> gpd.GeoDataFrame:
     return _load_zone_fixture("warsaw_boundary.geojson")
 
 
+def load_district_boundaries() -> gpd.GeoDataFrame:
+    """Warsaw dzielnica (district) administrative polygons."""
+    return _load_zone_fixture("warsaw_districts.geojson")
+
+
 def load_military_areas() -> gpd.GeoDataFrame:
     """OSM landuse=military polygons for the map."""
     return _load_zone_fixture("military_areas.geojson")

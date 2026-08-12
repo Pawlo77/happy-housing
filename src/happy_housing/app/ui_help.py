@@ -145,6 +145,10 @@ LAYER_HELP: dict[str, str] = {
         "Warsaw city administrative outline (OSM). Context only — shows where "
         "offers sit relative to the city edge."
     ),
+    "district_boundaries": (
+        "Warsaw dzielnica (district) polygons (OSM admin_level=9). Hover a "
+        "polygon for the district name — useful when comparing neighbourhoods."
+    ),
     "military": (
         "OSM landuse=military areas in olive. Restricted land — usually not "
         "buildable housing; dist_military_m is a model feature."

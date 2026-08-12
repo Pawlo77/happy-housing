@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 _BOOL_SESSION_KEYS: dict[str, str] = {
     "offers": "explore_ly_offers",
     "city_boundary": "explore_ly_city_boundary",
+    "district_boundaries": "explore_ly_district_boundaries",
     "commute_target": "explore_ly_commute",
     "transit_network": "explore_ly_transit_network",
     "transit_show_metro": "explore_ly_transit_metro",
@@ -69,6 +70,7 @@ _LAYER_NAME_BITS: tuple[tuple[str, str], ...] = (
     ("air", "AQI stations"),
     ("gunb", "GUNB"),
     ("city_boundary", "boundary"),
+    ("district_boundaries", "districts"),
     ("commute_target", "commute"),
     ("military", "military"),
     ("rail_areas", "rail land"),

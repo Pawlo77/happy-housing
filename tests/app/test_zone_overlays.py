@@ -142,6 +142,7 @@ def test_zone_fixtures_exist() -> None:
     root = Path("data/fixtures")
     for name in (
         "warsaw_boundary.geojson",
+        "warsaw_districts.geojson",
         "military_areas.geojson",
         "rail_areas.geojson",
         "airport_areas.geojson",
@@ -150,3 +151,63 @@ def test_zone_fixtures_exist() -> None:
         assert path.exists(), name
         gdf = gpd.read_file(path)
         assert not gdf.empty, name
+
+
+def test_district_boundaries_fixture_has_eighteen_named_polygons() -> None:
+    gdf = gpd.read_file(Path("data/fixtures/warsaw_districts.geojson"))
+    assert "name" in gdf.columns
+    names = sorted(str(n) for n in gdf["name"].tolist())
+    assert len(names) == 18
+    assert "Mokotów" in names
+    assert "Śródmieście" in names
+    assert all(not g.is_empty for g in gdf.geometry)
+
+
+def test_explore_layers_include_district_boundaries_when_flagged() -> None:
+    districts = gpd.GeoDataFrame(
+        {
+            "name": ["Mokotów", "Wola"],
+            "geometry": [
+                Polygon([
+                    (21.0, 52.18),
+                    (21.05, 52.18),
+                    (21.05, 52.22),
+                    (21.0, 52.22),
+                    (21.0, 52.18),
+                ]),
+                Polygon([
+                    (20.95, 52.22),
+                    (21.0, 52.22),
+                    (21.0, 52.25),
+                    (20.95, 52.25),
+                    (20.95, 52.22),
+                ]),
+            ],
+        },
+        crs="EPSG:4326",
+    )
+    layers = build_explore_layers(
+        listings=__import__("pandas").DataFrame(),
+        flags=LayerFlags(
+            district_boundaries=True,
+            military=False,
+            rail_areas=False,
+            airport=False,
+        ),
+        amenities=__import__("geopandas").GeoDataFrame(geometry=[], crs="EPSG:4326"),
+        shops=__import__("pandas").DataFrame(),
+        stops=__import__("pandas").DataFrame(),
+        hourly=__import__("pandas").DataFrame(),
+        route_shapes=__import__("pandas").DataFrame(),
+        traffic_sample=__import__("pandas").DataFrame(),
+        air_stations=__import__("pandas").DataFrame(),
+        gunb=__import__("pandas").DataFrame(),
+        parks=None,
+        district_boundaries=districts,
+        commute_lon=20.98,
+        commute_lat=52.23,
+        hour=8,
+    )
+    ids = {getattr(layer, "id", None) for layer in layers}
+    assert "district-boundaries" in ids
+    assert LayerFlags().district_boundaries is False

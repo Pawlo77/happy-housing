@@ -395,6 +395,19 @@ def city_boundary_layer(boundary: gpd.GeoDataFrame | None) -> pdk.Layer | None:
     )
 
 
+def district_boundaries_layer(frame: gpd.GeoDataFrame | None) -> pdk.Layer | None:
+    """Warsaw dzielnica (district) administrative polygons."""
+    return zone_polygon_layer(
+        frame,
+        layer_id="district-boundaries",
+        fill_rgba=ZONE_FILL["district_boundaries"],
+        line_rgba=ZONE_LINE["district_boundaries"],
+        detail="Warsaw district boundary (OSM admin_level=9)",
+        default_name="District",
+        line_width_min_pixels=1,
+    )
+
+
 def military_areas_layer(frame: gpd.GeoDataFrame | None) -> pdk.Layer | None:
     """Military landuse polygons in gray."""
     return zone_polygon_layer(
@@ -957,6 +970,7 @@ def build_spatial_layers(
     hour: int,
     show_hex: bool,
     city_boundary: gpd.GeoDataFrame | None = None,
+    district_boundaries: gpd.GeoDataFrame | None = None,
     military: gpd.GeoDataFrame | None = None,
     rail_areas: gpd.GeoDataFrame | None = None,
     airport: gpd.GeoDataFrame | None = None,
@@ -970,6 +984,7 @@ def build_spatial_layers(
         _zone_overlay_layers(
             flags=zone_flags,
             city_boundary=city_boundary,
+            district_boundaries=district_boundaries,
             military=military,
             rail_areas=rail_areas,
             airport=airport,
@@ -1015,16 +1030,21 @@ def _zone_overlay_layers(
     *,
     flags: LayerFlags,
     city_boundary: gpd.GeoDataFrame | None,
+    district_boundaries: gpd.GeoDataFrame | None,
     military: gpd.GeoDataFrame | None,
     rail_areas: gpd.GeoDataFrame | None,
     airport: gpd.GeoDataFrame | None,
 ) -> list[pdk.Layer]:
-    """City boundary + restricted-land polygons drawn under other overlays."""
+    """City / district boundaries + restricted-land polygons under other overlays."""
     layers: list[pdk.Layer] = []
     if flags.city_boundary:
         boundary = city_boundary_layer(city_boundary)
         if boundary is not None:
             layers.append(boundary)
+    if flags.district_boundaries:
+        districts = district_boundaries_layer(district_boundaries)
+        if districts is not None:
+            layers.append(districts)
     if flags.military:
         mil = military_areas_layer(military)
         if mil is not None:
@@ -1058,6 +1078,7 @@ def build_explore_layers(
     hour: int,
     commute_label: str = "Commute target",
     city_boundary: gpd.GeoDataFrame | None = None,
+    district_boundaries: gpd.GeoDataFrame | None = None,
     military: gpd.GeoDataFrame | None = None,
     rail_areas: gpd.GeoDataFrame | None = None,
     airport: gpd.GeoDataFrame | None = None,
@@ -1073,6 +1094,7 @@ def build_explore_layers(
         _zone_overlay_layers(
             flags=flags,
             city_boundary=city_boundary,
+            district_boundaries=district_boundaries,
             military=military,
             rail_areas=rail_areas,
             airport=airport,
