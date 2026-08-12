@@ -13,6 +13,7 @@ import pandas as pd
 import pydeck as pdk
 import streamlit as st
 
+from happy_housing.app.commute_route import CommuteRoutePlan, path_records_for_plan
 from happy_housing.app.commute_target import CommuteTarget, commute_compare_points
 from happy_housing.app.data import load_config
 from happy_housing.app.map_layers import (
@@ -938,6 +939,27 @@ def commute_compare_layers(
     if draft_layer is not None:
         layers.append(draft_layer)
     return layers
+
+
+def commute_route_layers(plan: CommuteRoutePlan) -> list[pdk.Layer]:
+    """PathLayer strokes for each commute leg (colour by mode)."""
+    rows = path_records_for_plan(plan)
+    if not rows:
+        return []
+    frame = pd.DataFrame(rows)
+    return [
+        pdk.Layer(
+            "PathLayer",
+            data=frame,
+            get_path="path",
+            get_color="[color_r, color_g, color_b, color_a]",
+            width_min_pixels=3,
+            width_max_pixels=10,
+            get_width=5,
+            pickable=True,
+            id="commute-route",
+        )
+    ]
 
 
 def focus_marker_layer(lat: float, lon: float) -> pdk.Layer:

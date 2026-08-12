@@ -14,12 +14,12 @@ from happy_housing.gis.routing import (
 
 
 def test_otp_plan_duration_parses_itinerary() -> None:
-    """OTP plan JSON duration (ms) converts to seconds."""
+    """OTP plan JSON duration is already seconds."""
     payload = {
         "plan": {
             "itineraries": [
-                {"duration": 120_000},
-                {"duration": 90_000},
+                {"duration": 1200},
+                {"duration": 900},
             ]
         }
     }
@@ -32,7 +32,7 @@ def test_otp_plan_duration_parses_itinerary() -> None:
             (20.983, 52.23),
             base_url="http://127.0.0.1:8080",
         )
-    assert seconds == 90.0
+    assert seconds == 900.0
 
 
 def test_otp_unavailable_returns_none() -> None:

@@ -167,6 +167,8 @@ class AppSettings:
     """Lat last baked into scored dist/commute features."""
     commute_display_mode: str = "transit"
     """Offer hover / filter commute mode: transit|car|bike|walk."""
+    offer_map_show_commute_route: bool = True
+    """Draw door-to-door commute route on the Offer Map subtab."""
     pipeline_overrides_enabled: bool = False
     """When True, Admin Pipeline ingest fields override experiment.yaml."""
     pipeline_force_refresh: bool = False
@@ -560,6 +562,12 @@ def load_app_settings(path: Path) -> AppSettings:
         commute_features_lat=_opt_lon_lat(payload.get("commute_features_lat")),
         commute_display_mode=coerce_commute_display_mode(
             payload.get("commute_display_mode", defaults.commute_display_mode)
+        ),
+        offer_map_show_commute_route=bool(
+            payload.get(
+                "offer_map_show_commute_route",
+                defaults.offer_map_show_commute_route,
+            )
         ),
         pipeline_overrides_enabled=bool(
             payload.get(

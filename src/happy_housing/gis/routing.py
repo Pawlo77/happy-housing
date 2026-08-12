@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import date
 
 import numpy as np
 import pandas as pd
@@ -226,50 +227,190 @@ def attach_active_mode_commutes(
     return out
 
 
-def otp_plan_duration_seconds(
+def otp_plan_payload(
     origin: tuple[float, float],
     destination: tuple[float, float],
     *,
     base_url: str = "http://127.0.0.1:8080",
     timeout_s: float = 20.0,
-) -> float | None:
-    """Query OTP2 plan API for best TRANSIT+WALK duration in seconds.
+    hour: int | None = None,
+    otp_mode: str = "TRANSIT,WALK",
+) -> dict[str, object] | None:
+    """Fetch OTP2 plan JSON; optional ``hour`` sets departure time today.
 
     Args:
         origin: ``(lon, lat)`` start.
         destination: ``(lon, lat)`` target.
         base_url: Local OTP HTTP root.
         timeout_s: Request timeout.
+        hour: Local clock hour 0-23 for departure; ``None`` = OTP default now.
+        otp_mode: OTP ``mode`` query value.
 
     Returns:
-        Shortest itinerary duration in seconds, or ``None`` if OTP is down.
+        Parsed JSON payload, or ``None`` if OTP is down / empty.
     """
     lon0, lat0 = origin
     lon1, lat1 = destination
     url = f"{base_url.rstrip('/')}/otp/routers/default/plan"
-    params = {
+    params: dict[str, str] = {
         "fromPlace": f"{lat0},{lon0}",
         "toPlace": f"{lat1},{lon1}",
-        "mode": "TRANSIT,WALK",
-        "maxWalkDistance": 1500,
+        "mode": str(otp_mode),
+        "maxWalkDistance": "1500",
         "arriveBy": "false",
-        "numItineraries": 3,
+        "numItineraries": "3",
     }
+    if hour is not None:
+        params["date"] = date.today().isoformat()
+        params["time"] = f"{int(hour) % 24:02d}:00:00"
     try:
         response = requests.get(url, params=params, timeout=timeout_s)
         response.raise_for_status()
         payload = response.json()
-        itineraries = (payload.get("plan") or {}).get("itineraries") or []
-        durations_ms = [
-            float(item["duration"])
-            for item in itineraries
-            if isinstance(item, dict) and "duration" in item
-        ]
-        if not durations_ms:
+        if not isinstance(payload, dict):
             return None
-        return min(durations_ms) / 1000.0
+        return payload
     except Exception as exc:
-        logger.warning("OTP unavailable (%s); transit minutes left empty", exc)
+        logger.warning("OTP unavailable (%s); transit route left empty", exc)
+        return None
+
+
+def otp_plan_duration_seconds(
+    origin: tuple[float, float],
+    destination: tuple[float, float],
+    *,
+    base_url: str = "http://127.0.0.1:8080",
+    timeout_s: float = 20.0,
+    hour: int | None = None,
+) -> float | None:
+    """Query OTP2 plan API for best TRANSIT+WALK duration in seconds.
+
+    OTP2 ``itinerary.duration`` is already seconds (not milliseconds).
+
+    Args:
+        origin: ``(lon, lat)`` start.
+        destination: ``(lon, lat)`` target.
+        base_url: Local OTP HTTP root.
+        timeout_s: Request timeout.
+        hour: Optional departure hour (0-23).
+
+    Returns:
+        Shortest itinerary duration in seconds, or ``None`` if OTP is down.
+    """
+    payload = otp_plan_payload(
+        origin,
+        destination,
+        base_url=base_url,
+        timeout_s=timeout_s,
+        hour=hour,
+    )
+    if payload is None:
+        return None
+    plan = payload.get("plan")
+    if not isinstance(plan, dict):
+        return None
+    itineraries = plan.get("itineraries") or []
+    if not isinstance(itineraries, list):
+        return None
+    durations = [
+        float(item["duration"])
+        for item in itineraries
+        if isinstance(item, dict) and "duration" in item
+    ]
+    if not durations:
+        return None
+    return min(durations)
+
+
+def otp_plan_best_itinerary(
+    origin: tuple[float, float],
+    destination: tuple[float, float],
+    *,
+    base_url: str = "http://127.0.0.1:8080",
+    timeout_s: float = 20.0,
+    hour: int | None = None,
+) -> dict[str, object] | None:
+    """Return the shortest OTP itinerary dict (with legs), or ``None``."""
+    payload = otp_plan_payload(
+        origin,
+        destination,
+        base_url=base_url,
+        timeout_s=timeout_s,
+        hour=hour,
+    )
+    if payload is None:
+        return None
+    plan = payload.get("plan")
+    if not isinstance(plan, dict):
+        return None
+    itineraries = plan.get("itineraries") or []
+    if not isinstance(itineraries, list) or not itineraries:
+        return None
+    scored: list[tuple[float, dict[str, object]]] = []
+    for item in itineraries:
+        if not isinstance(item, dict) or "duration" not in item:
+            continue
+        scored.append((float(item["duration"]), item))
+    if not scored:
+        return None
+    scored.sort(key=lambda pair: pair[0])
+    return scored[0][1]
+
+
+def osrm_route_geojson(
+    origin: tuple[float, float],
+    destination: tuple[float, float],
+    *,
+    base_url: str = "http://127.0.0.1:5001",
+    profile: str = "driving",
+    timeout_s: float = 30.0,
+) -> dict[str, object] | None:
+    """OSRM ``/route`` GeoJSON for one origin→destination.
+
+    Returns:
+        Dict with ``duration`` (s), ``distance`` (m), ``coordinates``
+        (``[[lon,lat],…]``), or ``None`` when OSRM is down.
+    """
+    lon0, lat0 = origin
+    lon1, lat1 = destination
+    profile_key = str(profile or "driving").strip() or "driving"
+    url = (
+        f"{base_url.rstrip('/')}/route/v1/{profile_key}/"
+        f"{lon0},{lat0};{lon1},{lat1}"
+        "?overview=full&geometries=geojson"
+    )
+    try:
+        response = requests.get(url, timeout=timeout_s)
+        response.raise_for_status()
+        payload = response.json()
+        routes = payload.get("routes") or []
+        if not routes:
+            return None
+        route = routes[0]
+        if not isinstance(route, dict):
+            return None
+        geometry = route.get("geometry") or {}
+        coords = geometry.get("coordinates") if isinstance(geometry, dict) else None
+        if not isinstance(coords, list) or len(coords) < 2:
+            return None
+        path: list[list[float]] = []
+        for point in coords:
+            if not isinstance(point, (list, tuple)) or len(point) < 2:
+                continue
+            path.append([float(point[0]), float(point[1])])
+        if len(path) < 2:
+            return None
+        return {
+            "duration": float(route.get("duration") or 0.0),
+            "distance": float(route.get("distance") or 0.0),
+            "coordinates": path,
+        }
+    except Exception as exc:
+        logger.warning(
+            "OSRM route unavailable (%s profile=%s)",
+            exc,
+            profile_key,
+        )
         return None
 
 

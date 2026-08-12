@@ -45,6 +45,11 @@ from happy_housing.app.commute_modes import (
     commute_series,
     commute_tooltip_label,
 )
+from happy_housing.app.commute_route import (
+    commute_route_mode_options,
+    fetch_offer_commute_route,
+    format_commute_route_markdown,
+)
 from happy_housing.app.commute_target import resolve_commute_target
 from happy_housing.app.data import (
     load_airport_areas,
@@ -129,6 +134,8 @@ from happy_housing.app.maps import (
     build_explore_layers,
     build_spatial_layers,
     cached_explore_map_layers,
+    commute_route_layers,
+    commute_target_layer,
     explore_map_camera,
     explore_map_layer_cache_key,
     explore_map_selection_key,
@@ -1090,6 +1097,30 @@ def _cached_explore_place_search(
     )
 
 
+@st.cache_data(ttl=120, show_spinner="Routing commute…")  # type: ignore[misc]
+def _cached_offer_commute_route(
+    origin_lon: float,
+    origin_lat: float,
+    dest_lon: float,
+    dest_lat: float,
+    mode: str,
+    hour: int,
+    osrm_url: str,
+    otp_url: str,
+) -> object | None:
+    """Cached door-to-door commute plan for Offer Map."""
+    return fetch_offer_commute_route(
+        origin_lon=origin_lon,
+        origin_lat=origin_lat,
+        dest_lon=dest_lon,
+        dest_lat=dest_lat,
+        mode=mode,
+        hour=hour,
+        osrm_url=osrm_url,
+        otp_url=otp_url,
+    )
+
+
 def _read_explore_map_focus() -> MapAddressFocus | None:
     """Load address focus from session, or ``None`` when cleared / invalid."""
     lon = st.session_state.get("explore_map_focus_lon")
@@ -1803,6 +1834,9 @@ def _tab_offer(
     commute_label: str = "Commute target",
     recommended_ids: frozenset[str] | None = None,
     commute_mode: object | None = None,
+    show_commute_route: bool = True,
+    osrm_url: str = "http://127.0.0.1:5001",
+    otp_url: str = "http://127.0.0.1:8080",
 ) -> None:
     """Single-offer deep dive with Overview / Context / Map / SHAP / AI subtabs."""
     preferred = normalize_listing_id(st.session_state.get("explore_offer_id"))
@@ -1937,10 +1971,47 @@ def _tab_offer(
 
     with local_map:
         if local_map.open:
-            st.caption(
-                "Same layer stack as the main Explore map (sidebar toggles apply)."
-            )
             lat, lon = float(row["lat"]), float(row["lon"])
+            mode_options = commute_route_mode_options()
+            label_by_mode = {m: label for label, m in mode_options}
+            mode_by_label = {label: m for label, m in mode_options}
+            default_mode = coerce_commute_display_mode(commute_mode)
+            default_label = label_by_mode.get(default_mode, mode_options[0][0])
+            route_label = st.selectbox(
+                "Commute route mode",
+                options=[label for label, _ in mode_options],
+                index=[label for label, _ in mode_options].index(default_label),
+                key=f"offer_map_route_mode_{selected_id}",
+                help=(
+                    "Door-to-door path to the commute target. Transit uses OTP "
+                    "(board / alight / walk legs). Car / bike / walk use OSRM. "
+                    "Departure hour follows Explore → Layers hour slider."
+                ),
+            )
+            route_mode = mode_by_label[str(route_label)]
+            st.caption(
+                f"Route departure hour: **{int(hour):02d}:00** "
+                f"(Layers sidebar) · target: {commute_label}"
+            )
+            route_plan = None
+            if show_commute_route:
+                route_plan = _cached_offer_commute_route(
+                    float(lon),
+                    float(lat),
+                    float(commute_lon),
+                    float(commute_lat),
+                    str(route_mode),
+                    int(hour),
+                    str(osrm_url),
+                    str(otp_url),
+                )
+                if route_plan is None:
+                    st.info(
+                        "No route from the local router for this mode/hour. "
+                        "Check OSRM / OTP, or try another mode."
+                    )
+                else:
+                    st.markdown(format_commute_route_markdown(route_plan))
             layers = build_explore_layers(
                 listings=filtered,
                 flags=flags,
@@ -1967,8 +2038,16 @@ def _tab_offer(
                 hour=hour,
                 commute_label=commute_label,
                 recommended_ids=recommended_ids,
-                commute_mode=commute_mode,
+                commute_mode=route_mode,
             )
+            if route_plan is not None:
+                if not flags.commute_target:
+                    layers.append(
+                        commute_target_layer(
+                            commute_lon, commute_lat, label=commute_label
+                        )
+                    )
+                layers.extend(commute_route_layers(route_plan))
             layers.append(focus_marker_layer(lat, lon))
             render_deck(
                 layers,
@@ -2828,6 +2907,9 @@ def render_explore() -> None:
                 scored_universe=frame,
                 prefs=prefs,
                 proc=proc,
+                show_commute_route=bool(app_settings.offer_map_show_commute_route),
+                osrm_url=str(config.routing.osrm_url),
+                otp_url=str(config.routing.otp_url),
                 **map_kwargs,
             )
     with tab_board:

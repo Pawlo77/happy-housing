@@ -323,6 +323,20 @@ def _panel_commute(settings: AppSettings, settings_file: Path, proc: Path) -> No
     if settings.commute_display_mode != current_mode:
         save_app_settings(settings_file, settings)
         st.rerun()
+    show_route = st.checkbox(
+        "Show commute route on Offer Map",
+        value=bool(settings.offer_map_show_commute_route),
+        key="admin_offer_map_show_commute_route",
+        help=(
+            "Offer → Map draws the door-to-door path for the selected mode "
+            "(OTP transit itinerary or OSRM car/bike/walk). Departure hour "
+            "comes from Explore Layers → hour slider."
+        ),
+    )
+    if bool(show_route) != bool(settings.offer_map_show_commute_route):
+        settings.offer_map_show_commute_route = bool(show_route)
+        save_app_settings(settings_file, settings)
+        st.rerun()
     if commute_target_stale(settings):
         st.warning(
             "Scored listings still use the previous commute target. "
