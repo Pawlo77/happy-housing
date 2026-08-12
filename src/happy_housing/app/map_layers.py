@@ -276,6 +276,34 @@ def explore_datasets_needed(
     return frozenset(needed)
 
 
+def keep_explore_map_mounted(section: str) -> bool:
+    """Keep Explore Map pydeck mounted on Map/Offer (preserve pan/zoom)."""
+    return str(section or "").strip() in {"Map", "Offer"}
+
+
+def explore_datasets_needed_preserving_map(
+    *,
+    section: str,
+    flags: LayerFlags,
+    offer_subtab: str = "Overview",
+) -> frozenset[str]:
+    """Like ``explore_datasets_needed``, plus Map GIS while Offer is open.
+
+    Offer keeps the Map deck mounted (camera). Without Map datasets the deck
+    would rebuild empty and thrash view state.
+    """
+    needed = set(
+        explore_datasets_needed(
+            section=section,
+            flags=flags,
+            offer_subtab=offer_subtab,
+        )
+    )
+    if keep_explore_map_mounted(section) and str(section or "").strip() != "Map":
+        needed |= explore_datasets_needed(section="Map", flags=flags)
+    return frozenset(needed)
+
+
 MAX_GUNB_MAP_POINTS = 3000
 """Hard cap for GUNB IconLayer rows sent to the browser."""
 

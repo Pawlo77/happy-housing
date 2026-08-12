@@ -107,6 +107,26 @@ def test_explore_datasets_needed_offer_skips_gis_on_overview() -> None:
     assert "city_pois" in needed
 
 
+def test_explore_datasets_needed_preserving_map_warms_offer() -> None:
+    from happy_housing.app.map_layers import (
+        explore_datasets_needed_preserving_map,
+        keep_explore_map_mounted,
+    )
+
+    flags = LayerFlags(gunb=True, city_poi_types=("gym",), military=True)
+    needed = explore_datasets_needed_preserving_map(
+        section="Offer",
+        flags=flags,
+        offer_subtab="Overview",
+    )
+    assert "gunb" in needed
+    assert "city_pois" in needed
+    assert "military" in needed
+    assert keep_explore_map_mounted("Offer") is True
+    assert keep_explore_map_mounted("Map") is True
+    assert keep_explore_map_mounted("Board") is False
+
+
 def test_amenity_layers_skips_copy_when_all_toggles_off() -> None:
     """No work when hospitals / fire / police are all disabled."""
     import geopandas as gpd

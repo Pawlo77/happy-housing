@@ -826,7 +826,7 @@ def explore_map_camera(
 
 
 def explore_map_selection_key(focus: MapAddressFocus | None) -> str:
-    """pydeck chart key — remount when address focus changes so the view recenters."""
+    """Stable pydeck chart key so pan/zoom survive reruns; remount on address focus."""
     if focus is None:
         return "explore_map_deck"
     return f"explore_map_deck_{focus.lon:.5f}_{focus.lat:.5f}"

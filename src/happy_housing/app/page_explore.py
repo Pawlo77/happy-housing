@@ -100,7 +100,11 @@ from happy_housing.app.geocode import (
     search_places,
 )
 from happy_housing.app.llm_metrics import llm_metrics_path
-from happy_housing.app.map_layers import LayerFlags, explore_datasets_needed
+from happy_housing.app.map_layers import (
+    LayerFlags,
+    explore_datasets_needed_preserving_map,
+    keep_explore_map_mounted,
+)
 from happy_housing.app.map_view_presets import (
     MapViewPreset,
     apply_map_view_preset_to_session,
@@ -2613,7 +2617,7 @@ def render_explore() -> None:
         st.session_state["explore_section"] = "Map"
     section = str(st.session_state.get("explore_section") or "Map")
     offer_subtab = str(st.session_state.get("offer_subtab") or "Overview")
-    needed = explore_datasets_needed(
+    needed = explore_datasets_needed_preserving_map(
         section=section,
         flags=flags,
         offer_subtab=offer_subtab,
@@ -2694,14 +2698,16 @@ def render_explore() -> None:
         on_change="rerun",
     )
     with tab_map:
-        if tab_map.open:
-            captions: list[str] = []
-            if starred_only:
-                captions.append("Starred only")
-            if prefs.enabled:
-                captions.append("Prefs on")
-            if captions:
-                st.caption(f"{' · '.join(captions)} · {len(map_board)} offers")
+        # Keep pydeck mounted on Offer so pan/zoom/pitch survive Map ↔ Offer.
+        if keep_explore_map_mounted(section):
+            if tab_map.open:
+                captions: list[str] = []
+                if starred_only:
+                    captions.append("Starred only")
+                if prefs.enabled:
+                    captions.append("Prefs on")
+                if captions:
+                    st.caption(f"{' · '.join(captions)} · {len(map_board)} offers")
             _tab_map(map_board, **map_kwargs)
     with tab_spatial:
         if tab_spatial.open:
