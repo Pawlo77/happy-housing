@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
-from dataclasses import dataclass
+from collections.abc import Iterable, Mapping
+from dataclasses import asdict, dataclass, fields
+from typing import Self
 
 import geopandas as gpd
 import numpy as np
@@ -25,6 +26,39 @@ _DELTA_OVER_RGB: tuple[int, int, int] = (215, 35, 30)
 
 _DELTA_COLOR_ALPHA: int = 200
 """Offer pin alpha."""
+
+_LAYER_BOOL_FIELDS: frozenset[str] = frozenset({
+    "offers",
+    "hospitals",
+    "fire_stations",
+    "police",
+    "charging_stations",
+    "gas_stations",
+    "shops",
+    "shop_show_grocery",
+    "shop_show_health_beauty",
+    "shop_show_fashion",
+    "shop_show_home",
+    "shop_show_mobility",
+    "shop_show_other",
+    "transit_intensity",
+    "transit_network",
+    "transit_show_metro",
+    "transit_show_tram",
+    "transit_show_bus",
+    "transit_show_rail",
+    "traffic",
+    "bike_paths",
+    "air",
+    "gunb",
+    "parks",
+    "city_boundary",
+    "military",
+    "rail_areas",
+    "airport",
+    "commute_target",
+})
+"""Boolean fields on ``LayerFlags``."""
 
 
 def listing_delta_rgba(delta_zl_m2: float) -> tuple[int, int, int, int]:
@@ -132,6 +166,41 @@ class LayerFlags:
     """Aerodrome / airport footprints (violet; not Lden noise)."""
     commute_target: bool = False
     """Admin-configured commute destination pin."""
+
+    def to_dict(self) -> dict[str, object]:
+        """JSON-serializable payload for map-view presets."""
+        payload = asdict(self)
+        payload["city_poi_types"] = list(self.city_poi_types)
+        return payload
+
+    @classmethod
+    def from_dict(cls, payload: object) -> Self:
+        """Build flags from a mapping; unknown keys ignored."""
+        if not isinstance(payload, Mapping):
+            return cls()
+        known = {f.name for f in fields(cls)}
+        data: dict[str, object] = {}
+        for key, value in payload.items():
+            name = str(key)
+            if name not in known:
+                continue
+            data[name] = value
+        if "city_poi_types" in data:
+            raw = data["city_poi_types"]
+            if isinstance(raw, (list, tuple)):
+                data["city_poi_types"] = tuple(str(x) for x in raw if str(x).strip())
+            elif raw is None or raw == "":
+                data["city_poi_types"] = ()
+            else:
+                data["city_poi_types"] = (str(raw),)
+        for str_key in ("noise_overlay", "aq_overlay"):
+            if str_key in data:
+                text = str(data[str_key] if data[str_key] is not None else "off")
+                data[str_key] = text.strip() or "off"
+        for bool_key in _LAYER_BOOL_FIELDS:
+            if bool_key in data:
+                data[bool_key] = bool(data[bool_key])
+        return cls(**data)  # type: ignore[arg-type]
 
 
 def explore_datasets_needed(

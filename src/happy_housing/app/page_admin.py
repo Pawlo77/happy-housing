@@ -60,6 +60,11 @@ from happy_housing.app.llm_metrics import (
     summarize_llm_calls,
 )
 from happy_housing.app.lmstudio_models import list_lmstudio_llm_keys
+from happy_housing.app.map_view_presets import (
+    clear_map_view_presets,
+    load_map_view_presets,
+    map_view_presets_path,
+)
 from happy_housing.app.maps import commute_compare_layers, render_deck
 from happy_housing.app.pipeline_ingest import (
     resolve_ingest_flags,
@@ -1553,16 +1558,19 @@ def _panel_lms_metrics(settings: AppSettings, settings_file: Path, proc: Path) -
 
 
 def _panel_stars_news(settings: AppSettings, settings_file: Path, proc: Path) -> None:
-    """Starred offers, News feed memory, and Explore filter presets."""
+    """Starred offers, News feed memory, and Explore presets."""
     stars_file = stars_path(proc)
     starred = load_stars(stars_file)
     news_items = load_news(news_path(proc))
-    presets_file = filter_presets_path(proc)
-    presets = load_filter_presets(presets_file)
-    s1, s2, s3 = st.columns(3)
+    filter_file = filter_presets_path(proc)
+    filter_presets = load_filter_presets(filter_file)
+    map_file = map_view_presets_path(proc)
+    map_presets = load_map_view_presets(map_file)
+    s1, s2, s3, s4 = st.columns(4)
     s1.metric("Starred offers", f"{len(starred):,}")
     s2.metric("News events", f"{len(news_items):,}")
-    s3.metric("Filter presets", f"{len(presets):,}")
+    s3.metric("Filter presets", f"{len(filter_presets):,}")
+    s4.metric("Map views", f"{len(map_presets):,}")
     cap = st.number_input(
         "News history cap",
         min_value=10,
@@ -1570,33 +1578,48 @@ def _panel_stars_news(settings: AppSettings, settings_file: Path, proc: Path) ->
         value=int(settings.news_history_cap),
         key="settings_news_cap",
     )
-    preset_cap = st.number_input(
+    filter_cap = st.number_input(
         "Max saved Explore filter presets",
         min_value=1,
         max_value=100,
         value=int(settings.filter_presets_max),
         key="settings_filter_presets_max",
-        help="Oldest presets drop when saving beyond this cap.",
+        help="Oldest filter presets drop when saving beyond this cap.",
     )
-    a1, a2, a3, a4 = st.columns(4)
+    map_cap = st.number_input(
+        "Max saved Explore map views",
+        min_value=1,
+        max_value=100,
+        value=int(settings.map_view_presets_max),
+        key="settings_map_view_presets_max",
+        help="Oldest map-view presets drop when saving beyond this cap.",
+    )
+    a1, a2 = st.columns(2)
     with a1:
         if st.button("Save news / preset settings", key="save_news_settings"):
             settings.news_history_cap = int(cap)
-            settings.filter_presets_max = int(preset_cap)
+            settings.filter_presets_max = int(filter_cap)
+            settings.map_view_presets_max = int(map_cap)
             save_app_settings(settings_file, settings)
             st.success("Stars & News settings saved.")
     with a2:
         if st.button("Clear starred offers", key="clear_stars"):
             clear_stars(stars_file)
             st.success("Starred offers cleared.")
-    with a3:
+    b1, b2, b3 = st.columns(3)
+    with b1:
         if st.button("Clear starred news + snapshots", key="clear_star_news"):
             clear_star_news_memory(proc)
             st.success("Starred news memory cleared.")
-    with a4:
+    with b2:
         if st.button("Clear filter presets", key="clear_filter_presets"):
-            clear_filter_presets(presets_file)
+            clear_filter_presets(filter_file)
             st.success("Explore filter presets cleared.")
+            st.rerun()
+    with b3:
+        if st.button("Clear map views", key="clear_map_view_presets"):
+            clear_map_view_presets(map_file)
+            st.success("Explore map-view presets cleared.")
             st.rerun()
 
 

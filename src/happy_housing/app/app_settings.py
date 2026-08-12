@@ -102,6 +102,8 @@ class AppSettings:
     """Max starred-news events retained on disk."""
     filter_presets_max: int = 30
     """Max named Explore map filter presets retained on disk."""
+    map_view_presets_max: int = 30
+    """Max named Explore map-view (layer) presets retained on disk."""
     recommender_top_n: int = 15
     """How many promising offers to surface after retrain."""
     recommender_demotion_alpha: float = 1.0
@@ -422,6 +424,10 @@ def load_app_settings(path: Path) -> AppSettings:
         ),
         filter_presets_max=max(
             1, int(payload.get("filter_presets_max", defaults.filter_presets_max))
+        ),
+        map_view_presets_max=max(
+            1,
+            int(payload.get("map_view_presets_max", defaults.map_view_presets_max)),
         ),
         recommender_top_n=max(
             1, int(payload.get("recommender_top_n", defaults.recommender_top_n))

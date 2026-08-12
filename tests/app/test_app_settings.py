@@ -38,6 +38,7 @@ def test_round_trip_settings(tmp_path: Path) -> None:
             buyer_avoid_oou=True,
             news_history_cap=50,
             filter_presets_max=12,
+            map_view_presets_max=9,
             recommender_demotion_alpha=2.5,
             stats_min_district_offers=8,
             stats_top_n=20,
@@ -60,6 +61,7 @@ def test_round_trip_settings(tmp_path: Path) -> None:
     assert loaded.buyer_avoid_oou is True
     assert loaded.news_history_cap == 50
     assert loaded.filter_presets_max == 12
+    assert loaded.map_view_presets_max == 9
     assert loaded.recommender_demotion_alpha == 2.5
     assert loaded.stats_min_district_offers == 8
     assert loaded.stats_top_n == 20

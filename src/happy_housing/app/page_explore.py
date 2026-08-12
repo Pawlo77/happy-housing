@@ -96,6 +96,16 @@ from happy_housing.app.geocode import (
 )
 from happy_housing.app.llm_metrics import llm_metrics_path
 from happy_housing.app.map_layers import LayerFlags, explore_datasets_needed
+from happy_housing.app.map_view_presets import (
+    MapViewPreset,
+    apply_map_view_preset_to_session,
+    delete_map_view_preset,
+    load_map_view_presets,
+    map_view_presets_path,
+    snapshot_map_view_preset_from_session,
+    suggest_map_view_preset_name,
+    upsert_map_view_preset,
+)
 from happy_housing.app.maps import (
     ADDRESS_FOCUS_ZOOM,
     MapAddressFocus,
@@ -291,6 +301,12 @@ FILTER_PRESET_PENDING_KEY: str = "explore_filter_preset_pending"
 FILTER_PRESET_NAME_KEY: str = "explore_filter_preset_name"
 """Text input key for the preset name when saving."""
 
+MAP_VIEW_PRESET_PENDING_KEY: str = "explore_map_view_preset_pending"
+"""Session key holding a ``MapViewPreset.to_dict()`` to apply before widgets."""
+
+MAP_VIEW_PRESET_NAME_KEY: str = "explore_map_view_preset_name"
+"""Text input key for the map-view preset name when saving."""
+
 
 def _apply_pending_filter_preset(*, age_max: int, ppm_max: int) -> None:
     """Hydrate Explore filter widgets from a pending saved preset, if any."""
@@ -396,6 +412,106 @@ def _render_filter_presets_ui(*, ppm_ceiling: int, age_max: int) -> None:
                     max_presets=max_presets,
                 )
                 st.session_state[FILTER_PRESET_NAME_KEY] = label
+                st.success(f"Saved “{label}”.")
+                st.rerun()
+
+
+def _apply_pending_map_view_preset() -> None:
+    """Hydrate Map-layers widgets from a pending saved view, if any."""
+    raw = st.session_state.pop(MAP_VIEW_PRESET_PENDING_KEY, None)
+    if not isinstance(raw, dict):
+        return
+    preset = MapViewPreset.from_dict(raw)
+    if preset is None:
+        return
+    apply_map_view_preset_to_session(st.session_state, preset)
+    st.session_state[MAP_VIEW_PRESET_NAME_KEY] = preset.name
+
+
+def _render_map_view_presets_ui() -> None:
+    """Save / load / delete named Explore map-view presets."""
+    proc = processed_dir()
+    presets_file = map_view_presets_path(proc)
+    settings = load_app_settings(settings_path(proc))
+    max_presets = int(settings.map_view_presets_max)
+    presets = load_map_view_presets(presets_file)
+    names = [p.name for p in presets]
+    current = snapshot_map_view_preset_from_session(st.session_state)
+    suggested = suggest_map_view_preset_name(
+        current.layers,
+        hour=current.hour,
+        basemap=current.basemap,
+    )
+    with st.expander("Saved map views", expanded=bool(names)):
+        st.caption(
+            "Save the current Map layers (overlays, hour, basemap) under a name, "
+            "or load a previous view. Leave the name blank and click Suggest for "
+            "an auto title from active layers."
+        )
+        if names:
+            pick = st.selectbox(
+                "Saved map view",
+                options=names,
+                key="explore_map_view_preset_pick",
+                help="Choose a saved map view to load or delete.",
+            )
+            c_load, c_del = st.columns(2)
+            with c_load:
+                if st.button(
+                    "Load",
+                    key="explore_map_view_preset_load",
+                    width="stretch",
+                ):
+                    chosen = next((p for p in presets if p.name == pick), None)
+                    if chosen is not None:
+                        st.session_state[MAP_VIEW_PRESET_PENDING_KEY] = chosen.to_dict()
+                        st.rerun()
+            with c_del:
+                if st.button(
+                    "Delete",
+                    key="explore_map_view_preset_delete",
+                    width="stretch",
+                ) and delete_map_view_preset(presets_file, str(pick)):
+                    st.success(f"Deleted “{pick}”.")
+                    st.rerun()
+        else:
+            st.caption("No saved map views yet.")
+
+        name_value = st.text_input(
+            "Map view name",
+            key=MAP_VIEW_PRESET_NAME_KEY,
+            placeholder=suggested,
+            help=(
+                "Type your own name, or use Suggest for a title built from "
+                "the active layers."
+            ),
+        )
+        c_sug, c_save = st.columns(2)
+        with c_sug:
+            if st.button(
+                "Suggest name",
+                key="explore_map_view_preset_suggest",
+                width="stretch",
+            ):
+                st.session_state[MAP_VIEW_PRESET_NAME_KEY] = suggested
+                st.rerun()
+        with c_save:
+            if st.button(
+                "Save current",
+                key="explore_map_view_preset_save",
+                width="stretch",
+            ):
+                label = str(name_value or "").strip() or suggested
+                snap = snapshot_map_view_preset_from_session(
+                    st.session_state,
+                    name=label,
+                )
+                upsert_map_view_preset(
+                    presets_file,
+                    snap,
+                    max_presets=max_presets,
+                )
+                st.session_state[MAP_VIEW_PRESET_NAME_KEY] = label
                 st.success(f"Saved “{label}”.")
                 st.rerun()
 
@@ -563,6 +679,8 @@ def _sidebar_map_poi_multiselect(
 
 def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
     """Map basemap, hour-of-day, and per-layer toggles; call inside Map layers tab."""
+    _apply_pending_map_view_preset()
+    _render_map_view_presets_ui()
     basemap = (
         st.segmented_control(
             "Basemap",
