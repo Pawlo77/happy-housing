@@ -152,10 +152,12 @@ from happy_housing.app.offer_display import (
 )
 from happy_housing.app.offer_gallery import (
     clamp_photo_index,
+    photo_fullscreen_key,
     photo_index_key,
     photo_nav_sync_key,
     photo_select_key,
     resolve_photo_select_label,
+    should_keep_photo_dialog_open,
     wrap_photo_index,
 )
 from happy_housing.app.pref_llm import merge_preferences, translate_preferences_nl
@@ -1591,8 +1593,13 @@ def _ensure_offer_media(row: pd.Series) -> pd.Series:
 
 def _offer_photo_dialog(listing_id: str, photos: list[str]) -> None:
     """Modal lightbox with prev/next (stock widgets; arrows stay visible)."""
+    open_key = photo_fullscreen_key(listing_id)
+    nav_key = photo_nav_sync_key(listing_id)
 
-    @st.dialog("Photos", width="large")  # type: ignore[misc]
+    def _on_dismiss() -> None:
+        st.session_state[open_key] = False
+
+    @st.dialog("Photos", width="large", on_dismiss=_on_dismiss)  # type: ignore[misc]
     def _dialog() -> None:
         idx_key = photo_index_key(listing_id)
         n = len(photos)
@@ -1601,6 +1608,8 @@ def _offer_photo_dialog(listing_id: str, photos: list[str]) -> None:
         with left:
             if st.button("←", key=f"{idx_key}_dlg_prev", use_container_width=True):
                 st.session_state[idx_key] = wrap_photo_index(idx, n, -1)
+                st.session_state[nav_key] = True
+                st.session_state[open_key] = True
                 st.rerun()
         with mid:
             st.image(photos[idx], width="stretch")
@@ -1608,9 +1617,28 @@ def _offer_photo_dialog(listing_id: str, photos: list[str]) -> None:
         with right:
             if st.button("→", key=f"{idx_key}_dlg_next", use_container_width=True):
                 st.session_state[idx_key] = wrap_photo_index(idx, n, 1)
+                st.session_state[nav_key] = True
+                st.session_state[open_key] = True
                 st.rerun()
 
     _dialog()
+
+
+def _maybe_open_offer_photo_dialog(
+    listing_id: str,
+    photos: list[str],
+    *,
+    open_clicked: bool,
+) -> None:
+    """Open or keep the full-size lightbox across arrow-nav reruns."""
+    open_key = photo_fullscreen_key(listing_id)
+    if open_clicked:
+        st.session_state[open_key] = True
+    if should_keep_photo_dialog_open(
+        open_flag=bool(st.session_state.get(open_key)),
+        open_clicked=open_clicked,
+    ):
+        _offer_photo_dialog(listing_id, photos)
 
 
 def _render_offer_gallery(row: pd.Series) -> None:
@@ -1620,8 +1648,15 @@ def _render_offer_gallery(row: pd.Series) -> None:
     if photos:
         if len(photos) == 1:
             st.image(photos[0], width="stretch")
-            if st.button("View full size", key=f"offer_photo_fs_{listing_id}"):
-                _offer_photo_dialog(listing_id, photos)
+            open_clicked = st.button(
+                "View full size",
+                key=f"offer_photo_fs_{listing_id}",
+            )
+            _maybe_open_offer_photo_dialog(
+                listing_id,
+                photos,
+                open_clicked=open_clicked,
+            )
         else:
             idx_key = photo_index_key(listing_id)
             sel_key = photo_select_key(listing_id)
@@ -1672,8 +1707,15 @@ def _render_offer_gallery(row: pd.Series) -> None:
                     st.session_state[idx_key] = wrap_photo_index(idx, n, 1)
                     st.session_state[nav_key] = True
                     st.rerun()
-            if st.button("View full size", key=f"offer_photo_fs_{listing_id}"):
-                _offer_photo_dialog(listing_id, photos)
+            open_clicked = st.button(
+                "View full size",
+                key=f"offer_photo_fs_{listing_id}",
+            )
+            _maybe_open_offer_photo_dialog(
+                listing_id,
+                photos,
+                open_clicked=open_clicked,
+            )
     plans = floor_plan_urls_from_row(row)
     if plans:
         st.markdown("##### Floor plan")

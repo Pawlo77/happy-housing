@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from happy_housing.app.offer_gallery import (
     clamp_photo_index,
+    photo_fullscreen_key,
     photo_index_key,
     photo_nav_sync_key,
     photo_select_key,
     resolve_photo_select_label,
+    should_keep_photo_dialog_open,
     wrap_photo_index,
 )
 
@@ -33,6 +35,14 @@ def test_photo_index_key() -> None:
     assert photo_index_key("OTO-1") == "offer_photo_idx_OTO-1"
     assert photo_select_key("OTO-1") == "offer_photo_sel_OTO-1"
     assert photo_nav_sync_key("OTO-1") == "offer_photo_nav_OTO-1"
+    assert photo_fullscreen_key("OTO-1") == "offer_photo_fs_open_OTO-1"
+
+
+def test_should_keep_photo_dialog_open_after_arrow_rerun() -> None:
+    """Dialog must reopen on rerun after arrow nav (button no longer True)."""
+    assert should_keep_photo_dialog_open(open_flag=True, open_clicked=False)
+    assert should_keep_photo_dialog_open(open_flag=False, open_clicked=True)
+    assert not should_keep_photo_dialog_open(open_flag=False, open_clicked=False)
 
 
 def test_resolve_photo_select_label_syncs_after_arrow_nav() -> None:

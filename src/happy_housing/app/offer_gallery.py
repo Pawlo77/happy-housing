@@ -18,6 +18,20 @@ def photo_nav_sync_key(listing_id: object) -> str:
     return f"offer_photo_nav_{listing_id}"
 
 
+def photo_fullscreen_key(listing_id: object) -> str:
+    """Session-state flag: keep the full-size photo dialog open across reruns."""
+    return f"offer_photo_fs_open_{listing_id}"
+
+
+def should_keep_photo_dialog_open(*, open_flag: bool, open_clicked: bool) -> bool:
+    """True when the lightbox must be invoked this run.
+
+    Arrow buttons call ``st.rerun()``; the open button is then False, so the
+    dialog only stays open if a persistent session flag is still set.
+    """
+    return bool(open_flag or open_clicked)
+
+
 def wrap_photo_index(index: int, n_photos: int, delta: int) -> int:
     """Return a wrapped photo index after adding ``delta``.
 
