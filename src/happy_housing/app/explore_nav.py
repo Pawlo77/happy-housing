@@ -28,6 +28,9 @@ OFFER_SELECT_KEY: str = "explore_offer_select"
 OFFER_QUERY_KEY: str = "listing_id"
 """Query-param key for shareable / new-tab Explore offer URLs."""
 
+MAP_PIN_SELECTION_KEY: str = "explore_map_selected_id"
+"""Session key for the listing last clicked on the Explore Map pydeck."""
+
 EXPLORE_SECTION_KEY: str = "explore_section"
 """Session key bound to the Explore ``st.tabs`` widget."""
 
@@ -163,6 +166,29 @@ def listing_id_from_map_selection(event: object | None) -> str | None:
         lid = obj.get("listing_id") or obj.get("tooltip_name")
         if lid:
             return str(lid)
+    return None
+
+
+def resolve_map_pin_selection(
+    event: object | None,
+    *,
+    session: Any | None = None,
+) -> str | None:
+    """Persist map pin click in session; clear when selection is empty.
+
+    Args:
+        event: ``st.pydeck_chart`` return value (or dict-shaped test double).
+        session: Mutable mapping (defaults to ``st.session_state``).
+
+    Returns:
+        Selected ``listing_id``, or ``None`` when nothing is selected.
+    """
+    store = st.session_state if session is None else session
+    clicked = listing_id_from_map_selection(event)
+    if clicked is not None:
+        store[MAP_PIN_SELECTION_KEY] = clicked
+        return clicked
+    store.pop(MAP_PIN_SELECTION_KEY, None)
     return None
 
 

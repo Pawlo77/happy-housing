@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Any
 
 import geopandas as gpd
 import matplotlib.pyplot as plt
@@ -72,9 +73,9 @@ from happy_housing.app.explore_nav import (
     explore_offer_path,
     focus_explore_offer,
     listing_id_from_board_selection,
-    listing_id_from_map_selection,
     normalize_listing_id,
     prepare_offer_select_state,
+    resolve_map_pin_selection,
     sync_offer_query_param,
 )
 from happy_housing.app.filter_presets import (
@@ -122,9 +123,12 @@ from happy_housing.app.maps import (
     basemap_style,
     build_explore_layers,
     build_spatial_layers,
+    cached_explore_map_layers,
     explore_map_camera,
+    explore_map_layer_cache_key,
     explore_map_selection_key,
     focus_marker_layer,
+    listing_ids_fingerprint,
     render_deck,
 )
 from happy_housing.app.offer_display import (
@@ -1179,6 +1183,7 @@ def _render_explore_address_search() -> MapAddressFocus | None:
     return focus
 
 
+@st.fragment  # type: ignore[misc]
 def _tab_map(
     filtered: pd.DataFrame,
     *,
@@ -1208,7 +1213,10 @@ def _tab_map(
     commute_label: str = "Commute target",
     recommended_ids: frozenset[str] | None = None,
 ) -> None:
-    """Market map with toggleable livability overlays."""
+    """Market map with toggleable livability overlays.
+
+    Fragment-scoped: pin clicks rerun only this block (not full Explore).
+    """
     if filtered.empty and flags.offers:
         st.warning("No offers match filters — disable Offers or widen filters.")
     if recommended_ids:
@@ -1216,33 +1224,74 @@ def _tab_map(
             f"{len(recommended_ids)} recommended pin(s) — larger gold-ring markers."
         )
     focus = _render_explore_address_search()
-    layers = build_explore_layers(
-        listings=filtered,
+    rec_ids = recommended_ids or frozenset()
+    listing_fp = (
+        listing_ids_fingerprint(filtered["listing_id"].astype(str).tolist())
+        if not filtered.empty and "listing_id" in filtered.columns
+        else ""
+    )
+    cache_key = explore_map_layer_cache_key(
+        listing_fingerprint=listing_fp,
         flags=flags,
-        amenities=amenities,
-        shops=shops,
-        stops=stops,
-        hourly=hourly,
-        route_shapes=route_shapes,
-        traffic_sample=traffic_sample,
-        air_stations=air_stations,
-        gunb=gunb,
-        parks=parks,
-        bike_paths=bike_paths,
-        city_boundary=city_boundary,
-        district_boundaries=district_boundaries,
-        military=military,
-        rail_areas=rail_areas,
-        airport=airport,
-        city_pois=city_pois,
-        noise_overlay=noise_overlay_data,
-        aq_overlay=aq_overlay_data,
+        hour=hour,
+        basemap=basemap,
         commute_lon=commute_lon,
         commute_lat=commute_lat,
-        hour=hour,
-        commute_label=commute_label,
-        recommended_ids=recommended_ids,
+        recommended_ids=frozenset(str(x) for x in rec_ids),
+        focus=None,
+        overlay_counts={
+            "amenities": len(amenities),
+            "shops": len(shops),
+            "stops": len(stops),
+            "hourly": len(hourly),
+            "route_shapes": len(route_shapes),
+            "traffic": len(traffic_sample),
+            "air": len(air_stations),
+            "gunb": len(gunb),
+            "parks": len(parks),
+            "bike_paths": len(bike_paths),
+            "city_boundary": len(city_boundary),
+            "district_boundaries": len(district_boundaries),
+            "military": len(military),
+            "rail_areas": len(rail_areas),
+            "airport": len(airport),
+            "city_pois": len(city_pois),
+            "noise": 0 if noise_overlay_data is None else 1,
+            "aq": 0 if aq_overlay_data is None else 1,
+            "listings": len(filtered),
+        },
     )
+
+    def _build() -> list[Any]:
+        return build_explore_layers(
+            listings=filtered,
+            flags=flags,
+            amenities=amenities,
+            shops=shops,
+            stops=stops,
+            hourly=hourly,
+            route_shapes=route_shapes,
+            traffic_sample=traffic_sample,
+            air_stations=air_stations,
+            gunb=gunb,
+            parks=parks,
+            bike_paths=bike_paths,
+            city_boundary=city_boundary,
+            district_boundaries=district_boundaries,
+            military=military,
+            rail_areas=rail_areas,
+            airport=airport,
+            city_pois=city_pois,
+            noise_overlay=noise_overlay_data,
+            aq_overlay=aq_overlay_data,
+            commute_lon=commute_lon,
+            commute_lat=commute_lat,
+            hour=hour,
+            commute_label=commute_label,
+            recommended_ids=recommended_ids,
+        )
+
+    layers = cached_explore_map_layers(cache_key, _build)
     if focus is not None:
         layers.append(address_search_layer(focus.lon, focus.lat, label=focus.label))
     if not layers:
@@ -1264,7 +1313,7 @@ def _tab_map(
     )
     if not flags.offers or filtered.empty:
         return
-    clicked = listing_id_from_map_selection(event)
+    clicked = resolve_map_pin_selection(event)
     if clicked is None:
         st.caption(
             "Click an offer pin to preview it and open the Offer tab."
@@ -1299,7 +1348,7 @@ def _tab_map(
     with open_col:
         if st.button("Open in Offer", type="primary", key=f"map_open_offer_{clicked}"):
             focus_explore_offer(clicked)
-            st.rerun()
+            st.rerun(scope="app")
     with tab_col:
         st.link_button(
             "Open in new tab",

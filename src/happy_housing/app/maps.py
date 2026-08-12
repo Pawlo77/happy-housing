@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -830,6 +832,72 @@ def explore_map_selection_key(focus: MapAddressFocus | None) -> str:
     if focus is None:
         return "explore_map_deck"
     return f"explore_map_deck_{focus.lon:.5f}_{focus.lat:.5f}"
+
+
+def listing_ids_fingerprint(listing_ids: Iterable[str]) -> str:
+    """Stable short digest of listing ids (order-sensitive)."""
+    digest = hashlib.blake2b(digest_size=16)
+    for lid in listing_ids:
+        digest.update(str(lid).encode())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def explore_map_layer_cache_key(
+    *,
+    listing_fingerprint: str,
+    flags: LayerFlags,
+    hour: int,
+    basemap: str,
+    commute_lon: float,
+    commute_lat: float,
+    recommended_ids: frozenset[str],
+    focus: MapAddressFocus | None,
+    overlay_counts: Mapping[str, int],
+) -> tuple[object, ...]:
+    """Cache key for rebuilt Explore pydeck layers (skip rebuild on pin click)."""
+    focus_key: tuple[object, ...] | None
+    if focus is None:
+        focus_key = None
+    else:
+        focus_key = (round(focus.lon, 5), round(focus.lat, 5), focus.label)
+    counts = tuple(sorted((str(k), int(v)) for k, v in overlay_counts.items()))
+    return (
+        listing_fingerprint,
+        tuple(sorted(flags.to_dict().items())),
+        int(hour),
+        str(basemap),
+        round(float(commute_lon), 5),
+        round(float(commute_lat), 5),
+        tuple(sorted(str(x) for x in recommended_ids)),
+        focus_key,
+        counts,
+    )
+
+
+_EXPLORE_MAP_LAYERS_KEY: str = "explore_map_layers_cache_key"
+"""Session key for the Explore map layer-cache fingerprint."""
+
+_EXPLORE_MAP_LAYERS_VAL: str = "explore_map_layers_cache_val"
+"""Session key for cached Explore ``pdk.Layer`` list."""
+
+
+def cached_explore_map_layers(
+    cache_key: tuple[object, ...],
+    builder: Callable[[], list[Any]],
+) -> list[Any]:
+    """Return cached layers when ``cache_key`` matches; else call ``builder``.
+
+    Callers must copy before appending ephemeral pins (address / focus).
+    """
+    if st.session_state.get(_EXPLORE_MAP_LAYERS_KEY) == cache_key:
+        cached = st.session_state.get(_EXPLORE_MAP_LAYERS_VAL)
+        if isinstance(cached, list):
+            return list(cached)
+    layers = list(builder())
+    st.session_state[_EXPLORE_MAP_LAYERS_KEY] = cache_key
+    st.session_state[_EXPLORE_MAP_LAYERS_VAL] = layers
+    return list(layers)
 
 
 def commute_compare_layers(
