@@ -68,10 +68,14 @@ from happy_housing.app.explore_nav import (
     EXPLORE_SECTIONS,
     OFFER_SELECT_KEY,
     apply_explore_section_pending,
+    apply_offer_from_query_params,
+    explore_offer_path,
+    focus_explore_offer,
     listing_id_from_board_selection,
     listing_id_from_map_selection,
+    normalize_listing_id,
     prepare_offer_select_state,
-    request_explore_section,
+    sync_offer_query_param,
 )
 from happy_housing.app.filter_presets import (
     FilterPreset,
@@ -1274,11 +1278,18 @@ def _tab_map(
         if pd.notna(price) and pd.notna(model) and pd.notna(commute)
         else "Click Open in Offer for the full listing card."
     )
-    if st.button("Open in Offer", type="primary", key=f"map_open_offer_{clicked}"):
-        st.session_state["explore_offer_id"] = clicked
-        st.session_state["explore_offer_force"] = True
-        request_explore_section("Offer")
-        st.rerun()
+    open_col, tab_col = st.columns(2)
+    with open_col:
+        if st.button("Open in Offer", type="primary", key=f"map_open_offer_{clicked}"):
+            focus_explore_offer(clicked)
+            st.rerun()
+    with tab_col:
+        st.link_button(
+            "Open in new tab",
+            explore_offer_path(clicked),
+            key=f"map_open_offer_tab_{clicked}",
+            width="stretch",
+        )
 
 
 def _tab_spatial(
@@ -1714,20 +1725,45 @@ def _tab_offer(
     recommended_ids: frozenset[str] | None = None,
 ) -> None:
     """Single-offer deep dive with Overview / Context / Map / SHAP / AI subtabs."""
-    if filtered.empty:
+    preferred = normalize_listing_id(st.session_state.get("explore_offer_id"))
+    work = filtered
+    outside_filters = False
+    if preferred is not None and not filtered.empty:
+        in_filtered = filtered["listing_id"].astype(str).eq(preferred).any()
+        if not in_filtered and not scored_universe.empty:
+            match = scored_universe.loc[
+                scored_universe["listing_id"].astype(str).eq(preferred)
+            ]
+            if not match.empty:
+                work = pd.concat([match.head(1), filtered], ignore_index=True)
+                outside_filters = True
+    elif preferred is not None and filtered.empty and not scored_universe.empty:
+        match = scored_universe.loc[
+            scored_universe["listing_id"].astype(str).eq(preferred)
+        ]
+        if not match.empty:
+            work = match.head(1).copy()
+            outside_filters = True
+
+    if work.empty:
         st.warning("No offers match filters.")
         return
-    labels = filtered["listing_id"].astype(str).tolist()
-    preferred = st.session_state.get("explore_offer_id")
+    if outside_filters:
+        st.caption(
+            "Deep-linked offer is outside current filters — shown anyway. "
+            "Widen filters to keep it in Map/Board."
+        )
+
+    labels = work["listing_id"].astype(str).tolist()
     force = bool(st.session_state.pop("explore_offer_force", False))
-    pick, star_col = st.columns([4.2, 1], vertical_alignment="bottom")
+    pick, star_col, link_col = st.columns([3.6, 0.9, 1.1], vertical_alignment="bottom")
     with pick:
-        if "title" in filtered.columns:
+        if "title" in work.columns:
             options = {
                 f"{lid} — {title}" if isinstance(title, str) and title else lid: lid
                 for lid, title in zip(
-                    filtered["listing_id"].astype(str),
-                    filtered["title"],
+                    work["listing_id"].astype(str),
+                    work["title"],
                     strict=True,
                 )
             }
@@ -1735,7 +1771,7 @@ def _tab_offer(
             options = {lid: lid for lid in labels}
         desired = prepare_offer_select_state(
             options=options,
-            preferred_id=str(preferred) if preferred is not None else None,
+            preferred_id=preferred,
             force=force,
             current_label=st.session_state.get(OFFER_SELECT_KEY),
         )
@@ -1744,6 +1780,7 @@ def _tab_offer(
         choice = st.selectbox("Offer", list(options.keys()), key=OFFER_SELECT_KEY)
         selected_id = options[str(choice)]
     st.session_state["explore_offer_id"] = selected_id
+    sync_offer_query_param(selected_id)
     starred_now = is_starred(starred, selected_id)
     with star_col:
         label = "★ Starred" if starred_now else "☆ Star"
@@ -1756,8 +1793,16 @@ def _tab_offer(
                 app_settings=app_settings,
             )
             st.rerun()
+    with link_col:
+        st.link_button(
+            "Open in new tab",
+            explore_offer_path(selected_id),
+            key=f"offer_open_tab_{selected_id}",
+            width="stretch",
+            help=f"Shareable Explore URL: {explore_offer_path(selected_id)}",
+        )
 
-    row = filtered.loc[filtered["listing_id"] == selected_id].iloc[0].copy()
+    row = work.loc[work["listing_id"].astype(str) == selected_id].iloc[0].copy()
 
     overview, context, local_map, explain, ai_tab = st.tabs(
         [
@@ -1999,9 +2044,7 @@ def _tab_board(
     if listing_id is None:
         return
     mark_opened(impressions_file, listing_id)
-    st.session_state["explore_offer_id"] = listing_id
-    st.session_state["explore_offer_force"] = True
-    request_explore_section("Offer")
+    focus_explore_offer(listing_id)
     st.rerun()
 
 
@@ -2102,10 +2145,14 @@ def _tab_news(
                         key=f"news_rec_open_{lid}",
                         width="stretch",
                     ):
-                        st.session_state["explore_offer_id"] = lid
-                        st.session_state["explore_offer_force"] = True
-                        request_explore_section("Offer")
+                        focus_explore_offer(lid)
                         st.rerun()
+                    st.link_button(
+                        "Open in new tab",
+                        explore_offer_path(lid),
+                        key=f"news_rec_tab_{lid}",
+                        width="stretch",
+                    )
                     if st.button(
                         "Skip",
                         key=f"news_rec_skip_{lid}",
@@ -2150,10 +2197,14 @@ def _tab_news(
                     key=f"news_open_{item.id}",
                     width="stretch",
                 ):
-                    st.session_state["explore_offer_id"] = item.listing_id
-                    st.session_state["explore_offer_force"] = True
-                    request_explore_section("Offer")
+                    focus_explore_offer(item.listing_id)
                     st.rerun()
+                st.link_button(
+                    "Open in new tab",
+                    explore_offer_path(item.listing_id),
+                    key=f"news_tab_{item.id}",
+                    width="stretch",
+                )
             if item.kind == "removed":
                 st.warning(
                     "Removed from the scored universe "
@@ -2552,6 +2603,7 @@ def render_explore() -> None:
         map_board = apply_preferences(map_board, prefs)
     config = load_config()
 
+    apply_offer_from_query_params()
     apply_explore_section_pending()
     if "explore_section" not in st.session_state:
         st.session_state["explore_section"] = "Map"

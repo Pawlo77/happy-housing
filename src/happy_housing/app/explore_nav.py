@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import urlencode
 
 import pandas as pd
 import streamlit as st
@@ -23,6 +24,9 @@ EXPLORE_PAGE_PATH: str = "explore"
 
 OFFER_SELECT_KEY: str = "explore_offer_select"
 """Session key for the Offer-tab listing selectbox."""
+
+OFFER_QUERY_KEY: str = "listing_id"
+"""Query-param key for shareable / new-tab Explore offer URLs."""
 
 EXPLORE_SECTION_KEY: str = "explore_section"
 """Session key bound to the Explore ``st.tabs`` widget."""
@@ -45,6 +49,50 @@ def get_explore_page() -> object | None:
     return _explore_page
 
 
+def normalize_listing_id(raw: object | None) -> str | None:
+    """Strip a listing id; empty / missing → ``None``."""
+    if raw is None:
+        return None
+    if isinstance(raw, (list, tuple)):
+        if not raw:
+            return None
+        raw = raw[0]
+    text = str(raw).strip()
+    return text or None
+
+
+def explore_offer_path(listing_id: str) -> str:
+    """Relative Explore URL that opens ``listing_id`` on the Offer tab."""
+    lid = normalize_listing_id(listing_id)
+    if lid is None:
+        raise ValueError("listing_id must be non-empty")
+    return f"/{EXPLORE_PAGE_PATH}?{urlencode({OFFER_QUERY_KEY: lid})}"
+
+
+def sync_offer_query_param(listing_id: str | None) -> None:
+    """Keep the browser URL query param aligned with the focused offer."""
+    lid = normalize_listing_id(listing_id)
+    if lid is None:
+        if OFFER_QUERY_KEY in st.query_params:
+            del st.query_params[OFFER_QUERY_KEY]
+        return
+    st.query_params[OFFER_QUERY_KEY] = lid
+
+
+def apply_offer_from_query_params() -> str | None:
+    """Hydrate Offer focus from ``?listing_id=``; force Offer only on change."""
+    lid = normalize_listing_id(st.query_params.get(OFFER_QUERY_KEY))
+    if lid is None:
+        return None
+    current = normalize_listing_id(st.session_state.get("explore_offer_id"))
+    if current == lid:
+        return lid
+    st.session_state["explore_offer_id"] = lid
+    st.session_state["explore_offer_force"] = True
+    request_explore_section("Offer")
+    return lid
+
+
 def request_explore_section(section: str) -> None:
     """Queue an Explore tab switch (safe after ``st.tabs`` already ran)."""
     if section not in EXPLORE_SECTIONS:
@@ -63,14 +111,29 @@ def apply_explore_section_pending() -> None:
 
 def open_explore_offer(listing_id: str) -> None:
     """Jump to Explore → Offer for ``listing_id`` (session keys + switch_page)."""
-    st.session_state["explore_offer_id"] = str(listing_id)
+    lid = normalize_listing_id(listing_id)
+    if lid is None:
+        raise ValueError("listing_id must be non-empty")
+    st.session_state["explore_offer_id"] = lid
     st.session_state["explore_offer_force"] = True
     request_explore_section("Offer")
+    sync_offer_query_param(lid)
     page = _explore_page
     if page is None:
         msg = "Explore page not registered; call register_explore_page from main()"
         raise RuntimeError(msg)
-    st.switch_page(page)
+    st.switch_page(page, query_params={OFFER_QUERY_KEY: lid})
+
+
+def focus_explore_offer(listing_id: str) -> None:
+    """Focus an offer on the current Explore page (session + URL + Offer tab)."""
+    lid = normalize_listing_id(listing_id)
+    if lid is None:
+        raise ValueError("listing_id must be non-empty")
+    st.session_state["explore_offer_id"] = lid
+    st.session_state["explore_offer_force"] = True
+    request_explore_section("Offer")
+    sync_offer_query_param(lid)
 
 
 def listing_id_from_map_selection(event: object | None) -> str | None:

@@ -79,6 +79,61 @@ def test_explore_sections_include_prefs() -> None:
     assert "News" in EXPLORE_SECTIONS
 
 
+def test_normalize_listing_id() -> None:
+    from happy_housing.app.explore_nav import normalize_listing_id
+
+    assert normalize_listing_id("OTO-1") == "OTO-1"
+    assert normalize_listing_id("  RCN-9  ") == "RCN-9"
+    assert normalize_listing_id("") is None
+    assert normalize_listing_id("   ") is None
+    assert normalize_listing_id(None) is None
+
+
+def test_explore_offer_path_encodes_listing_id() -> None:
+    from happy_housing.app.explore_nav import explore_offer_path
+
+    assert explore_offer_path("OTO-1") == "/explore?listing_id=OTO-1"
+    assert explore_offer_path("A B") == "/explore?listing_id=A+B"
+
+
+def test_apply_offer_from_query_params_hydrates_new_deep_link() -> None:
+    from happy_housing.app.explore_nav import apply_offer_from_query_params
+
+    session: dict[str, object] = {}
+    mock_st = MagicMock()
+    mock_st.session_state = session
+    mock_st.query_params = {"listing_id": "OTO-42"}
+    with patch("happy_housing.app.explore_nav.st", mock_st):
+        assert apply_offer_from_query_params() == "OTO-42"
+    assert session["explore_offer_id"] == "OTO-42"
+    assert session["explore_offer_force"] is True
+    assert session["explore_section_pending"] == "Offer"
+
+
+def test_apply_offer_from_query_params_skips_repeat_force() -> None:
+    from happy_housing.app.explore_nav import apply_offer_from_query_params
+
+    session: dict[str, object] = {"explore_offer_id": "OTO-42"}
+    mock_st = MagicMock()
+    mock_st.session_state = session
+    mock_st.query_params = {"listing_id": "OTO-42"}
+    with patch("happy_housing.app.explore_nav.st", mock_st):
+        assert apply_offer_from_query_params() == "OTO-42"
+    assert "explore_offer_force" not in session
+    assert "explore_section_pending" not in session
+
+
+def test_sync_offer_query_param_writes_listing_id() -> None:
+    from happy_housing.app.explore_nav import sync_offer_query_param
+
+    mock_params = MagicMock()
+    mock_st = MagicMock()
+    mock_st.query_params = mock_params
+    with patch("happy_housing.app.explore_nav.st", mock_st):
+        sync_offer_query_param("OTO-7")
+    mock_params.__setitem__.assert_called_with("listing_id", "OTO-7")
+
+
 def test_open_explore_offer_sets_session_and_switches_page() -> None:
     session: dict[str, object] = {}
     mock_st = MagicMock()
@@ -91,7 +146,10 @@ def test_open_explore_offer_sets_session_and_switches_page() -> None:
     assert session["explore_offer_force"] is True
     assert session["explore_section_pending"] == "Offer"
     assert "explore_section" not in session
-    mock_st.switch_page.assert_called_once_with(explore_page)
+    mock_st.switch_page.assert_called_once_with(
+        explore_page,
+        query_params={"listing_id": "RCN-605"},
+    )
 
 
 def test_open_explore_offer_requires_registered_page() -> None:
@@ -105,6 +163,22 @@ def test_open_explore_offer_requires_registered_page() -> None:
             raise AssertionError("expected RuntimeError")
         except RuntimeError as exc:
             assert "not registered" in str(exc)
+
+
+def test_focus_explore_offer_sets_session_and_query() -> None:
+    from happy_housing.app.explore_nav import focus_explore_offer
+
+    session: dict[str, object] = {}
+    mock_params = MagicMock()
+    mock_st = MagicMock()
+    mock_st.session_state = session
+    mock_st.query_params = mock_params
+    with patch("happy_housing.app.explore_nav.st", mock_st):
+        focus_explore_offer("OTO-3")
+    assert session["explore_offer_id"] == "OTO-3"
+    assert session["explore_offer_force"] is True
+    assert session["explore_section_pending"] == "Offer"
+    mock_params.__setitem__.assert_called_with("listing_id", "OTO-3")
 
 
 def test_apply_explore_section_pending_moves_into_section_key() -> None:
