@@ -16,6 +16,7 @@ import streamlit as st
 from happy_housing.app.commute_route import CommuteRoutePlan, path_records_for_plan
 from happy_housing.app.commute_target import CommuteTarget, commute_compare_points
 from happy_housing.app.data import load_config
+from happy_housing.app.io_cache import file_mtime
 from happy_housing.app.map_layers import (
     MAX_SHOP_MAP_POINTS,
     SHOP_CATEGORY_LABELS,
@@ -541,18 +542,51 @@ def transit_intensity_layers(
     hour: int,
 ) -> list[pdk.Layer]:
     """Continuous GTFS departure field for the sidebar clock hour."""
-    overlay = prepare_transit_intensity_overlay(
-        stops,
-        hourly,
-        hour=hour,
-        bbox_wgs84=load_config().bbox.as_tuple(),
-    )
+    config = load_config()
+    bbox = config.bbox.as_tuple()
+    stops_path = config.data.processed_path() / "gtfs_stops.parquet"
+    hourly_path = config.data.processed_path() / "gtfs_stop_hourly.parquet"
+    if stops_path.is_file() and hourly_path.is_file():
+        overlay = _cached_transit_intensity_overlay(
+            int(hour),
+            bbox,
+            str(stops_path.resolve()),
+            file_mtime(stops_path),
+            str(hourly_path.resolve()),
+            file_mtime(hourly_path),
+        )
+    else:
+        overlay = prepare_transit_intensity_overlay(
+            stops,
+            hourly,
+            hour=hour,
+            bbox_wgs84=bbox,
+        )
     layer = intensity_bitmap_layer(
         overlay,
         layer_id="transit-intensity-bitmap",
         opacity=0.62,
     )
     return [layer] if layer is not None else []
+
+
+@st.cache_data(show_spinner=False)  # type: ignore[misc]
+def _cached_transit_intensity_overlay(
+    hour: int,
+    bbox: tuple[float, float, float, float],
+    stops_path: str,
+    stops_mtime: float,
+    hourly_path: str,
+    hourly_mtime: float,
+) -> IntensityMapOverlay | None:
+    """Mtime-keyed transit intensity bitmap (skip grid rebuild on Map reruns)."""
+    del stops_mtime, hourly_mtime
+    return prepare_transit_intensity_overlay(
+        pd.read_parquet(stops_path),
+        pd.read_parquet(hourly_path),
+        hour=hour,
+        bbox_wgs84=bbox,
+    )
 
 
 def transit_network_layers(
@@ -596,15 +630,42 @@ def transit_network_layers(
 
 def traffic_heatmap_layer(sample: pd.DataFrame, *, hour: int) -> pdk.Layer | None:
     """Continuous diurnal street-activity field (BitmapLayer, noise-style)."""
-    overlay = prepare_traffic_intensity_overlay(
-        sample,
-        hour=hour,
-        bbox_wgs84=load_config().bbox.as_tuple(),
-    )
+    config = load_config()
+    bbox = config.bbox.as_tuple()
+    traffic_path = config.data.cache_path() / "traffic_roads.parquet"
+    if traffic_path.is_file():
+        overlay = _cached_traffic_intensity_overlay(
+            int(hour),
+            bbox,
+            str(traffic_path.resolve()),
+            file_mtime(traffic_path),
+        )
+    else:
+        overlay = prepare_traffic_intensity_overlay(
+            sample,
+            hour=hour,
+            bbox_wgs84=bbox,
+        )
     return intensity_bitmap_layer(
         overlay,
         layer_id="traffic-intensity-bitmap",
         opacity=0.62,
+    )
+
+
+@st.cache_data(show_spinner=False)  # type: ignore[misc]
+def _cached_traffic_intensity_overlay(
+    hour: int,
+    bbox: tuple[float, float, float, float],
+    traffic_path: str,
+    traffic_mtime: float,
+) -> IntensityMapOverlay | None:
+    """Mtime-keyed traffic intensity bitmap (skip grid rebuild on Map reruns)."""
+    del traffic_mtime
+    return prepare_traffic_intensity_overlay(
+        pd.read_parquet(traffic_path),
+        hour=hour,
+        bbox_wgs84=bbox,
     )
 
 

@@ -74,6 +74,7 @@ from happy_housing.app.data import (
     load_traffic_sample,
     load_warsaw_noise_overlay,
     processed_dir,
+    scored_path,
 )
 from happy_housing.app.explore_nav import (
     EXPLORE_SECTIONS,
@@ -110,11 +111,14 @@ from happy_housing.app.geocode import (
     resolve_place_pick,
     search_places,
 )
+from happy_housing.app.io_cache import file_mtime
 from happy_housing.app.llm_metrics import llm_metrics_path
 from happy_housing.app.map_layers import (
     LayerFlags,
     explore_datasets_needed_preserving_map,
+    explore_needs_recommended_pins,
     keep_explore_map_mounted,
+    recommended_pins_memo_key,
 )
 from happy_housing.app.map_view_presets import (
     MapViewPreset,
@@ -265,6 +269,13 @@ def _refresh_recommender_after_feedback(
     st.session_state.pop(NEWS_REC_IDS_KEY, None)
 
 
+_REC_IDS_CACHE_KEY: str = "explore_recommended_ids_cache_key"
+"""Session fingerprint for memoized map recommended-pin ids."""
+
+_REC_IDS_CACHE_VAL: str = "explore_recommended_ids_cache_val"
+"""Session value for memoized map recommended-pin ids."""
+
+
 def _recommended_listing_ids(
     scored: pd.DataFrame,
     *,
@@ -274,6 +285,28 @@ def _recommended_listing_ids(
     starred: frozenset[str],
 ) -> frozenset[str]:
     """Current promising ids for map highlighting (starred excluded)."""
+    path = scored_path()
+    memo_key = recommended_pins_memo_key(
+        scored_mtime=file_mtime(path) if path.exists() else 0.0,
+        scored_rows=len(scored),
+        prefs_payload=prefs.to_dict(),
+        starred=starred,
+        top_n=int(app_settings.recommender_top_n),
+        demotion_alpha=float(app_settings.recommender_demotion_alpha),
+        w_bargain=float(app_settings.recommender_w_bargain),
+        w_commute=float(app_settings.recommender_w_commute),
+        w_transit=float(app_settings.recommender_w_transit),
+        w_overprice=float(app_settings.recommender_w_overprice),
+        otodom_pool_default=bool(app_settings.recommender_otodom_pool_default),
+        amenity_weights=coerce_amenity_weights(
+            app_settings.recommender_amenity_weights
+        ),
+        commute_mode=app_settings.commute_display_mode,
+    )
+    if st.session_state.get(_REC_IDS_CACHE_KEY) == memo_key:
+        cached = st.session_state.get(_REC_IDS_CACHE_VAL)
+        if isinstance(cached, frozenset):
+            return cached
     top = top_recommendations(
         scored,
         processed_dir=processed_dir,
@@ -292,9 +325,161 @@ def _recommended_listing_ids(
         exclude_ids=starred,
         commute_mode=app_settings.commute_display_mode,
     )
-    if top.empty:
-        return frozenset()
-    return frozenset(top["listing_id"].astype(str).tolist())
+    result = (
+        frozenset() if top.empty else frozenset(top["listing_id"].astype(str).tolist())
+    )
+    st.session_state[_REC_IDS_CACHE_KEY] = memo_key
+    st.session_state[_REC_IDS_CACHE_VAL] = result
+    return result
+
+
+def _explore_overlay_counts(
+    *,
+    filtered: pd.DataFrame,
+    amenities: gpd.GeoDataFrame,
+    shops: pd.DataFrame,
+    stops: pd.DataFrame,
+    hourly: pd.DataFrame,
+    route_shapes: pd.DataFrame,
+    traffic_sample: pd.DataFrame,
+    air_stations: pd.DataFrame,
+    gunb: pd.DataFrame,
+    parks: gpd.GeoDataFrame,
+    bike_paths: gpd.GeoDataFrame,
+    city_boundary: gpd.GeoDataFrame,
+    district_boundaries: gpd.GeoDataFrame,
+    military: gpd.GeoDataFrame,
+    rail_areas: gpd.GeoDataFrame,
+    airport: gpd.GeoDataFrame,
+    city_pois: gpd.GeoDataFrame,
+    noise_overlay_data: object,
+    aq_overlay_data: object,
+) -> dict[str, int]:
+    """Row counts for Explore map layer-cache keys."""
+    return {
+        "amenities": len(amenities),
+        "shops": len(shops),
+        "stops": len(stops),
+        "hourly": len(hourly),
+        "route_shapes": len(route_shapes),
+        "traffic": len(traffic_sample),
+        "air": len(air_stations),
+        "gunb": len(gunb),
+        "parks": len(parks),
+        "bike_paths": len(bike_paths),
+        "city_boundary": len(city_boundary),
+        "district_boundaries": len(district_boundaries),
+        "military": len(military),
+        "rail_areas": len(rail_areas),
+        "airport": len(airport),
+        "city_pois": len(city_pois),
+        "noise": 0 if noise_overlay_data is None else 1,
+        "aq": 0 if aq_overlay_data is None else 1,
+        "listings": len(filtered),
+    }
+
+
+def _cached_build_explore_layers(
+    filtered: pd.DataFrame,
+    *,
+    amenities: gpd.GeoDataFrame,
+    shops: pd.DataFrame,
+    stops: pd.DataFrame,
+    hourly: pd.DataFrame,
+    route_shapes: pd.DataFrame,
+    traffic_sample: pd.DataFrame,
+    air_stations: pd.DataFrame,
+    gunb: pd.DataFrame,
+    parks: gpd.GeoDataFrame,
+    bike_paths: gpd.GeoDataFrame,
+    city_boundary: gpd.GeoDataFrame,
+    district_boundaries: gpd.GeoDataFrame,
+    military: gpd.GeoDataFrame,
+    rail_areas: gpd.GeoDataFrame,
+    airport: gpd.GeoDataFrame,
+    city_pois: gpd.GeoDataFrame,
+    noise_overlay_data: object,
+    aq_overlay_data: object,
+    flags: LayerFlags,
+    hour: int,
+    basemap: str,
+    commute_lon: float,
+    commute_lat: float,
+    commute_label: str,
+    recommended_ids: frozenset[str] | None,
+    commute_mode: object | None,
+) -> list[Any]:
+    """Build Explore pydeck layers with session cache (Map + Offer Map)."""
+    listing_fp = (
+        listing_ids_fingerprint(filtered["listing_id"].astype(str).tolist())
+        if not filtered.empty and "listing_id" in filtered.columns
+        else ""
+    )
+    rec_ids = frozenset(str(x) for x in (recommended_ids or ()))
+    cache_key = explore_map_layer_cache_key(
+        listing_fingerprint=listing_fp,
+        flags=flags,
+        hour=hour,
+        basemap=basemap,
+        commute_lon=commute_lon,
+        commute_lat=commute_lat,
+        recommended_ids=rec_ids,
+        focus=None,
+        commute_mode=commute_mode,
+        overlay_counts=_explore_overlay_counts(
+            filtered=filtered,
+            amenities=amenities,
+            shops=shops,
+            stops=stops,
+            hourly=hourly,
+            route_shapes=route_shapes,
+            traffic_sample=traffic_sample,
+            air_stations=air_stations,
+            gunb=gunb,
+            parks=parks,
+            bike_paths=bike_paths,
+            city_boundary=city_boundary,
+            district_boundaries=district_boundaries,
+            military=military,
+            rail_areas=rail_areas,
+            airport=airport,
+            city_pois=city_pois,
+            noise_overlay_data=noise_overlay_data,
+            aq_overlay_data=aq_overlay_data,
+        ),
+    )
+
+    def _build() -> list[Any]:
+        return build_explore_layers(
+            listings=filtered,
+            flags=flags,
+            amenities=amenities,
+            shops=shops,
+            stops=stops,
+            hourly=hourly,
+            route_shapes=route_shapes,
+            traffic_sample=traffic_sample,
+            air_stations=air_stations,
+            gunb=gunb,
+            parks=parks,
+            bike_paths=bike_paths,
+            city_boundary=city_boundary,
+            district_boundaries=district_boundaries,
+            military=military,
+            rail_areas=rail_areas,
+            airport=airport,
+            city_pois=city_pois,
+            noise_overlay=noise_overlay_data,  # type: ignore[arg-type]
+            aq_overlay=aq_overlay_data,  # type: ignore[arg-type]
+            commute_lon=commute_lon,
+            commute_lat=commute_lat,
+            hour=hour,
+            commute_label=commute_label,
+            recommended_ids=recommended_ids,
+            commute_mode=commute_mode,
+        )
+
+    return cached_explore_map_layers(cache_key, _build)
 
 
 _BOARD_COLUMNS: tuple[str, ...] = (
@@ -1265,76 +1450,35 @@ def _tab_map(
             f"{len(recommended_ids)} recommended pin(s) — larger gold-ring markers."
         )
     focus = _render_explore_address_search()
-    rec_ids = recommended_ids or frozenset()
-    listing_fp = (
-        listing_ids_fingerprint(filtered["listing_id"].astype(str).tolist())
-        if not filtered.empty and "listing_id" in filtered.columns
-        else ""
-    )
-    cache_key = explore_map_layer_cache_key(
-        listing_fingerprint=listing_fp,
+    layers = _cached_build_explore_layers(
+        filtered,
+        amenities=amenities,
+        shops=shops,
+        stops=stops,
+        hourly=hourly,
+        route_shapes=route_shapes,
+        traffic_sample=traffic_sample,
+        air_stations=air_stations,
+        gunb=gunb,
+        parks=parks,
+        bike_paths=bike_paths,
+        city_boundary=city_boundary,
+        district_boundaries=district_boundaries,
+        military=military,
+        rail_areas=rail_areas,
+        airport=airport,
+        city_pois=city_pois,
+        noise_overlay_data=noise_overlay_data,
+        aq_overlay_data=aq_overlay_data,
         flags=flags,
         hour=hour,
         basemap=basemap,
         commute_lon=commute_lon,
         commute_lat=commute_lat,
-        recommended_ids=frozenset(str(x) for x in rec_ids),
-        focus=None,
+        commute_label=commute_label,
+        recommended_ids=recommended_ids,
         commute_mode=commute_mode,
-        overlay_counts={
-            "amenities": len(amenities),
-            "shops": len(shops),
-            "stops": len(stops),
-            "hourly": len(hourly),
-            "route_shapes": len(route_shapes),
-            "traffic": len(traffic_sample),
-            "air": len(air_stations),
-            "gunb": len(gunb),
-            "parks": len(parks),
-            "bike_paths": len(bike_paths),
-            "city_boundary": len(city_boundary),
-            "district_boundaries": len(district_boundaries),
-            "military": len(military),
-            "rail_areas": len(rail_areas),
-            "airport": len(airport),
-            "city_pois": len(city_pois),
-            "noise": 0 if noise_overlay_data is None else 1,
-            "aq": 0 if aq_overlay_data is None else 1,
-            "listings": len(filtered),
-        },
     )
-
-    def _build() -> list[Any]:
-        return build_explore_layers(
-            listings=filtered,
-            flags=flags,
-            amenities=amenities,
-            shops=shops,
-            stops=stops,
-            hourly=hourly,
-            route_shapes=route_shapes,
-            traffic_sample=traffic_sample,
-            air_stations=air_stations,
-            gunb=gunb,
-            parks=parks,
-            bike_paths=bike_paths,
-            city_boundary=city_boundary,
-            district_boundaries=district_boundaries,
-            military=military,
-            rail_areas=rail_areas,
-            airport=airport,
-            city_pois=city_pois,
-            noise_overlay=noise_overlay_data,
-            aq_overlay=aq_overlay_data,
-            commute_lon=commute_lon,
-            commute_lat=commute_lat,
-            hour=hour,
-            commute_label=commute_label,
-            recommended_ids=recommended_ids,
-            commute_mode=commute_mode,
-        )
-
-    layers = cached_explore_map_layers(cache_key, _build)
     if focus is not None:
         layers.append(address_search_layer(focus.lon, focus.lat, label=focus.label))
     if not layers:
@@ -1610,7 +1754,7 @@ def _offer_photo_dialog(listing_id: str, photos: list[str]) -> None:
                 st.session_state[idx_key] = wrap_photo_index(idx, n, -1)
                 st.session_state[nav_key] = True
                 st.session_state[open_key] = True
-                st.rerun()
+                st.rerun(scope="fragment")
         with mid:
             st.image(photos[idx], width="stretch")
             st.caption(f"{idx + 1} of {n} photos")
@@ -1619,7 +1763,7 @@ def _offer_photo_dialog(listing_id: str, photos: list[str]) -> None:
                 st.session_state[idx_key] = wrap_photo_index(idx, n, 1)
                 st.session_state[nav_key] = True
                 st.session_state[open_key] = True
-                st.rerun()
+                st.rerun(scope="fragment")
 
     _dialog()
 
@@ -1641,8 +1785,12 @@ def _maybe_open_offer_photo_dialog(
         _offer_photo_dialog(listing_id, photos)
 
 
+@st.fragment  # type: ignore[misc]
 def _render_offer_gallery(row: pd.Series) -> None:
-    """Photo carousel + optional floor-plan images under the gallery."""
+    """Photo carousel + optional floor-plan images under the gallery.
+
+    Fragment-scoped: arrow / lightbox nav avoid a full Explore rerun.
+    """
     photos = image_urls_from_row(row)
     listing_id = str(row.get("listing_id") or "unknown")
     if photos:
@@ -1694,7 +1842,7 @@ def _render_offer_gallery(row: pd.Series) -> None:
                 ):
                     st.session_state[idx_key] = wrap_photo_index(idx, n, -1)
                     st.session_state[nav_key] = True
-                    st.rerun()
+                    st.rerun(scope="fragment")
             with mid:
                 st.image(photos[idx], width="stretch")
                 st.caption(f"{idx + 1} of {n} photos")
@@ -1706,7 +1854,7 @@ def _render_offer_gallery(row: pd.Series) -> None:
                 ):
                     st.session_state[idx_key] = wrap_photo_index(idx, n, 1)
                     st.session_state[nav_key] = True
-                    st.rerun()
+                    st.rerun(scope="fragment")
             open_clicked = st.button(
                 "View full size",
                 key=f"offer_photo_fs_{listing_id}",
@@ -2054,9 +2202,8 @@ def _tab_offer(
                     )
                 else:
                     st.markdown(format_commute_route_markdown(route_plan))
-            layers = build_explore_layers(
-                listings=filtered,
-                flags=flags,
+            layers = _cached_build_explore_layers(
+                filtered,
                 amenities=amenities,
                 shops=shops,
                 stops=stops,
@@ -2073,11 +2220,13 @@ def _tab_offer(
                 rail_areas=rail_areas,
                 airport=airport,
                 city_pois=city_pois,
-                noise_overlay=noise_overlay_data,
-                aq_overlay=aq_overlay_data,
+                noise_overlay_data=noise_overlay_data,
+                aq_overlay_data=aq_overlay_data,
+                flags=flags,
+                hour=hour,
+                basemap=basemap,
                 commute_lon=commute_lon,
                 commute_lat=commute_lat,
-                hour=hour,
                 commute_label=commute_label,
                 recommended_ids=recommended_ids,
                 commute_mode=route_mode,
@@ -2889,12 +3038,16 @@ def render_explore() -> None:
         "commute_lat": float(commute.lat),
         "commute_label": commute.label,
         "commute_mode": coerce_commute_display_mode(app_settings.commute_display_mode),
-        "recommended_ids": _recommended_listing_ids(
-            frame,
-            processed_dir=proc,
-            prefs=prefs,
-            app_settings=app_settings,
-            starred=starred,
+        "recommended_ids": (
+            _recommended_listing_ids(
+                frame,
+                processed_dir=proc,
+                prefs=prefs,
+                app_settings=app_settings,
+                starred=starred,
+            )
+            if explore_needs_recommended_pins(section, offer_subtab)
+            else frozenset()
         ),
     }
     tab_map, tab_spatial, tab_offer, tab_board, tab_news, tab_chat, tab_prefs = st.tabs(
@@ -2903,7 +3056,7 @@ def render_explore() -> None:
         on_change="rerun",
     )
     with tab_map:
-        # Keep pydeck mounted on Offer so pan/zoom/pitch survive Map ↔ Offer.
+        # Only mount pydeck on Map (Offer remount was too slow for photo/AI UX).
         if keep_explore_map_mounted(section):
             if tab_map.open:
                 captions: list[str] = []

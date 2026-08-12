@@ -107,10 +107,13 @@ def test_explore_datasets_needed_offer_skips_gis_on_overview() -> None:
     assert "city_pois" in needed
 
 
-def test_explore_datasets_needed_preserving_map_warms_offer() -> None:
+def test_explore_map_not_mounted_on_offer_for_speed() -> None:
+    """Offer interactions must not remount Explore Map / warm Map GIS."""
     from happy_housing.app.map_layers import (
         explore_datasets_needed_preserving_map,
+        explore_needs_recommended_pins,
         keep_explore_map_mounted,
+        recommended_pins_memo_key,
     )
 
     flags = LayerFlags(gunb=True, city_poi_types=("gym",), military=True)
@@ -119,12 +122,61 @@ def test_explore_datasets_needed_preserving_map_warms_offer() -> None:
         flags=flags,
         offer_subtab="Overview",
     )
-    assert "gunb" in needed
-    assert "city_pois" in needed
-    assert "military" in needed
-    assert keep_explore_map_mounted("Offer") is True
+    assert needed == frozenset()
+    assert keep_explore_map_mounted("Offer") is False
     assert keep_explore_map_mounted("Map") is True
     assert keep_explore_map_mounted("Board") is False
+    assert explore_needs_recommended_pins("Map") is True
+    assert explore_needs_recommended_pins("Offer", "Overview") is False
+    assert explore_needs_recommended_pins("Offer", "Map") is True
+    assert explore_needs_recommended_pins("Board") is False
+    key_a = recommended_pins_memo_key(
+        scored_mtime=1.0,
+        scored_rows=10,
+        prefs_payload={"enabled": False},
+        starred=frozenset({"a"}),
+        top_n=15,
+        demotion_alpha=1.0,
+        w_bargain=0.5,
+        w_commute=0.25,
+        w_transit=0.2,
+        w_overprice=0.15,
+        otodom_pool_default=True,
+        amenity_weights=None,
+        commute_mode="transit",
+    )
+    key_b = recommended_pins_memo_key(
+        scored_mtime=1.0,
+        scored_rows=10,
+        prefs_payload={"enabled": False},
+        starred=frozenset({"a"}),
+        top_n=15,
+        demotion_alpha=1.0,
+        w_bargain=0.5,
+        w_commute=0.25,
+        w_transit=0.2,
+        w_overprice=0.15,
+        otodom_pool_default=True,
+        amenity_weights=None,
+        commute_mode="transit",
+    )
+    key_c = recommended_pins_memo_key(
+        scored_mtime=1.0,
+        scored_rows=10,
+        prefs_payload={"enabled": True},
+        starred=frozenset({"a"}),
+        top_n=15,
+        demotion_alpha=1.0,
+        w_bargain=0.5,
+        w_commute=0.25,
+        w_transit=0.2,
+        w_overprice=0.15,
+        otodom_pool_default=True,
+        amenity_weights=None,
+        commute_mode="transit",
+    )
+    assert key_a == key_b
+    assert key_a != key_c
 
 
 def test_amenity_layers_skips_copy_when_all_toggles_off() -> None:

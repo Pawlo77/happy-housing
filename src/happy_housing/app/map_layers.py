@@ -308,8 +308,65 @@ def explore_datasets_needed(
 
 
 def keep_explore_map_mounted(section: str) -> bool:
-    """Keep Explore Map pydeck mounted on Map/Offer (preserve pan/zoom)."""
-    return str(section or "").strip() in {"Map", "Offer"}
+    """Keep Explore Map pydeck mounted only on the Map tab.
+
+    Offer used to remount Map for camera persistence; that forced full GIS +
+    deck serialize on every Offer interaction. Prefer snappy Offer UX; pan/zoom
+    may reset when returning to Map (stable ``selection_key`` still helps
+    within Map reruns).
+    """
+    return str(section or "").strip() == "Map"
+
+
+def explore_needs_recommended_pins(
+    section: str,
+    offer_subtab: str = "Overview",
+) -> bool:
+    """True when gold-ring recommended pins are drawn this render."""
+    name = str(section or "").strip()
+    if name == "Map":
+        return True
+    return name == "Offer" and str(offer_subtab or "Overview") == "Map"
+
+
+def recommended_pins_memo_key(
+    *,
+    scored_mtime: float,
+    scored_rows: int,
+    prefs_payload: Mapping[str, object],
+    starred: frozenset[str],
+    top_n: int,
+    demotion_alpha: float,
+    w_bargain: float,
+    w_commute: float,
+    w_transit: float,
+    w_overprice: float,
+    otodom_pool_default: bool,
+    amenity_weights: Mapping[str, float] | None,
+    commute_mode: object,
+) -> tuple[object, ...]:
+    """Session memo key for map recommended-pin ids (skip full rescoring)."""
+    weights = tuple(
+        sorted((str(k), float(v)) for k, v in dict(amenity_weights or {}).items())
+    )
+    prefs_items = tuple(
+        sorted((str(k), repr(v)) for k, v in dict(prefs_payload).items())
+    )
+    return (
+        float(scored_mtime),
+        int(scored_rows),
+        prefs_items,
+        tuple(sorted(str(x) for x in starred)),
+        int(top_n),
+        round(float(demotion_alpha), 6),
+        round(float(w_bargain), 6),
+        round(float(w_commute), 6),
+        round(float(w_transit), 6),
+        round(float(w_overprice), 6),
+        bool(otodom_pool_default),
+        weights,
+        str(commute_mode or ""),
+    )
 
 
 def explore_datasets_needed_preserving_map(
@@ -318,21 +375,12 @@ def explore_datasets_needed_preserving_map(
     flags: LayerFlags,
     offer_subtab: str = "Overview",
 ) -> frozenset[str]:
-    """Like ``explore_datasets_needed``, plus Map GIS while Offer is open.
-
-    Offer keeps the Map deck mounted (camera). Without Map datasets the deck
-    would rebuild empty and thrash view state.
-    """
-    needed = set(
-        explore_datasets_needed(
-            section=section,
-            flags=flags,
-            offer_subtab=offer_subtab,
-        )
+    """Alias of ``explore_datasets_needed`` (Map no longer stays mounted on Offer)."""
+    return explore_datasets_needed(
+        section=section,
+        flags=flags,
+        offer_subtab=offer_subtab,
     )
-    if keep_explore_map_mounted(section) and str(section or "").strip() != "Map":
-        needed |= explore_datasets_needed(section="Map", flags=flags)
-    return frozenset(needed)
 
 
 MAX_GUNB_MAP_POINTS = 3000
@@ -340,6 +388,9 @@ MAX_GUNB_MAP_POINTS = 3000
 
 MAX_SHOP_MAP_POINTS = 5000
 """Hard cap for OSM shop markers on the map."""
+
+MAX_TRANSIT_STOP_MAP_POINTS = 2500
+"""Cap transit-network stop markers (full ZTM ~7k bloated pydeck JSON)."""
 
 SHOP_CATEGORY_LABELS: dict[str, str] = {
     "grocery": "Groceries",
@@ -588,36 +639,16 @@ def prepare_listings_for_map(
     out["line_width"] = np.where(out["is_recommended"], 3, 1)
     out["tooltip_name"] = out["listing_id"]
     ppm = pd.to_numeric(out["price_per_m2"], errors="coerce")
-    price = (
-        pd.to_numeric(out["price_pln"], errors="coerce")
-        if "price_pln" in out.columns
-        else pd.Series(np.nan, index=out.index)
-    )
     rooms = (
         pd.to_numeric(out["rooms"], errors="coerce")
         if "rooms" in out.columns
         else pd.Series(np.nan, index=out.index)
     )
-    year = (
-        pd.to_numeric(out["year_built"], errors="coerce")
-        if "year_built" in out.columns
-        else pd.Series(np.nan, index=out.index)
-    )
     commute = commute_series(out, commute_mode)
     commute_word = commute_tooltip_label(commute_mode)
-    model = (
-        pd.to_numeric(out["model_price_per_m2"], errors="coerce")
-        if "model_price_per_m2" in out.columns
-        else pd.Series(np.nan, index=out.index)
-    )
     district = (
         out["district"].astype(str)
         if "district" in out.columns
-        else pd.Series("", index=out.index)
-    )
-    source = (
-        out["source"].astype(str)
-        if "source" in out.columns
         else pd.Series("", index=out.index)
     )
 
@@ -628,33 +659,22 @@ def prepare_listings_for_map(
         return series.map(lambda v: f"{v:+,.0f}{suffix}" if pd.notna(v) else "—")
 
     badge = out["is_recommended"].map(
-        lambda flag: "★ Recommended<br/>" if bool(flag) else ""
+        lambda flag: "★ Recommended · " if bool(flag) else ""
     )
     out["tooltip_detail"] = (
         badge
         + district
         + " · "
-        + source
-        + "<br/>"
-        + "Ask "
         + _fmt_int(ppm, " zł/m²")
         + " · Δ "
-        + _fmt_signed(delta, " zł/m²")
-        + "<br/>"
-        + "Model "
-        + _fmt_int(model, " zł/m²")
-        + " · Total "
-        + _fmt_int(price, " zł")
+        + _fmt_signed(delta)
         + "<br/>"
         + _fmt_int(area, " m²")
         + " · "
-        + rooms.map(lambda v: f"{v:g} rooms" if pd.notna(v) else "— rooms")
-        + " · built "
-        + year.map(lambda v: f"{int(v)}" if pd.notna(v) else "—")
-        + "<br/>"
+        + rooms.map(lambda v: f"{v:g} rm" if pd.notna(v) else "—")
+        + " · "
         + f"{commute_word} "
         + commute.map(lambda v: f"{v:.0f} min" if pd.notna(v) else "—")
-        + "<br/><i>Click pin → Open in Offer below</i>"
     )
     return slim_map_frame(out)
 
@@ -850,12 +870,12 @@ def prepare_transit_paths(
 def prepare_transit_stops_network(
     stops: pd.DataFrame,
     *,
-    max_stops: int = 0,
+    max_stops: int = MAX_TRANSIT_STOP_MAP_POINTS,
 ) -> pd.DataFrame:
     """Slim stop markers for the transit-network overlay.
 
-    ``max_stops`` ≤ 0 keeps every geocoded stop (Warsaw ZTM is ~7k). A positive
-    cap only exists as an escape hatch for huge feeds / message-size limits.
+    Default caps at ``MAX_TRANSIT_STOP_MAP_POINTS`` so pydeck messages stay
+    small. Pass ``max_stops=0`` to keep every geocoded stop.
     """
     if stops.empty:
         return pd.DataFrame()

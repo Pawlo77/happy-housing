@@ -79,9 +79,9 @@ def test_prepare_listings_and_shops_expose_tooltip_fields() -> None:
     assert "radius" in listings.columns
     detail = str(listings.iloc[0]["tooltip_detail"])
     assert "wola" in detail
-    assert "Open in Offer" in detail
     assert "<br/>" in detail
     assert "Transit 32 min" in detail
+    assert "zł/m²" in detail
 
     car = prepare_listings_for_map(
         pd.DataFrame({

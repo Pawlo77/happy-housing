@@ -88,8 +88,10 @@ def test_transit_network_layers_emit_path_and_stops() -> None:
     assert "IconLayer" in types
 
 
-def test_prepare_transit_stops_network_keeps_full_warsaw_scale() -> None:
-    """Do not randomly sample away half the ZTM stop set (~7k)."""
+def test_prepare_transit_stops_network_caps_default() -> None:
+    """Default cap keeps pydeck payloads small; max_stops=0 keeps all."""
+    from happy_housing.app.map_layers import MAX_TRANSIT_STOP_MAP_POINTS
+
     n = 7135
     stops = pd.DataFrame({
         "stop_id": [f"s{i}" for i in range(n)],
@@ -98,5 +100,6 @@ def test_prepare_transit_stops_network_keeps_full_warsaw_scale() -> None:
         "stop_lon": [20.85 + (i // 200) * 0.001 for i in range(n)],
     })
     out = prepare_transit_stops_network(stops)
-    assert len(out) == n
+    assert len(out) == MAX_TRANSIT_STOP_MAP_POINTS
+    assert len(prepare_transit_stops_network(stops, max_stops=0)) == n
     assert set(out.columns) >= {"lat", "lon", "tooltip_name"}
