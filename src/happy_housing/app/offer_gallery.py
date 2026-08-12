@@ -8,6 +8,16 @@ def photo_index_key(listing_id: object) -> str:
     return f"offer_photo_idx_{listing_id}"
 
 
+def photo_select_key(listing_id: object) -> str:
+    """Session-state key for the photo selectbox widget."""
+    return f"offer_photo_sel_{listing_id}"
+
+
+def photo_nav_sync_key(listing_id: object) -> str:
+    """One-shot flag: align selectbox label from index after arrow nav."""
+    return f"offer_photo_nav_{listing_id}"
+
+
 def wrap_photo_index(index: int, n_photos: int, delta: int) -> int:
     """Return a wrapped photo index after adding ``delta``.
 
@@ -33,3 +43,25 @@ def clamp_photo_index(index: int, n_photos: int) -> int:
     if index >= n_photos:
         return n_photos - 1
     return index
+
+
+def resolve_photo_select_label(
+    labels: list[str],
+    *,
+    idx: int,
+    current_label: str | None,
+    sync_from_index: bool,
+) -> str:
+    """Pick selectbox label to set *before* the widget is instantiated.
+
+    Arrow buttons must not write the selectbox key after it exists. They set
+    ``sync_from_index`` for the next run instead.
+    """
+    if not labels:
+        return ""
+    safe_idx = clamp_photo_index(idx, len(labels))
+    if sync_from_index:
+        return labels[safe_idx]
+    if current_label in labels:
+        return str(current_label)
+    return labels[safe_idx]

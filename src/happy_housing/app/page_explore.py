@@ -133,6 +133,9 @@ from happy_housing.app.offer_display import (
 from happy_housing.app.offer_gallery import (
     clamp_photo_index,
     photo_index_key,
+    photo_nav_sync_key,
+    photo_select_key,
+    resolve_photo_select_label,
     wrap_photo_index,
 )
 from happy_housing.app.pref_llm import merge_preferences, translate_preferences_nl
@@ -1515,20 +1518,23 @@ def _render_offer_gallery(row: pd.Series) -> None:
                 _offer_photo_dialog(listing_id, photos)
         else:
             idx_key = photo_index_key(listing_id)
+            sel_key = photo_select_key(listing_id)
+            nav_key = photo_nav_sync_key(listing_id)
             n = len(photos)
             idx = clamp_photo_index(int(st.session_state.get(idx_key, 0)), n)
             st.session_state[idx_key] = idx
             labels = [f"Photo {i + 1} / {n}" for i in range(n)]
-            sel_key = f"offer_photo_sel_{listing_id}"
-            if sel_key not in st.session_state:
-                st.session_state[sel_key] = labels[idx]
-            # Keep selectbox label aligned with arrow index.
-            current_label = st.session_state.get(sel_key)
-            if current_label not in labels:
-                st.session_state[sel_key] = labels[idx]
-            elif labels.index(str(current_label)) != idx:
-                # Prefer selectbox if user changed it this run before arrows.
-                pass
+            sync_from_index = bool(st.session_state.pop(nav_key, False))
+            st.session_state[sel_key] = resolve_photo_select_label(
+                labels,
+                idx=idx,
+                current_label=(
+                    None
+                    if sel_key not in st.session_state
+                    else str(st.session_state.get(sel_key))
+                ),
+                sync_from_index=sync_from_index,
+            )
             pick = st.selectbox(
                 "Photos",
                 labels,
@@ -1545,9 +1551,8 @@ def _render_offer_gallery(row: pd.Series) -> None:
                     key=f"{idx_key}_prev",
                     use_container_width=True,
                 ):
-                    new_idx = wrap_photo_index(idx, n, -1)
-                    st.session_state[idx_key] = new_idx
-                    st.session_state[sel_key] = labels[new_idx]
+                    st.session_state[idx_key] = wrap_photo_index(idx, n, -1)
+                    st.session_state[nav_key] = True
                     st.rerun()
             with mid:
                 st.image(photos[idx], width="stretch")
@@ -1558,9 +1563,8 @@ def _render_offer_gallery(row: pd.Series) -> None:
                     key=f"{idx_key}_next",
                     use_container_width=True,
                 ):
-                    new_idx = wrap_photo_index(idx, n, 1)
-                    st.session_state[idx_key] = new_idx
-                    st.session_state[sel_key] = labels[new_idx]
+                    st.session_state[idx_key] = wrap_photo_index(idx, n, 1)
+                    st.session_state[nav_key] = True
                     st.rerun()
             if st.button("View full size", key=f"offer_photo_fs_{listing_id}"):
                 _offer_photo_dialog(listing_id, photos)
