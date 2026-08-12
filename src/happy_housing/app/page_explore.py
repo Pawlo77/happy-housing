@@ -616,36 +616,30 @@ def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
         help=layer_help("transit_network"),
         key="explore_ly_transit_network",
     )
-    if transit_network:
-        transit_show_metro = st.checkbox(
-            "  Metro lines",
-            value=True,
-            help=layer_help("transit_show_metro"),
-            key="explore_ly_transit_metro",
-        )
-        transit_show_tram = st.checkbox(
-            "  Tram lines",
-            value=True,
-            help=layer_help("transit_show_tram"),
-            key="explore_ly_transit_tram",
-        )
-        transit_show_bus = st.checkbox(
-            "  Bus lines",
-            value=True,
-            help=layer_help("transit_show_bus"),
-            key="explore_ly_transit_bus",
-        )
-        transit_show_rail = st.checkbox(
-            "  Train / rail lines",
-            value=True,
-            help=layer_help("transit_show_rail"),
-            key="explore_ly_transit_rail",
-        )
-    else:
-        transit_show_metro = False
-        transit_show_tram = False
-        transit_show_bus = False
-        transit_show_rail = False
+    transit_show_metro = st.checkbox(
+        "Metro lines",
+        value=True,
+        help=layer_help("transit_show_metro"),
+        key="explore_ly_transit_metro",
+    )
+    transit_show_tram = st.checkbox(
+        "Tram lines",
+        value=True,
+        help=layer_help("transit_show_tram"),
+        key="explore_ly_transit_tram",
+    )
+    transit_show_bus = st.checkbox(
+        "Bus lines",
+        value=True,
+        help=layer_help("transit_show_bus"),
+        key="explore_ly_transit_bus",
+    )
+    transit_show_rail = st.checkbox(
+        "Train / rail lines",
+        value=True,
+        help=layer_help("transit_show_rail"),
+        key="explore_ly_transit_rail",
+    )
     transit_intensity = st.checkbox(
         "Transit intensity (hourly)",
         value=False,
@@ -684,50 +678,42 @@ def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
         help=layer_help("shops"),
         key="explore_ly_shops",
     )
-    if shops_on:
-        shop_show_grocery = st.checkbox(
-            "  Groceries",
-            value=True,
-            help=layer_help("shop_show_grocery"),
-            key="explore_ly_shop_grocery",
-        )
-        shop_show_health_beauty = st.checkbox(
-            "  Health & beauty",
-            value=True,
-            help=layer_help("shop_show_health_beauty"),
-            key="explore_ly_shop_health_beauty",
-        )
-        shop_show_fashion = st.checkbox(
-            "  Fashion",
-            value=True,
-            help=layer_help("shop_show_fashion"),
-            key="explore_ly_shop_fashion",
-        )
-        shop_show_home = st.checkbox(
-            "  Home & electronics",
-            value=True,
-            help=layer_help("shop_show_home"),
-            key="explore_ly_shop_home",
-        )
-        shop_show_mobility = st.checkbox(
-            "  Car & bike",
-            value=True,
-            help=layer_help("shop_show_mobility"),
-            key="explore_ly_shop_mobility",
-        )
-        shop_show_other = st.checkbox(
-            "  Other shops",
-            value=True,
-            help=layer_help("shop_show_other"),
-            key="explore_ly_shop_other",
-        )
-    else:
-        shop_show_grocery = False
-        shop_show_health_beauty = False
-        shop_show_fashion = False
-        shop_show_home = False
-        shop_show_mobility = False
-        shop_show_other = False
+    shop_show_grocery = st.checkbox(
+        "Groceries",
+        value=True,
+        help=layer_help("shop_show_grocery"),
+        key="explore_ly_shop_grocery",
+    )
+    shop_show_health_beauty = st.checkbox(
+        "Health & beauty",
+        value=True,
+        help=layer_help("shop_show_health_beauty"),
+        key="explore_ly_shop_health_beauty",
+    )
+    shop_show_fashion = st.checkbox(
+        "Fashion",
+        value=True,
+        help=layer_help("shop_show_fashion"),
+        key="explore_ly_shop_fashion",
+    )
+    shop_show_home = st.checkbox(
+        "Home & electronics",
+        value=True,
+        help=layer_help("shop_show_home"),
+        key="explore_ly_shop_home",
+    )
+    shop_show_mobility = st.checkbox(
+        "Car & bike",
+        value=True,
+        help=layer_help("shop_show_mobility"),
+        key="explore_ly_shop_mobility",
+    )
+    shop_show_other = st.checkbox(
+        "Other shops",
+        value=True,
+        help=layer_help("shop_show_other"),
+        key="explore_ly_shop_other",
+    )
 
     st.markdown("##### Public services")
     hospitals = st.checkbox(
