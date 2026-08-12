@@ -10,18 +10,18 @@ def test_explore_sidebar_tabs_are_filters_then_map_layers() -> None:
 
 
 def test_map_layer_transit_and_shop_toggles_always_declared() -> None:
-    """Sub-layer checkboxes stay visible (not gated behind parent if-blocks)."""
+    """Mode / shop category toggles are first-class (no master parent checkbox)."""
     import inspect
 
     from happy_housing.app import page_explore
 
     source = inspect.getsource(page_explore._sidebar_map_controls)
-    assert "if transit_network:" not in source
-    assert "if shops_on:" not in source
+    assert "Transit lines & stops" not in source
+    assert 'st.checkbox(\n        "Shops"' not in source
+    assert 'key="explore_ly_transit_network"' not in source
+    assert 'key="explore_ly_shops"' not in source
     assert '"Metro lines"' in source
     assert '"Groceries"' in source
-    assert '"  Metro lines"' not in source
-    assert '"  Groceries"' not in source
 
 
 def test_explore_filters_grouped_with_section_headers() -> None:

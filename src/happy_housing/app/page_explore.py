@@ -733,6 +733,30 @@ def _sidebar_map_poi_multiselect(
 
 def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
     """Map basemap, hour-of-day, and per-layer toggles; call inside Map layers tab."""
+    # Drop legacy master toggles; parent-off meant children were inactive.
+    if "explore_ly_shops" in st.session_state:
+        master_shops = bool(st.session_state.pop("explore_ly_shops"))
+        if not master_shops:
+            for key in (
+                "explore_ly_shop_grocery",
+                "explore_ly_shop_health_beauty",
+                "explore_ly_shop_fashion",
+                "explore_ly_shop_home",
+                "explore_ly_shop_mobility",
+                "explore_ly_shop_other",
+            ):
+                st.session_state[key] = False
+    if "explore_ly_transit_network" in st.session_state:
+        master_transit = bool(st.session_state.pop("explore_ly_transit_network"))
+        if not master_transit:
+            for key in (
+                "explore_ly_transit_metro",
+                "explore_ly_transit_tram",
+                "explore_ly_transit_bus",
+                "explore_ly_transit_rail",
+            ):
+                st.session_state[key] = False
+
     _apply_pending_map_view_preset()
     _render_map_view_presets_ui()
     basemap = (
@@ -788,33 +812,27 @@ def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
             key="explore_hour",
         )
     )
-    transit_network = st.checkbox(
-        "Transit lines & stops",
-        value=False,
-        help=layer_help("transit_network"),
-        key="explore_ly_transit_network",
-    )
     transit_show_metro = st.checkbox(
         "Metro lines",
-        value=True,
+        value=False,
         help=layer_help("transit_show_metro"),
         key="explore_ly_transit_metro",
     )
     transit_show_tram = st.checkbox(
         "Tram lines",
-        value=True,
+        value=False,
         help=layer_help("transit_show_tram"),
         key="explore_ly_transit_tram",
     )
     transit_show_bus = st.checkbox(
         "Bus lines",
-        value=True,
+        value=False,
         help=layer_help("transit_show_bus"),
         key="explore_ly_transit_bus",
     )
     transit_show_rail = st.checkbox(
         "Train / rail lines",
-        value=True,
+        value=False,
         help=layer_help("transit_show_rail"),
         key="explore_ly_transit_rail",
     )
@@ -850,45 +868,39 @@ def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
     )
 
     st.markdown("##### Shopping")
-    shops_on = st.checkbox(
-        "Shops",
-        value=False,
-        help=layer_help("shops"),
-        key="explore_ly_shops",
-    )
     shop_show_grocery = st.checkbox(
         "Groceries",
-        value=True,
+        value=False,
         help=layer_help("shop_show_grocery"),
         key="explore_ly_shop_grocery",
     )
     shop_show_health_beauty = st.checkbox(
         "Health & beauty",
-        value=True,
+        value=False,
         help=layer_help("shop_show_health_beauty"),
         key="explore_ly_shop_health_beauty",
     )
     shop_show_fashion = st.checkbox(
         "Fashion",
-        value=True,
+        value=False,
         help=layer_help("shop_show_fashion"),
         key="explore_ly_shop_fashion",
     )
     shop_show_home = st.checkbox(
         "Home & electronics",
-        value=True,
+        value=False,
         help=layer_help("shop_show_home"),
         key="explore_ly_shop_home",
     )
     shop_show_mobility = st.checkbox(
         "Car & bike",
-        value=True,
+        value=False,
         help=layer_help("shop_show_mobility"),
         key="explore_ly_shop_mobility",
     )
     shop_show_other = st.checkbox(
         "Other shops",
-        value=True,
+        value=False,
         help=layer_help("shop_show_other"),
         key="explore_ly_shop_other",
     )
@@ -1009,14 +1021,12 @@ def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
         rail_areas=rail_areas,
         airport=airport,
         transit_intensity=transit_intensity,
-        transit_network=transit_network,
         transit_show_metro=transit_show_metro,
         transit_show_tram=transit_show_tram,
         transit_show_bus=transit_show_bus,
         transit_show_rail=transit_show_rail,
         traffic=traffic,
         bike_paths=bike_paths,
-        shops=shops_on,
         shop_show_grocery=shop_show_grocery,
         shop_show_health_beauty=shop_show_health_beauty,
         shop_show_fashion=shop_show_fashion,

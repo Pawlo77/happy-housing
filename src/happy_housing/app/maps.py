@@ -1125,7 +1125,7 @@ def build_explore_layers(
             layers.append(bike)
     if flags.transit_intensity:
         layers.extend(transit_intensity_layers(stops, hourly, hour=hour))
-    if flags.transit_network:
+    if flags.any_transit_network():
         modes: set[str] = set()
         if flags.transit_show_metro:
             modes.add("metro")
@@ -1136,7 +1136,7 @@ def build_explore_layers(
         if flags.transit_show_rail:
             modes.add("rail")
         layers.extend(transit_network_layers(route_shapes, stops, modes=modes))
-    if flags.shops:
+    if flags.any_shops():
         layers.extend(
             shops_layers(
                 shops,

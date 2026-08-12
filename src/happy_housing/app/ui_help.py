@@ -35,29 +35,19 @@ LAYER_HELP: dict[str, str] = {
         "Continuous city-wide GTFS departure field for the sidebar clock hour "
         "(BitmapLayer, same style as noise / AQ). Busy stop clusters glow "
         "warmer; slide the hour to see service rise and fall. Shows popularity, "
-        "not the physical line map (use Transit lines & stops for that)."
+        "not the physical line map (use Metro / Tram / Bus / Rail toggles)."
     ),
-    "transit_network": (
-        "Turn on to draw GTFS route polylines + stops. Then pick modes below: "
-        "metro red · tram dark red · bus blue · rail green. "
+    "transit_show_metro": (
+        "Draw metro routes + stops (red). Warsaw M1/M2 from GTFS route_type=1. "
         "Strong transit access raises livability; dist_transit_stop_m enters "
         "the model."
     ),
-    "transit_show_metro": (
-        "Draw metro routes (red). Requires Transit lines & stops. "
-        "Warsaw M1/M2 from GTFS route_type=1."
-    ),
-    "transit_show_tram": (
-        "Draw tram routes (dark red). Requires Transit lines & stops. "
-        "GTFS route_type=0."
-    ),
+    "transit_show_tram": ("Draw tram routes + stops (dark red). GTFS route_type=0."),
     "transit_show_bus": (
-        "Draw bus routes (blue). Requires Transit lines & stops. "
-        "Densest layer — simplify/sample for map size."
+        "Draw bus routes + stops (blue). Densest layer — simplify/sample for map size."
     ),
     "transit_show_rail": (
-        "Draw rail / SKM-style routes (green). Requires Transit lines & stops. "
-        "GTFS route_type=2."
+        "Draw rail / SKM-style routes + stops (green). GTFS route_type=2."
     ),
     "traffic": (
         "Continuous diurnal street-activity field along densified OSM drive "
@@ -71,26 +61,27 @@ LAYER_HELP: dict[str, str] = {
         "bike_path_coverage_m (metres of path within the Admin coverage "
         "radius). Prefs can cap max distance to the nearest path."
     ),
-    "shops": (
-        "OpenStreetMap retail / shop POIs (full shop=* set). "
-        "Turn on, then pick subtypes below (groceries, fashion, …). "
-        "Nearby daily shopping raises convenience; shops are map context, "
-        "not a trained distance feature yet."
-    ),
     "shop_show_grocery": (
-        "Supermarkets, convenience, bakeries, greengrocers, alcohol, etc. "
-        "Requires Shops."
+        "OSM groceries: supermarket, convenience, bakery, greengrocer, "
+        "alcohol, etc. Map context for daily shopping convenience."
     ),
     "shop_show_health_beauty": (
-        "Chemists, beauty, hairdressers, opticians, laundry. Requires Shops."
+        "OSM chemists, beauty, hairdressers, opticians, laundry. Map context "
+        "for neighbourhood services."
     ),
-    "shop_show_fashion": ("Clothes, shoes, jewelry, bags, tailor. Requires Shops."),
+    "shop_show_fashion": (
+        "OSM clothes, shoes, jewelry, bags, tailor. Map context for retail mix."
+    ),
     "shop_show_home": (
-        "Furniture, electronics, phones, DIY / hardware, housewares. Requires Shops."
+        "OSM furniture, electronics, phones, DIY / hardware, housewares. "
+        "Map context for home retail."
     ),
-    "shop_show_mobility": ("Car dealers / repair, bike shops, tyres. Requires Shops."),
+    "shop_show_mobility": (
+        "OSM car dealers / repair, bike shops, tyres. Map context for mobility retail."
+    ),
     "shop_show_other": (
-        "Remaining shop=* tags (florists, vacant, specialty, …). Requires Shops."
+        "Remaining OSM shop=* tags (florists, vacant, specialty, …). Map "
+        "context for other retail."
     ),
     "hospitals": (
         "OSM hospitals. Closer emergency / specialist care improves safety "

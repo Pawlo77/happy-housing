@@ -79,9 +79,8 @@ def test_shops_layers_emits_one_layer_per_enabled_category() -> None:
     assert "shops-health_beauty" not in ids
 
 
-def test_explore_datasets_needed_shops_master_still_loads() -> None:
+def test_explore_datasets_needed_shops_from_subcategories() -> None:
     flags = LayerFlags(
-        shops=True,
         shop_show_grocery=True,
         shop_show_fashion=False,
         city_boundary=False,
@@ -92,3 +91,21 @@ def test_explore_datasets_needed_shops_master_still_loads() -> None:
     )
     needed = explore_datasets_needed(section="Map", flags=flags)
     assert "shops" in needed
+    assert flags.any_shops() is True
+    assert LayerFlags().any_shops() is False
+
+
+def test_explore_datasets_needed_transit_from_modes() -> None:
+    flags = LayerFlags(
+        transit_show_metro=True,
+        city_boundary=False,
+        military=False,
+        rail_areas=False,
+        airport=False,
+        noise_overlay="off",
+    )
+    needed = explore_datasets_needed(section="Map", flags=flags)
+    assert "stops" in needed
+    assert "route_shapes" in needed
+    assert flags.any_transit_network() is True
+    assert LayerFlags().any_transit_network() is False

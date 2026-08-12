@@ -145,5 +145,8 @@ def test_layer_flags_default_offers_on() -> None:
     assert flags.rail_areas is True
     assert flags.airport is True
     assert flags.transit_intensity is False
-    assert flags.transit_network is False
+    assert flags.transit_show_metro is False
+    assert flags.shop_show_grocery is False
     assert flags.traffic is False
+    assert flags.any_transit_network() is False
+    assert flags.any_shops() is False

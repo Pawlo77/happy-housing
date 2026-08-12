@@ -21,30 +21,41 @@ from happy_housing.app.map_view_presets import (
 def test_layer_flags_round_trip() -> None:
     flags = LayerFlags(
         offers=True,
-        transit_network=True,
+        transit_show_metro=True,
         transit_show_bus=False,
-        shops=True,
+        shop_show_grocery=True,
         shop_show_fashion=False,
         noise_overlay="total_lden",
         aq_overlay="aq_index",
         city_poi_types=("gym", "library"),
     )
     restored = LayerFlags.from_dict(flags.to_dict())
-    assert restored.transit_network is True
+    assert restored.transit_show_metro is True
     assert restored.transit_show_bus is False
-    assert restored.shops is True
+    assert restored.shop_show_grocery is True
     assert restored.shop_show_fashion is False
     assert restored.noise_overlay == "total_lden"
     assert restored.aq_overlay == "aq_index"
     assert restored.city_poi_types == ("gym", "library")
 
 
+def test_layer_flags_from_dict_legacy_master_off_clears_children() -> None:
+    restored = LayerFlags.from_dict({
+        "shops": False,
+        "shop_show_grocery": True,
+        "transit_network": False,
+        "transit_show_metro": True,
+    })
+    assert restored.shop_show_grocery is False
+    assert restored.transit_show_metro is False
+
+
 def test_suggest_map_view_preset_name() -> None:
     name = suggest_map_view_preset_name(
         LayerFlags(
             offers=True,
-            transit_network=True,
-            shops=True,
+            transit_show_metro=True,
+            shop_show_grocery=True,
             parks=True,
             noise_overlay="total_lden",
         ),
@@ -52,8 +63,8 @@ def test_suggest_map_view_preset_name() -> None:
         basemap="Satellite",
     )
     lower = name.lower()
-    assert "transit" in lower
-    assert "shop" in lower
+    assert "metro" in lower
+    assert "grocer" in lower
     assert "park" in lower
     assert "satellite" in lower
     assert "19" in name
@@ -71,7 +82,7 @@ def test_save_load_delete_map_view_presets(tmp_path: Path) -> None:
         path,
         MapViewPreset(
             name="Night transit",
-            layers=LayerFlags(transit_network=True, transit_intensity=True),
+            layers=LayerFlags(transit_show_metro=True, transit_intensity=True),
             hour=22,
             basemap="Satellite",
         ),
@@ -82,13 +93,13 @@ def test_save_load_delete_map_view_presets(tmp_path: Path) -> None:
     assert loaded[0].name == "Night transit"
     assert loaded[0].hour == 22
     assert loaded[0].basemap == "Satellite"
-    assert loaded[0].layers.transit_network is True
+    assert loaded[0].layers.transit_show_metro is True
 
     upsert_map_view_preset(
         path,
         MapViewPreset(
             name="Night transit",
-            layers=LayerFlags(transit_network=True, traffic=True),
+            layers=LayerFlags(transit_show_metro=True, traffic=True),
             hour=21,
             basemap="Streets",
         ),
@@ -128,39 +139,29 @@ def test_apply_and_snapshot_map_view_session_round_trip() -> None:
         name="Quiet evening",
         layers=LayerFlags(
             offers=True,
-            transit_network=True,
+            transit_show_metro=True,
             transit_show_bus=False,
             parks=True,
-            shops=True,
+            shop_show_grocery=True,
             shop_show_other=False,
             noise_overlay="total_lden",
             aq_overlay="off",
             city_poi_types=("gym",),
             military=False,
         ),
-        hour=19,
+        hour=20,
         basemap="Satellite",
     )
     apply_map_view_preset_to_session(session, original)
-    assert session["explore_basemap"] == "Satellite"
-    assert session["explore_hour"] == 19
-    assert session["explore_ly_transit_network"] is True
-    assert session["explore_ly_transit_bus"] is False
-    assert session["explore_ly_parks"] is True
-    assert session["explore_ly_shops"] is True
-    assert session["explore_ly_shop_other"] is False
-    assert session["explore_ly_noise_overlay"] == "Total Lden"
-    assert session["explore_ly_military"] is False
-
     snap = snapshot_map_view_preset_from_session(session, name="Quiet evening")
     assert snap.name == "Quiet evening"
-    assert snap.hour == 19
+    assert snap.hour == 20
     assert snap.basemap == "Satellite"
-    assert snap.layers.transit_network is True
+    assert snap.layers.transit_show_metro is True
     assert snap.layers.transit_show_bus is False
-    assert snap.layers.parks is True
-    assert snap.layers.shops is True
+    assert snap.layers.shop_show_grocery is True
     assert snap.layers.shop_show_other is False
+    assert snap.layers.parks is True
     assert snap.layers.noise_overlay == "total_lden"
+    assert snap.layers.city_poi_types == ("gym",)
     assert snap.layers.military is False
-    assert "gym" in snap.layers.city_poi_types

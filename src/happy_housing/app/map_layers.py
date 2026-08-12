@@ -34,7 +34,6 @@ _LAYER_BOOL_FIELDS: frozenset[str] = frozenset({
     "police",
     "charging_stations",
     "gas_stations",
-    "shops",
     "shop_show_grocery",
     "shop_show_health_beauty",
     "shop_show_fashion",
@@ -42,7 +41,6 @@ _LAYER_BOOL_FIELDS: frozenset[str] = frozenset({
     "shop_show_mobility",
     "shop_show_other",
     "transit_intensity",
-    "transit_network",
     "transit_show_metro",
     "transit_show_tram",
     "transit_show_bus",
@@ -60,6 +58,24 @@ _LAYER_BOOL_FIELDS: frozenset[str] = frozenset({
     "commute_target",
 })
 """Boolean fields on ``LayerFlags``."""
+
+_SHOP_SHOW_FIELDS: tuple[str, ...] = (
+    "shop_show_grocery",
+    "shop_show_health_beauty",
+    "shop_show_fashion",
+    "shop_show_home",
+    "shop_show_mobility",
+    "shop_show_other",
+)
+"""Shop subcategory toggles (no master Shops flag)."""
+
+_TRANSIT_SHOW_FIELDS: tuple[str, ...] = (
+    "transit_show_metro",
+    "transit_show_tram",
+    "transit_show_bus",
+    "transit_show_rail",
+)
+"""Transit mode toggles (no master Transit lines flag)."""
 
 
 def listing_delta_rgba(delta_zl_m2: float) -> tuple[int, int, int, int]:
@@ -119,32 +135,28 @@ class LayerFlags:
     """OSM EV charging stations."""
     gas_stations: bool = False
     """OSM fuel / petrol stations."""
-    shops: bool = False
-    """OSM retail / supermarket points."""
-    shop_show_grocery: bool = True
-    """Include grocery / food shops when Shops is on."""
-    shop_show_health_beauty: bool = True
-    """Include chemist / beauty / salon shops when Shops is on."""
-    shop_show_fashion: bool = True
-    """Include clothes / shoes / jewelry when Shops is on."""
-    shop_show_home: bool = True
-    """Include furniture / electronics / DIY when Shops is on."""
-    shop_show_mobility: bool = True
-    """Include car / bike shops when Shops is on."""
-    shop_show_other: bool = True
-    """Include remaining shop=* tags when Shops is on."""
+    shop_show_grocery: bool = False
+    """OSM grocery / food shop markers."""
+    shop_show_health_beauty: bool = False
+    """OSM chemist / beauty / salon shop markers."""
+    shop_show_fashion: bool = False
+    """OSM clothes / shoes / jewelry markers."""
+    shop_show_home: bool = False
+    """OSM furniture / electronics / DIY markers."""
+    shop_show_mobility: bool = False
+    """OSM car / bike shop markers."""
+    shop_show_other: bool = False
+    """Remaining OSM shop=* markers."""
     transit_intensity: bool = False
     """GTFS stop-hour departure heatmap (popularity)."""
-    transit_network: bool = False
-    """GTFS route polylines + stops (metro/tram/bus/rail)."""
-    transit_show_metro: bool = True
-    """Include metro lines when network is on."""
-    transit_show_tram: bool = True
-    """Include tram lines when network is on."""
-    transit_show_bus: bool = True
-    """Include bus lines when network is on."""
-    transit_show_rail: bool = True
-    """Include rail / SKM-style lines when network is on."""
+    transit_show_metro: bool = False
+    """GTFS metro route polylines + stops."""
+    transit_show_tram: bool = False
+    """GTFS tram route polylines + stops."""
+    transit_show_bus: bool = False
+    """GTFS bus route polylines + stops."""
+    transit_show_rail: bool = False
+    """GTFS rail / SKM-style route polylines + stops."""
     traffic: bool = False
     """Road-activity heatmap proxy for the selected hour."""
     bike_paths: bool = False
@@ -170,6 +182,14 @@ class LayerFlags:
     commute_target: bool = False
     """Admin-configured commute destination pin."""
 
+    def any_shops(self) -> bool:
+        """True when any shop subcategory overlay is enabled."""
+        return any(bool(getattr(self, name)) for name in _SHOP_SHOW_FIELDS)
+
+    def any_transit_network(self) -> bool:
+        """True when any transit mode overlay is enabled."""
+        return any(bool(getattr(self, name)) for name in _TRANSIT_SHOW_FIELDS)
+
     def to_dict(self) -> dict[str, object]:
         """JSON-serializable payload for map-view presets."""
         payload = asdict(self)
@@ -188,6 +208,13 @@ class LayerFlags:
             if name not in known:
                 continue
             data[name] = value
+        # Legacy master toggles: parent off forced children off in the old UI.
+        if "shops" in payload and not bool(payload.get("shops")):
+            for name in _SHOP_SHOW_FIELDS:
+                data[name] = False
+        if "transit_network" in payload and not bool(payload.get("transit_network")):
+            for name in _TRANSIT_SHOW_FIELDS:
+                data[name] = False
         if "city_poi_types" in data:
             raw = data["city_poi_types"]
             if isinstance(raw, (list, tuple)):
@@ -259,11 +286,11 @@ def explore_datasets_needed(
         needed.add("amenities")
     if flags.charging_stations or flags.gas_stations:
         needed.add("amenities")
-    if flags.shops:
+    if flags.any_shops():
         needed.add("shops")
     if flags.transit_intensity:
         needed.update({"stops", "hourly"})
-    if flags.transit_network:
+    if flags.any_transit_network():
         needed.update({"stops", "route_shapes"})
     if flags.traffic:
         needed.add("traffic")
