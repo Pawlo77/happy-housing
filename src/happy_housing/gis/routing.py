@@ -28,6 +28,7 @@ def _osrm_table_chunk(
     *,
     base_url: str,
     timeout_s: float,
+    profile: str = "driving",
 ) -> np.ndarray | None:
     """Single OSRM Table request for one origin chunk."""
     if not origins:
@@ -36,8 +37,9 @@ def _osrm_table_chunk(
     coord_str = ";".join(f"{lon},{lat}" for lon, lat in all_points)
     dest_index = len(all_points) - 1
     sources = ";".join(str(i) for i in range(len(origins)))
+    profile_key = str(profile or "driving").strip() or "driving"
     url = (
-        f"{base_url.rstrip('/')}/table/v1/driving/{coord_str}"
+        f"{base_url.rstrip('/')}/table/v1/{profile_key}/{coord_str}"
         f"?sources={sources}&destinations={dest_index}"
     )
     try:
@@ -49,7 +51,11 @@ def _osrm_table_chunk(
             return None
         return np.array([row[0] if row else np.nan for row in durations], dtype=float)
     except Exception as exc:
-        logger.warning("OSRM unavailable (%s); using distance proxy", exc)
+        logger.warning(
+            "OSRM unavailable (%s profile=%s); using distance proxy",
+            exc,
+            profile_key,
+        )
         return None
 
 
@@ -58,6 +64,7 @@ def osrm_table_durations_seconds(
     destination: tuple[float, float],
     base_url: str = "http://127.0.0.1:5001",
     timeout_s: float = 30.0,
+    profile: str = "driving",
 ) -> np.ndarray | None:
     """Query OSRM Table API for durations from origins to one destination.
 
@@ -69,6 +76,7 @@ def osrm_table_durations_seconds(
         destination: ``(lon, lat)`` commute target.
         base_url: Local OSRM HTTP root.
         timeout_s: Request timeout per chunk.
+        profile: OSRM profile segment (``driving`` / ``bike`` / ``foot``).
 
     Returns:
         Durations in seconds, or ``None`` if OSRM is unavailable.
@@ -79,7 +87,11 @@ def osrm_table_durations_seconds(
     chunk = max(1, int(OSRM_CHUNK_SIZE))
     if len(coords) <= chunk:
         return _osrm_table_chunk(
-            coords, destination, base_url=base_url, timeout_s=timeout_s
+            coords,
+            destination,
+            base_url=base_url,
+            timeout_s=timeout_s,
+            profile=profile,
         )
 
     slices = [coords[i : i + chunk] for i in range(0, len(coords), chunk)]
@@ -90,7 +102,11 @@ def osrm_table_durations_seconds(
         idx: int, batch: Sequence[tuple[float, float]]
     ) -> tuple[int, np.ndarray | None]:
         return idx, _osrm_table_chunk(
-            batch, destination, base_url=base_url, timeout_s=timeout_s
+            batch,
+            destination,
+            base_url=base_url,
+            timeout_s=timeout_s,
+            profile=profile,
         )
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
@@ -115,17 +131,25 @@ def attach_commute_minutes(
     distance_col: str = "dist_daszynskiego_m",
     out_col: str = "commute_min",
     require_osrm: bool = False,
+    profile: str = "driving",
+    proxy_speed_kmh: float = 30.0,
 ) -> pd.DataFrame:
-    """Add peak-commute minutes via OSRM or 30 km/h distance proxy.
+    """Add commute minutes via OSRM Table or a constant-speed distance proxy.
 
     Args:
         require_osrm: When true, raise if the Table API is unreachable instead
-            of silently filling the 30 km/h distance proxy.
+            of silently filling the distance proxy.
+        profile: OSRM routing profile (``driving``, ``bike``, ``foot``).
+        proxy_speed_kmh: Assumed urban speed when OSRM is down (car ≈ 30,
+            bike ≈ 15, walk ≈ 5).
     """
     out = frame.copy()
     origins = list(zip(out["lon"].astype(float), out["lat"].astype(float), strict=True))
     durations = osrm_table_durations_seconds(
-        origins, (dest_lon, dest_lat), base_url=osrm_url
+        origins,
+        (dest_lon, dest_lat),
+        base_url=osrm_url,
+        profile=profile,
     )
     if durations is not None and len(durations) == len(out):
         out[out_col] = durations / 60.0
@@ -133,13 +157,72 @@ def attach_commute_minutes(
     if require_osrm:
         raise RuntimeError(
             f"OSRM required but unavailable at {osrm_url!r} "
-            "(macOS AirPlay often occupies :5000 — use host port 5001)"
+            f"(profile={profile!r}; macOS AirPlay often occupies :5000 — "
+            "use host port 5001)"
         )
+    speed = float(proxy_speed_kmh) if float(proxy_speed_kmh) > 0 else 30.0
     if distance_col in out.columns:
-        # Assume ~30 km/h average urban speed.
-        out[out_col] = (out[distance_col].astype(float) / 1000.0) / 30.0 * 60.0
+        out[out_col] = (out[distance_col].astype(float) / 1000.0) / speed * 60.0
     else:
         out[out_col] = np.nan
+    return out
+
+
+def attach_active_mode_commutes(
+    frame: pd.DataFrame,
+    *,
+    dest_lon: float,
+    dest_lat: float,
+    osrm_url: str,
+    require_osrm: bool,
+    use_otp_transit: bool,
+    otp_url: str,
+) -> pd.DataFrame:
+    """Fill car / transit / bike / walk commute columns for one destination.
+
+    Car uses OSRM ``driving`` (``commute_min``). Bike / walk use OSRM
+    ``bike`` / ``foot`` when those graphs exist; otherwise speed proxies.
+    Transit uses OTP when enabled.
+    """
+    out = attach_commute_minutes(
+        frame,
+        dest_lon=dest_lon,
+        dest_lat=dest_lat,
+        osrm_url=osrm_url,
+        require_osrm=require_osrm,
+        profile="driving",
+        out_col="commute_min",
+        proxy_speed_kmh=30.0,
+    )
+    out = attach_commute_minutes(
+        out,
+        dest_lon=dest_lon,
+        dest_lat=dest_lat,
+        osrm_url=osrm_url,
+        require_osrm=False,
+        profile="bike",
+        out_col="bike_commute_min",
+        proxy_speed_kmh=15.0,
+    )
+    out = attach_commute_minutes(
+        out,
+        dest_lon=dest_lon,
+        dest_lat=dest_lat,
+        osrm_url=osrm_url,
+        require_osrm=False,
+        profile="foot",
+        out_col="walk_commute_min",
+        proxy_speed_kmh=5.0,
+    )
+    if use_otp_transit:
+        out = attach_transit_commute_minutes(
+            out,
+            dest_lon=dest_lon,
+            dest_lat=dest_lat,
+            otp_url=otp_url,
+        )
+    elif "transit_commute_min" not in out.columns:
+        out["transit_commute_min"] = float("nan")
     return out
 
 

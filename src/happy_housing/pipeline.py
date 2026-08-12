@@ -63,10 +63,7 @@ from happy_housing.gis.gios_aq_field import (
     fetch_gios_aq_field_rasters,
 )
 from happy_housing.gis.location_fix import snap_listings_out_of_parks
-from happy_housing.gis.routing import (
-    attach_commute_minutes,
-    attach_transit_commute_minutes,
-)
+from happy_housing.gis.routing import attach_active_mode_commutes
 from happy_housing.gis.street_frontage import attach_street_frontage_hints
 from happy_housing.gis.traffic import fetch_traffic_road_sample
 from happy_housing.gis.warsaw_noise import (
@@ -613,22 +610,15 @@ def run_pipeline(
                 max_llm_calls=cap,
                 lm_workers=int(app_settings.extract_lm_workers),
             )
-        train_frame = attach_commute_minutes(
+        train_frame = attach_active_mode_commutes(
             train_frame,
             dest_lon=commute.lon,
             dest_lat=commute.lat,
             osrm_url=config.routing.osrm_url,
             require_osrm=bool(config.routing.require_osrm),
+            use_otp_transit=bool(config.routing.use_otp_transit),
+            otp_url=config.routing.otp_url,
         )
-        if config.routing.use_otp_transit:
-            train_frame = attach_transit_commute_minutes(
-                train_frame,
-                dest_lon=commute.lon,
-                dest_lat=commute.lat,
-                otp_url=config.routing.otp_url,
-            )
-        if "transit_commute_min" not in train_frame.columns:
-            train_frame["transit_commute_min"] = float("nan")
         train_frame = attach_photo_features(
             train_frame,
             max_photos=int(app_settings.photo_cv_max_photos),
@@ -778,6 +768,7 @@ def run_pipeline(
             w_transit=float(app_settings.recommender_w_transit),
             w_overprice=float(app_settings.recommender_w_overprice),
             otodom_pool_default=bool(app_settings.recommender_otodom_pool_default),
+            commute_mode=app_settings.commute_display_mode,
         )
         manifest.mark_and_save("recommender", rec_fp)
 

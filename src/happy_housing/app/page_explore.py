@@ -40,6 +40,11 @@ from happy_housing.app.charts import (
     diverging_bar_chart,
 )
 from happy_housing.app.chat_ui import render_assistant_popover, render_assistant_tab
+from happy_housing.app.commute_modes import (
+    coerce_commute_display_mode,
+    commute_series,
+    commute_tooltip_label,
+)
 from happy_housing.app.commute_target import resolve_commute_target
 from happy_housing.app.data import (
     load_airport_areas,
@@ -246,6 +251,7 @@ def _refresh_recommender_after_feedback(
         w_transit=float(app_settings.recommender_w_transit),
         w_overprice=float(app_settings.recommender_w_overprice),
         otodom_pool_default=bool(app_settings.recommender_otodom_pool_default),
+        commute_mode=app_settings.commute_display_mode,
     )
     st.session_state.pop(NEWS_REC_IDS_KEY, None)
 
@@ -275,6 +281,7 @@ def _recommended_listing_ids(
         w_overprice=float(app_settings.recommender_w_overprice),
         otodom_pool_default=bool(app_settings.recommender_otodom_pool_default),
         exclude_ids=starred,
+        commute_mode=app_settings.commute_display_mode,
     )
     if top.empty:
         return frozenset()
@@ -1212,6 +1219,7 @@ def _tab_map(
     commute_lat: float,
     commute_label: str = "Commute target",
     recommended_ids: frozenset[str] | None = None,
+    commute_mode: object | None = None,
 ) -> None:
     """Market map with toggleable livability overlays.
 
@@ -1239,6 +1247,7 @@ def _tab_map(
         commute_lat=commute_lat,
         recommended_ids=frozenset(str(x) for x in rec_ids),
         focus=None,
+        commute_mode=commute_mode,
         overlay_counts={
             "amenities": len(amenities),
             "shops": len(shops),
@@ -1289,6 +1298,7 @@ def _tab_map(
             hour=hour,
             commute_label=commute_label,
             recommended_ids=recommended_ids,
+            commute_mode=commute_mode,
         )
 
     layers = cached_explore_map_layers(cache_key, _build)
@@ -1337,11 +1347,13 @@ def _tab_map(
     rooms = pd.to_numeric(row.get("rooms"), errors="coerce")
     c5.metric("Rooms", f"{rooms:g}" if pd.notna(rooms) else "—")
     price = pd.to_numeric(row.get("price_pln"), errors="coerce")
-    commute = pd.to_numeric(row.get("commute_min"), errors="coerce")
+    commute = float(commute_series(hit, commute_mode).iloc[0])
+    commute_word = commute_tooltip_label(commute_mode).casefold()
     model = pd.to_numeric(row.get("model_price_per_m2"), errors="coerce")
     st.caption(
-        f"Total {price:,.0f} zł · model {model:,.0f} zł/m² · commute {commute:.0f} min"
-        if pd.notna(price) and pd.notna(model) and pd.notna(commute)
+        f"Total {price:,.0f} zł · model {model:,.0f} zł/m² · "
+        f"{commute_word} {commute:.0f} min"
+        if pd.notna(price) and pd.notna(model) and commute == commute
         else "Click Open in Offer for the full listing card."
     )
     open_col, tab_col = st.columns(2)
@@ -1790,6 +1802,7 @@ def _tab_offer(
     commute_lat: float,
     commute_label: str = "Commute target",
     recommended_ids: frozenset[str] | None = None,
+    commute_mode: object | None = None,
 ) -> None:
     """Single-offer deep dive with Overview / Context / Map / SHAP / AI subtabs."""
     preferred = normalize_listing_id(st.session_state.get("explore_offer_id"))
@@ -1912,7 +1925,11 @@ def _tab_offer(
                 "Noise bands from UM Warszawa 2022 strategic maps (dB lower edge)."
             )
             st.dataframe(
-                livability_rows(row, commute_label=commute_label),
+                livability_rows(
+                    row,
+                    commute_label=commute_label,
+                    commute_mode=commute_mode,
+                ),
                 hide_index=True,
                 width="stretch",
             )
@@ -1950,6 +1967,7 @@ def _tab_offer(
                 hour=hour,
                 commute_label=commute_label,
                 recommended_ids=recommended_ids,
+                commute_mode=commute_mode,
             )
             layers.append(focus_marker_layer(lat, lon))
             render_deck(
@@ -2161,6 +2179,7 @@ def _tab_news(
         w_overprice=float(app_settings.recommender_w_overprice),
         otodom_pool_default=bool(app_settings.recommender_otodom_pool_default),
         exclude_ids=starred,
+        commute_mode=app_settings.commute_display_mode,
     )
     current_ids = (
         tuple(promising["listing_id"].astype(str).tolist())
@@ -2183,6 +2202,7 @@ def _tab_news(
             w_transit=float(app_settings.recommender_w_transit),
             w_overprice=float(app_settings.recommender_w_overprice),
             otodom_pool_default=bool(app_settings.recommender_otodom_pool_default),
+            commute_mode=app_settings.commute_display_mode,
         )
         st.session_state[NEWS_REC_IDS_KEY] = current_ids
     if promising.empty:
@@ -2667,7 +2687,11 @@ def render_explore() -> None:
     news_file = starred_news_path(proc)
     map_board = apply_starred_only(filtered, starred) if starred_only else filtered
     if prefs.enabled:
-        map_board = apply_preferences(map_board, prefs)
+        map_board = apply_preferences(
+            map_board,
+            prefs,
+            commute_mode=app_settings.commute_display_mode,
+        )
     config = load_config()
 
     apply_offer_from_query_params()
@@ -2743,6 +2767,7 @@ def render_explore() -> None:
         "commute_lon": float(commute.lon),
         "commute_lat": float(commute.lat),
         "commute_label": commute.label,
+        "commute_mode": coerce_commute_display_mode(app_settings.commute_display_mode),
         "recommended_ids": _recommended_listing_ids(
             frame,
             processed_dir=proc,

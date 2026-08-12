@@ -26,6 +26,11 @@ from happy_housing.app.app_settings import (
 )
 from happy_housing.app.attr_extract import enrich_frame_listing_attrs
 from happy_housing.app.chat_store import chat_db_path, clear_all_conversations
+from happy_housing.app.commute_modes import (
+    COMMUTE_DISPLAY_MODES,
+    COMMUTE_MODE_LABELS,
+    coerce_commute_display_mode,
+)
 from happy_housing.app.commute_target import (
     COORD_EPS,
     CommuteTarget,
@@ -202,7 +207,7 @@ def _panel_commute(settings: AppSettings, settings_file: Path, proc: Path) -> No
     config = load_config()
     target = resolve_commute_target(settings, config)
     st.caption(
-        "Destination for dist_daszynskiego_m / commute_min / OTP transit. "
+        "Destination for car / transit / bike / walk commute minutes. "
         "Search uses OpenStreetMap Nominatim (open geocoder). "
         "After changing the place, recompute features (or run the full pipeline)."
     )
@@ -299,6 +304,25 @@ def _panel_commute(settings: AppSettings, settings_file: Path, proc: Path) -> No
     else:
         st.caption("Slate pin = saved target · Teal pin = new (draft) target")
     st.caption(f"Active: **{target.label}** · {target.lon:.5f}, {target.lat:.5f}")
+    mode_labels = [COMMUTE_MODE_LABELS[m] for m in COMMUTE_DISPLAY_MODES]
+    mode_by_label = {COMMUTE_MODE_LABELS[m]: m for m in COMMUTE_DISPLAY_MODES}
+    current_mode = coerce_commute_display_mode(settings.commute_display_mode)
+    mode_choice = st.selectbox(
+        "Offer hover commute mode",
+        options=mode_labels,
+        index=mode_labels.index(COMMUTE_MODE_LABELS[current_mode]),
+        key="admin_commute_display_mode",
+        help=(
+            "Which commute minutes appear on Explore map pin hover and as the "
+            "primary livability row. Default: public transport. "
+            "Car / bike / walk use OSRM (bike/foot graphs optional; else speed "
+            "proxy). Transit uses OTP when enabled."
+        ),
+    )
+    settings.commute_display_mode = mode_by_label[str(mode_choice)]
+    if settings.commute_display_mode != current_mode:
+        save_app_settings(settings_file, settings)
+        st.rerun()
     if commute_target_stale(settings):
         st.warning(
             "Scored listings still use the previous commute target. "
@@ -1098,6 +1122,7 @@ def _panel_recommender(settings: AppSettings, settings_file: Path, proc: Path) -
                         w_transit=float(w_transit),
                         w_overprice=float(w_overprice),
                         otodom_pool_default=bool(otodom_pool),
+                        commute_mode=settings.commute_display_mode,
                     )
                 st.success(
                     f"Retrained · {int(out['n_recommended'])} of "

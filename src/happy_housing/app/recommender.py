@@ -11,6 +11,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from happy_housing.app.commute_modes import commute_column_for_mode
 from happy_housing.app.io_cache import read_json
 from happy_housing.app.preferences import (
     OOU_PREFER_OUTSIDE,
@@ -179,17 +180,19 @@ def score_offers(
     w_transit: float = 0.20,
     w_overprice: float = 0.15,
     otodom_pool_default: bool = True,
+    commute_mode: object | None = None,
 ) -> pd.DataFrame:
     """Rank offers by bargain + proximity (+ soft prefs / amenity weights).
 
     When ``prefs.enabled``, hard-filters first via ``apply_preferences``.
     Non-zero ``amenity_weights`` nudge score by proximity to each type
     (positive = prefer near, negative = prefer far), capped at
-    ``RECOMMENDER_DIST_CAP_M``.
+    ``RECOMMENDER_DIST_CAP_M``. ``commute_mode`` selects which door-to-door
+    minutes column feeds the commute term (default: public transport).
     """
     work = frame
     if prefs is not None and prefs.enabled:
-        work = apply_preferences(frame, prefs)
+        work = apply_preferences(frame, prefs, commute_mode=commute_mode)
     elif otodom_pool_default and "source" in frame.columns:
         sources = frame["source"].astype(str).str.lower()
         work = frame.loc[sources.isin(_BUYER_SOURCES)].copy()
@@ -211,7 +214,7 @@ def score_offers(
     )
     wo = max(0.0, float(w_overprice))
     delta = _col(work, "delta_price_per_m2")
-    commute = _col(work, "commute_min")
+    commute = _col(work, commute_column_for_mode(commute_mode))
     transit = _col(work, "dist_transit_stop_m")
     bargain = ((-delta).clip(lower=0.0) / 2000.0).clip(upper=1.0).fillna(0.0)
     overprice = (delta.clip(lower=0.0) / 2000.0).clip(upper=1.0).fillna(0.0)
@@ -297,6 +300,7 @@ def retrain_recommender(
     w_transit: float = 0.20,
     w_overprice: float = 0.15,
     otodom_pool_default: bool = True,
+    commute_mode: object | None = None,
 ) -> dict[str, float]:
     """Rescore the universe, persist metrics, return summary stats."""
     impressions = load_impressions(impressions_path(processed_dir))
@@ -311,6 +315,7 @@ def retrain_recommender(
         w_transit=w_transit,
         w_overprice=w_overprice,
         otodom_pool_default=otodom_pool_default,
+        commute_mode=commute_mode,
     )
     top = ranked.head(max(1, int(top_n)))
     unseen = 0.0
@@ -370,6 +375,7 @@ def top_recommendations(
     w_overprice: float = 0.15,
     otodom_pool_default: bool = True,
     exclude_ids: frozenset[str] | set[str] | None = None,
+    commute_mode: object | None = None,
 ) -> pd.DataFrame:
     """Return top-N ranked listing rows; optionally record impressions + metrics."""
     impressions = load_impressions(impressions_path(processed_dir))
@@ -384,6 +390,7 @@ def top_recommendations(
         w_transit=w_transit,
         w_overprice=w_overprice,
         otodom_pool_default=otodom_pool_default,
+        commute_mode=commute_mode,
     )
     if exclude_ids:
         blocked = {str(x) for x in exclude_ids}
@@ -407,6 +414,7 @@ def top_recommendations(
             w_transit=w_transit,
             w_overprice=w_overprice,
             otodom_pool_default=otodom_pool_default,
+            commute_mode=commute_mode,
         )
     ids = top["listing_id"].tolist()
     conf_map = dict(zip(top["listing_id"], top["confidence"], strict=True))

@@ -9,6 +9,11 @@ from typing import Any
 
 import pandas as pd
 
+from happy_housing.app.commute_modes import (
+    COMMUTE_MODE_COLUMN,
+    COMMUTE_MODE_LABELS,
+    coerce_commute_display_mode,
+)
 from happy_housing.ingest.fx import format_original_price
 
 _DELTA_NEAR_ZL = 500.0
@@ -231,9 +236,18 @@ def livability_rows(
     row: pd.Series,
     *,
     commute_label: str = "commute target",
+    commute_mode: object | None = None,
 ) -> pd.DataFrame:
     """Livability signals with distances rounded to whole metres."""
     short = commute_label if len(commute_label) <= 40 else commute_label[:37] + "..."
+    mode = coerce_commute_display_mode(commute_mode)
+    primary_col = COMMUTE_MODE_COLUMN[mode]
+    primary_label = f"{COMMUTE_MODE_LABELS[mode]} to {short}"
+    other_specs = tuple(
+        (col, f"{COMMUTE_MODE_LABELS[m]} to {short}", "min")
+        for m, col in COMMUTE_MODE_COLUMN.items()
+        if m != mode
+    )
     specs: tuple[tuple[str, str, str], ...] = (
         ("noise_total_lden_db", "Total Lden (dB, all sources)", "db"),
         ("noise_total_lnight_db", "Total Lnight (dB, all sources)", "db"),
@@ -249,7 +263,8 @@ def livability_rows(
         ("industry_lden_db", "Industry Lden (dB)", "db"),
         ("industry_lnight_db", "Industry Lnight (dB)", "db"),
         ("in_oou", "Aircraft Lden ≥ 55 dB", "flag"),
-        ("commute_min", f"Commute to {short}", "min"),
+        (primary_col, primary_label, "min"),
+        *other_specs,
         ("dist_transit_stop_m", "Nearest transit stop", "m"),
         ("dist_metro_m", "Nearest metro", "m"),
         ("dist_hospital_m", "Nearest hospital", "m"),

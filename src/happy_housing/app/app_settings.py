@@ -7,6 +7,7 @@ import logging
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from happy_housing.app.commute_modes import coerce_commute_display_mode
 from happy_housing.app.io_cache import read_json
 from happy_housing.gis.amenity_catalog import coerce_amenity_weights
 from happy_housing.models.metrics import coerce_opt_metric
@@ -164,6 +165,8 @@ class AppSettings:
     """Lon last baked into scored dist/commute features."""
     commute_features_lat: float | None = None
     """Lat last baked into scored dist/commute features."""
+    commute_display_mode: str = "transit"
+    """Offer hover / filter commute mode: transit|car|bike|walk."""
     pipeline_overrides_enabled: bool = False
     """When True, Admin Pipeline ingest fields override experiment.yaml."""
     pipeline_force_refresh: bool = False
@@ -555,6 +558,9 @@ def load_app_settings(path: Path) -> AppSettings:
         ).strip(),
         commute_features_lon=_opt_lon_lat(payload.get("commute_features_lon")),
         commute_features_lat=_opt_lon_lat(payload.get("commute_features_lat")),
+        commute_display_mode=coerce_commute_display_mode(
+            payload.get("commute_display_mode", defaults.commute_display_mode)
+        ),
         pipeline_overrides_enabled=bool(
             payload.get(
                 "pipeline_overrides_enabled",

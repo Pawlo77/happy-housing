@@ -87,6 +87,8 @@ _STRUCTURAL_FEATURE_COLUMNS: tuple[str, ...] = (
     "dist_daszynskiego_m",
     "commute_min",
     "transit_commute_min",
+    "bike_commute_min",
+    "walk_commute_min",
     "dist_gunb_m",
     "dist_bike_path_m",
     "bike_path_coverage_m",
@@ -234,13 +236,30 @@ class TrainResult:
     """Whether engineered columns were used for this model."""
 
 
+def _optional_commute_flags(frame: pd.DataFrame) -> tuple[bool, bool, bool]:
+    """Whether transit / bike / walk columns have any usable values."""
+
+    def _any(col: str) -> bool:
+        if col not in frame.columns:
+            return False
+        return bool(pd.to_numeric(frame[col], errors="coerce").notna().any())
+
+    return (
+        _any("transit_commute_min"),
+        _any("bike_commute_min"),
+        _any("walk_commute_min"),
+    )
+
+
 def active_feature_columns(
     *,
     use_neighborhood: bool = True,
     include_transit: bool = True,
+    include_bike: bool = True,
+    include_walk: bool = True,
     use_engineered: bool = True,
 ) -> tuple[str, ...]:
-    """Feature list depending on neighborhood / transit / engineered flags."""
+    """Feature list depending on neighborhood / commute-mode / engineered flags."""
     cols: tuple[str, ...]
     if use_neighborhood:
         cols = (
@@ -250,9 +269,16 @@ def active_feature_columns(
         cols = CORE_PLUS_PHOTO
     if use_engineered:
         cols = cols + ENGINEERED_FEATURE_COLUMNS
-    if include_transit:
+    drop: set[str] = set()
+    if not include_transit:
+        drop.update({"transit_commute_min", "log_transit_commute_min"})
+    if not include_bike:
+        drop.update({"bike_commute_min", "log_bike_commute_min"})
+    if not include_walk:
+        drop.update({"walk_commute_min", "log_walk_commute_min"})
+    if not drop:
         return cols
-    return tuple(c for c in cols if c != "transit_commute_min")
+    return tuple(c for c in cols if c not in drop)
 
 
 def model_feature_columns(model: lgb.Booster | lgb.LGBMRegressor) -> tuple[str, ...]:
@@ -700,13 +726,12 @@ def train_price_model(
             len(work),
         )
 
-    include_transit = False
-    if "transit_commute_min" in work.columns:
-        transit = pd.to_numeric(work["transit_commute_min"], errors="coerce")
-        include_transit = bool(transit.notna().any())
+    include_transit, include_bike, include_walk = _optional_commute_flags(work)
     feature_cols = active_feature_columns(
         use_neighborhood=settings.use_neighborhood,
         include_transit=include_transit,
+        include_bike=include_bike,
+        include_walk=include_walk,
         use_engineered=settings.use_engineered,
     )
     if model_config.target not in work.columns:
@@ -1041,13 +1066,12 @@ def oof_predict_price_per_m2(
     from sklearn.model_selection import KFold
 
     settings = train_settings
-    include_transit = False
-    if "transit_commute_min" in frame.columns:
-        transit = pd.to_numeric(frame["transit_commute_min"], errors="coerce")
-        include_transit = bool(transit.notna().any())
+    include_transit, include_bike, include_walk = _optional_commute_flags(frame)
     feature_cols = active_feature_columns(
         use_neighborhood=settings.use_neighborhood,
         include_transit=include_transit,
+        include_bike=include_bike,
+        include_walk=include_walk,
         use_engineered=settings.use_engineered,
     )
     preds = np.full(len(frame), np.nan, dtype=float)

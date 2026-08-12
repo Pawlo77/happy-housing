@@ -42,6 +42,9 @@ def test_livability_rows_round_distances() -> None:
         "aircraft_lnight_db": 0.0,
         "in_oou": 1,
         "commute_min": 12.4,
+        "transit_commute_min": 22.0,
+        "bike_commute_min": 18.0,
+        "walk_commute_min": 55.0,
         "dist_transit_stop_m": 371.9,
         "dist_hospital_m": 8248.5,
         "dist_fire_station_m": 1881.2,
@@ -56,6 +59,10 @@ def test_livability_rows_round_distances() -> None:
     assert "Yes" in frame["value"].astype(str).tolist()
     lden = frame.loc[frame["signal"] == "Aircraft Lden (dB)", "value"].iloc[0]
     assert lden == "≥ 60 dB"
+    primary = frame.loc[
+        frame["signal"].str.startswith("Public transport to"), "value"
+    ].iloc[0]
+    assert primary == "22 min"
 
 
 def test_offer_fact_rows_survive_nan_flags() -> None:

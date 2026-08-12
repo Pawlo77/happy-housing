@@ -10,6 +10,10 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 
+from happy_housing.app.commute_modes import (
+    commute_series,
+    commute_tooltip_label,
+)
 from happy_housing.gis.traffic import diurnal_traffic_weight
 
 _DELTA_COLOR_SCALE_ZL: float = 1_500.0
@@ -546,11 +550,13 @@ def prepare_listings_for_map(
     frame: pd.DataFrame,
     *,
     recommended_ids: frozenset[str] | set[str] | None = None,
+    commute_mode: object | None = None,
 ) -> pd.DataFrame:
     """Listing pins with delta colours and rich hover fields.
 
     Recommended ids get larger radii and a clear tooltip badge so they
-    stand out among standard offer pins.
+    stand out among standard offer pins. ``commute_mode`` selects which
+    commute column appears on hover (default: public transport).
     """
     if frame.empty:
         return pd.DataFrame()
@@ -597,11 +603,8 @@ def prepare_listings_for_map(
         if "year_built" in out.columns
         else pd.Series(np.nan, index=out.index)
     )
-    commute = (
-        pd.to_numeric(out["commute_min"], errors="coerce")
-        if "commute_min" in out.columns
-        else pd.Series(np.nan, index=out.index)
-    )
+    commute = commute_series(out, commute_mode)
+    commute_word = commute_tooltip_label(commute_mode)
     model = (
         pd.to_numeric(out["model_price_per_m2"], errors="coerce")
         if "model_price_per_m2" in out.columns
@@ -649,7 +652,7 @@ def prepare_listings_for_map(
         + " · built "
         + year.map(lambda v: f"{int(v)}" if pd.notna(v) else "—")
         + "<br/>"
-        + "Commute "
+        + f"{commute_word} "
         + commute.map(lambda v: f"{v:.0f} min" if pd.notna(v) else "—")
         + "<br/><i>Click pin → Open in Offer below</i>"
     )

@@ -11,6 +11,7 @@ from typing import Any, Self
 
 import pandas as pd
 
+from happy_housing.app.commute_modes import commute_column_for_mode
 from happy_housing.app.io_cache import read_json
 
 logger = logging.getLogger(__name__)
@@ -230,7 +231,12 @@ def _numeric(frame: pd.DataFrame, column: str) -> pd.Series:
     return pd.to_numeric(frame[column], errors="coerce")
 
 
-def apply_preferences(frame: pd.DataFrame, prefs: UserPreferences) -> pd.DataFrame:
+def apply_preferences(
+    frame: pd.DataFrame,
+    prefs: UserPreferences,
+    *,
+    commute_mode: object | None = None,
+) -> pd.DataFrame:
     """Hard-filter rows to match set preference fields (no-op when disabled)."""
     if frame.empty or not prefs.enabled:
         return frame.copy()
@@ -262,7 +268,11 @@ def apply_preferences(frame: pd.DataFrame, prefs: UserPreferences) -> pd.DataFra
     if prefs.min_year_built is not None:
         mask &= _numeric(frame, "year_built").ge(float(prefs.min_year_built))
     if prefs.max_commute_min is not None:
-        mask &= _numeric(frame, "commute_min").le(float(prefs.max_commute_min))
+        commute_col = commute_column_for_mode(commute_mode)
+        if commute_col in frame.columns:
+            mask &= _numeric(frame, commute_col).le(float(prefs.max_commute_min))
+        else:
+            mask &= _numeric(frame, "commute_min").le(float(prefs.max_commute_min))
     if prefs.max_dist_transit_m is not None:
         mask &= _numeric(frame, "dist_transit_stop_m").le(
             float(prefs.max_dist_transit_m)

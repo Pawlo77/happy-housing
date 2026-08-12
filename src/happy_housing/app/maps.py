@@ -205,9 +205,14 @@ def listings_scatter_layer(
     frame: pd.DataFrame,
     *,
     recommended_ids: frozenset[str] | set[str] | None = None,
+    commute_mode: object | None = None,
 ) -> list[pdk.Layer]:
     """Scatterplot of filtered offers; recommended pins draw larger on top."""
-    map_df = prepare_listings_for_map(frame, recommended_ids=recommended_ids)
+    map_df = prepare_listings_for_map(
+        frame,
+        recommended_ids=recommended_ids,
+        commute_mode=commute_mode,
+    )
     if map_df.empty:
         return []
     layers: list[pdk.Layer] = []
@@ -854,6 +859,7 @@ def explore_map_layer_cache_key(
     recommended_ids: frozenset[str],
     focus: MapAddressFocus | None,
     overlay_counts: Mapping[str, int],
+    commute_mode: object | None = None,
 ) -> tuple[object, ...]:
     """Cache key for rebuilt Explore pydeck layers (skip rebuild on pin click)."""
     focus_key: tuple[object, ...] | None
@@ -872,6 +878,7 @@ def explore_map_layer_cache_key(
         tuple(sorted(str(x) for x in recommended_ids)),
         focus_key,
         counts,
+        str(commute_mode or ""),
     )
 
 
@@ -1155,6 +1162,7 @@ def build_explore_layers(
     noise_overlay: NoiseMapOverlay | None = None,
     aq_overlay: AqMapOverlay | None = None,
     recommended_ids: frozenset[str] | set[str] | None = None,
+    commute_mode: object | None = None,
 ) -> list[pdk.Layer]:
     """Assemble enabled Explore map layers in draw order."""
     layers: list[pdk.Layer] = []
@@ -1239,7 +1247,13 @@ def build_explore_layers(
             commute_target_layer(commute_lon, commute_lat, label=commute_label)
         )
     if flags.offers:
-        layers.extend(listings_scatter_layer(listings, recommended_ids=recommended_ids))
+        layers.extend(
+            listings_scatter_layer(
+                listings,
+                recommended_ids=recommended_ids,
+                commute_mode=commute_mode,
+            )
+        )
     logger.debug(
         "Built %s map layers (offers=%s hour=%s)", len(layers), flags.offers, hour
     )

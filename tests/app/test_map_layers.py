@@ -71,6 +71,7 @@ def test_prepare_listings_and_shops_expose_tooltip_fields() -> None:
             "rooms": [2.0],
             "year_built": [2005.0],
             "commute_min": [18.0],
+            "transit_commute_min": [32.0],
         })
     )
     assert listings.iloc[0]["tooltip_name"] == "x"
@@ -80,7 +81,28 @@ def test_prepare_listings_and_shops_expose_tooltip_fields() -> None:
     assert "wola" in detail
     assert "Open in Offer" in detail
     assert "<br/>" in detail
-    assert "18 min" in detail
+    assert "Transit 32 min" in detail
+
+    car = prepare_listings_for_map(
+        pd.DataFrame({
+            "listing_id": ["x"],
+            "district": ["wola"],
+            "source": ["otodom"],
+            "lat": [52.2],
+            "lon": [21.0],
+            "delta_price_per_m2": [-100.0],
+            "price_per_m2": [15000.0],
+            "model_price_per_m2": [15100.0],
+            "price_pln": [750000.0],
+            "area_m2": [50.0],
+            "rooms": [2.0],
+            "year_built": [2005.0],
+            "commute_min": [18.0],
+            "transit_commute_min": [32.0],
+        }),
+        commute_mode="car",
+    )
+    assert "Car 18 min" in str(car.iloc[0]["tooltip_detail"])
 
     shops = prepare_shops_for_map(
         pd.DataFrame({

@@ -18,6 +18,9 @@ ENGINEERED_STATIC_COLUMNS: tuple[str, ...] = (
     "log_area_m2",
     "log_rooms",
     "log_commute_min",
+    "log_transit_commute_min",
+    "log_bike_commute_min",
+    "log_walk_commute_min",
     "log_dist_metro_m",
     "log_dist_transit_stop_m",
     "log_dist_park_m",
@@ -73,6 +76,15 @@ def attach_static_engineered_features(frame: pd.DataFrame) -> pd.DataFrame:
     out["log_area_m2"] = np.log1p(area.clip(lower=0.0))
     out["log_rooms"] = np.log1p(rooms.clip(lower=0.0))
     out["log_commute_min"] = np.log1p(_num(out, "commute_min").clip(lower=0.0))
+    out["log_transit_commute_min"] = np.log1p(
+        _num(out, "transit_commute_min").clip(lower=0.0)
+    )
+    out["log_bike_commute_min"] = np.log1p(
+        _num(out, "bike_commute_min").clip(lower=0.0)
+    )
+    out["log_walk_commute_min"] = np.log1p(
+        _num(out, "walk_commute_min").clip(lower=0.0)
+    )
     out["log_dist_metro_m"] = np.log1p(_num(out, "dist_metro_m").clip(lower=0.0))
     out["log_dist_transit_stop_m"] = np.log1p(
         _num(out, "dist_transit_stop_m").clip(lower=0.0)

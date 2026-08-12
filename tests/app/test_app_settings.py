@@ -82,6 +82,7 @@ def test_commute_target_settings_round_trip(tmp_path: Path) -> None:
             commute_target_label="Plac Bankowy",
             commute_features_lon=20.983,
             commute_features_lat=52.23,
+            commute_display_mode="bike",
         ),
     )
     loaded = load_app_settings(path)
@@ -89,6 +90,12 @@ def test_commute_target_settings_round_trip(tmp_path: Path) -> None:
     assert loaded.commute_target_lat == 52.25
     assert loaded.commute_target_label == "Plac Bankowy"
     assert loaded.commute_features_lon == 20.983
+    assert loaded.commute_display_mode == "bike"
+
+
+def test_commute_display_mode_defaults_to_transit(tmp_path: Path) -> None:
+    settings = load_app_settings(settings_path(tmp_path))
+    assert settings.commute_display_mode == "transit"
 
 
 def test_pipeline_ingest_settings_round_trip(tmp_path: Path) -> None:

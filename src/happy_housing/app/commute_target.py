@@ -20,10 +20,7 @@ from happy_housing.app.app_settings import (
 )
 from happy_housing.config import ExperimentConfig
 from happy_housing.gis import nearest_distance_meters
-from happy_housing.gis.routing import (
-    attach_commute_minutes,
-    attach_transit_commute_minutes,
-)
+from happy_housing.gis.routing import attach_active_mode_commutes
 from happy_housing.models.train import load_model_meta, predict_price_per_m2
 from happy_housing.storage import write_geoparquet
 
@@ -187,20 +184,15 @@ def recompute_commute_features(
     )
     gdf = nearest_distance_meters(gdf, target, projected_crs, "dist_daszynskiego_m")
     work = pd.DataFrame(gdf.drop(columns=["geometry"], errors="ignore"))
-    work = attach_commute_minutes(
+    work = attach_active_mode_commutes(
         work,
         dest_lon=float(dest_lon),
         dest_lat=float(dest_lat),
         osrm_url=osrm_url,
         require_osrm=bool(config.routing.require_osrm),
+        use_otp_transit=bool(use_otp_transit),
+        otp_url=otp_url or config.routing.otp_url,
     )
-    if use_otp_transit:
-        work = attach_transit_commute_minutes(
-            work,
-            dest_lon=float(dest_lon),
-            dest_lat=float(dest_lat),
-            otp_url=otp_url or config.routing.otp_url,
-        )
 
     model_path = processed / "lightgbm_price_per_m2.txt"
     if model_path.exists():
@@ -232,6 +224,8 @@ def recompute_commute_features(
                 "dist_daszynskiego_m",
                 "commute_min",
                 "transit_commute_min",
+                "bike_commute_min",
+                "walk_commute_min",
                 "model_price_per_m2",
                 "delta_price_per_m2",
             ):
