@@ -12,6 +12,7 @@ from typing import Never
 import pandas as pd
 import streamlit as st
 
+from happy_housing.app.admin_flash import pop_admin_flash, set_admin_flash
 from happy_housing.app.ai_review import (
     DEFAULT_SYSTEM_PROMPT,
     clear_ai_review_session_keys,
@@ -353,18 +354,41 @@ def _panel_commute(settings: AppSettings, settings_file: Path, proc: Path) -> No
             settings.commute_target_lat = float(lat_in)
             settings.commute_target_label = str(label_in).strip() or prev.label
             save_app_settings(settings_file, settings)
-            st.success(
+            logger.info(
+                "Saved commute target %s (%.5f, %.5f)",
+                settings.commute_target_label,
+                float(lon_in),
+                float(lat_in),
+            )
+            set_admin_flash(
+                "success",
                 f"Saved commute target: {settings.commute_target_label} "
-                f"({lon_in:.5f}, {lat_in:.5f})"
+                f"({lon_in:.5f}, {lat_in:.5f})",
             )
             if commute_target_stale(settings):
-                st.info("Next: click Recompute commute + rescore.")
+                set_admin_flash(
+                    "info",
+                    "Commute target saved. Next: click Recompute commute + rescore.",
+                )
             st.rerun()
     with b2:
         if st.button("Recompute commute + rescore", key="recompute_commute"):
             dest_label = str(label_in).strip() or target.label
-            with st.spinner("Updating distances, commute minutes, and scores…"):
+            logger.info(
+                "Admin commute recompute clicked → %s (%.5f, %.5f)",
+                dest_label,
+                float(lon_in),
+                float(lat_in),
+            )
+            with st.status(
+                "Recomputing commute + rescore…",
+                expanded=True,
+            ) as status:
                 try:
+
+                    def _progress(message: str) -> None:
+                        st.write(message)
+
                     result = recompute_commute_features(
                         proc,
                         dest_lon=float(lon_in),
@@ -375,18 +399,29 @@ def _panel_commute(settings: AppSettings, settings_file: Path, proc: Path) -> No
                         osrm_url=config.routing.osrm_url,
                         use_otp_transit=bool(config.routing.use_otp_transit),
                         otp_url=config.routing.otp_url,
+                        on_progress=_progress,
                     )
+                    st.write("Clearing Streamlit data caches…")
                     clear_data_caches()
-                    st.success(
-                        f"Updated {result['n_offers']} offers for "
+                    status.update(
+                        label="Commute recompute complete",
+                        state="complete",
+                    )
+                    set_admin_flash(
+                        "success",
+                        f"Updated {result['n_offers']:,} offers for "
                         f"{result['label']} "
                         f"({result['lon']:.5f}, {result['lat']:.5f}). "
                         "Full model retrain still recommended after big "
-                        "target moves."
+                        "target moves.",
                     )
                     st.rerun()
                 except Exception as exc:
                     logger.exception("Commute recompute failed")
+                    status.update(
+                        label="Commute recompute failed",
+                        state="error",
+                    )
                     st.error(str(exc))
     with b3:
         if st.button("Reset to YAML default", key="reset_commute_yaml"):
@@ -399,7 +434,11 @@ def _panel_commute(settings: AppSettings, settings_file: Path, proc: Path) -> No
             st.session_state["admin_commute_label"] = settings.commute_target_label
             st.session_state.pop("admin_commute_search_seed", None)
             st.session_state.pop("admin_commute_place_combo", None)
-            st.success("Reset override to experiment.yaml coordinates.")
+            logger.info("Reset commute target to YAML default")
+            set_admin_flash(
+                "success",
+                "Reset override to experiment.yaml coordinates.",
+            )
             st.rerun()
 
 
@@ -531,20 +570,30 @@ def _panel_run(settings: AppSettings, settings_file: Path, proc: Path) -> None:
                 listings_arg,
                 incr_arg,
             )
-            with st.spinner("Scraping Otodom (full run may take hours)…"):
+            with st.status(
+                "Scraping Otodom (may take hours)…",
+                expanded=True,
+            ) as status:
+                st.write(
+                    f"max_pages={pages_arg} · max_listings={listings_arg} · "
+                    f"incremental={incr_arg}"
+                )
                 try:
                     code, log = _run_command(cmd, timeout_s=24 * 3600)
                 except subprocess.TimeoutExpired:
                     logger.error("Otodom scrape timed out")
+                    status.update(label="Otodom scrape timed out", state="error")
                     st.error("Scrape timed out.")
                 else:
                     st.code(log[-8000:] or "(no output)")
                     if code == 0:
                         clear_data_caches()
                         logger.info("Otodom scrape finished → %s", out_path)
+                        status.update(label="Otodom scrape complete", state="complete")
                         st.success(f"Scrape finished → {out_path}")
                     else:
                         logger.error("Otodom scrape failed (exit %s)", code)
+                        status.update(label="Otodom scrape failed", state="error")
                         st.error(f"Scrape failed (exit {code})")
     with r2:
         if st.button(
@@ -564,20 +613,30 @@ def _panel_run(settings: AppSettings, settings_file: Path, proc: Path) -> None:
             logger.info(
                 "Admin starting pipeline (overrides saved; resolve via AppSettings)"
             )
-            with st.spinner("Running pipeline (full RCN/Otodom may take hours)…"):
+            with st.status(
+                "Running pipeline (may take hours)…",
+                expanded=True,
+            ) as status:
+                st.write(
+                    f"scrape_otodom={bool(scrape_in_pipe)} · "
+                    f"force_refresh={bool(force_refresh)}"
+                )
                 try:
                     code, log = _run_command(cmd, timeout_s=24 * 3600)
                 except subprocess.TimeoutExpired:
                     logger.error("Pipeline timed out")
+                    status.update(label="Pipeline timed out", state="error")
                     st.error("Pipeline timed out.")
                 else:
                     st.code(log[-12000:] or "(no output)")
                     if code == 0:
                         clear_data_caches()
                         logger.info("Pipeline finished successfully")
+                        status.update(label="Pipeline complete", state="complete")
                         st.success("Pipeline finished — Home metrics refreshed.")
                     else:
                         logger.error("Pipeline failed (exit %s)", code)
+                        status.update(label="Pipeline failed", state="error")
                         st.error(f"Pipeline failed (exit {code})")
 
 
@@ -1117,37 +1176,59 @@ def _panel_recommender(settings: AppSettings, settings_file: Path, proc: Path) -
             settings.recommender_w_overprice = float(w_overprice)
             settings.recommender_otodom_pool_default = bool(otodom_pool)
             save_app_settings(settings_file, settings)
+            logger.info("Admin retrain recommender clicked (top_n=%s)", int(top_n))
             try:
                 frame = load_scored()
             except FileNotFoundError as exc:
+                logger.error("Retrain recommender missing scored: %s", exc)
                 st.error(str(exc))
             else:
-                with st.spinner("Rescoring offers…"):
-                    prefs = load_preferences(preferences_path(proc))
-                    out = retrain_recommender(
-                        frame,
-                        processed_dir=proc,
-                        top_n=int(top_n),
-                        demotion_alpha=float(alpha),
-                        prefs=prefs,
-                        amenity_weights=new_weights,
-                        w_bargain=float(w_bargain),
-                        w_commute=float(w_commute),
-                        w_transit=float(w_transit),
-                        w_overprice=float(w_overprice),
-                        otodom_pool_default=bool(otodom_pool),
-                        commute_mode=settings.commute_display_mode,
-                    )
-                st.success(
-                    f"Retrained · {int(out['n_recommended'])} of "
-                    f"{int(out['n_candidates'])} candidates · "
-                    f"mean confidence {out['mean_confidence']:.3f}"
-                )
-                st.rerun()
+                with st.status(
+                    "Retraining recommendation model…", expanded=True
+                ) as status:
+                    try:
+                        st.write(f"Scoring {len(frame):,} offers…")
+                        prefs = load_preferences(preferences_path(proc))
+                        out = retrain_recommender(
+                            frame,
+                            processed_dir=proc,
+                            top_n=int(top_n),
+                            demotion_alpha=float(alpha),
+                            prefs=prefs,
+                            amenity_weights=new_weights,
+                            w_bargain=float(w_bargain),
+                            w_commute=float(w_commute),
+                            w_transit=float(w_transit),
+                            w_overprice=float(w_overprice),
+                            otodom_pool_default=bool(otodom_pool),
+                            commute_mode=settings.commute_display_mode,
+                        )
+                        status.update(
+                            label="Recommendation model retrained",
+                            state="complete",
+                        )
+                        set_admin_flash(
+                            "success",
+                            f"Retrained · {int(out['n_recommended'])} of "
+                            f"{int(out['n_candidates'])} candidates · "
+                            f"mean confidence {out['mean_confidence']:.3f}",
+                        )
+                        st.rerun()
+                    except Exception as exc:
+                        logger.exception("Retrain recommender failed")
+                        status.update(
+                            label="Recommendation retrain failed",
+                            state="error",
+                        )
+                        st.error(str(exc))
     with r3:
         if st.button("Delete recommendation memory", key="clear_rec_memory"):
             clear_recommendation_memory(proc)
-            st.success("Recommendation impressions + metrics deleted.")
+            logger.info("Cleared recommendation memory from Admin")
+            set_admin_flash(
+                "success",
+                "Recommendation impressions + metrics deleted.",
+            )
             st.rerun()
 
 
@@ -1541,31 +1622,52 @@ def _panel_extract(settings: AppSettings, settings_file: Path, proc: Path) -> No
             st.success("Extract settings saved.")
     with s2:
         if st.button("Backfill attrs on scored listings", key="admin_extract_backfill"):
+            logger.info(
+                "Admin attr backfill clicked model=%s cap=%s",
+                extract_model,
+                int(extract_cap) or None,
+            )
             try:
                 frame = load_scored()
             except FileNotFoundError as exc:
+                logger.error("Attr backfill missing scored: %s", exc)
                 st.error(str(exc))
             else:
                 cap = int(extract_cap) or None
-                with st.spinner(
-                    f"Extracting attrs with {extract_model} (cap={cap or '∞'})…"
-                ):
-                    work = promote_listing_flags(frame)
-                    work = enrich_frame_listing_attrs(
-                        work,
-                        model=str(extract_model).strip() or settings.extract_lm_model,
-                        max_chars=int(extract_chars),
-                        max_tokens=int(extract_tokens),
-                        use_llm=True,
-                        metrics_path=llm_metrics_path(proc),
-                        max_llm_calls=cap,
-                        lm_workers=int(extract_workers),
-                    )
-                    out_path = processed_dir() / "listings_scored.parquet"
-                    work.to_parquet(out_path, index=False)
-                    clear_data_caches()
-                st.success(f"Wrote attrs → {out_path}")
-                st.rerun()
+                with st.status(
+                    f"Extracting attrs with {extract_model}…",
+                    expanded=True,
+                ) as status:
+                    try:
+                        st.write(f"Loaded {len(frame):,} scored offers")
+                        st.write(
+                            f"Running LM extract (cap={cap or '∞'}, "
+                            f"workers={int(extract_workers)})…"
+                        )
+                        work = promote_listing_flags(frame)
+                        work = enrich_frame_listing_attrs(
+                            work,
+                            model=str(extract_model).strip()
+                            or settings.extract_lm_model,
+                            max_chars=int(extract_chars),
+                            max_tokens=int(extract_tokens),
+                            use_llm=True,
+                            metrics_path=llm_metrics_path(proc),
+                            max_llm_calls=cap,
+                            lm_workers=int(extract_workers),
+                        )
+                        out_path = processed_dir() / "listings_scored.parquet"
+                        st.write(f"Writing {out_path.name}…")
+                        work.to_parquet(out_path, index=False)
+                        clear_data_caches()
+                        status.update(label="Attr backfill complete", state="complete")
+                        logger.info("Attr backfill wrote %s", out_path)
+                        set_admin_flash("success", f"Wrote attrs → {out_path}")
+                        st.rerun()
+                    except Exception as exc:
+                        logger.exception("Attr backfill failed")
+                        status.update(label="Attr backfill failed", state="error")
+                        st.error(str(exc))
 
 
 def _panel_lms_metrics(settings: AppSettings, settings_file: Path, proc: Path) -> None:
@@ -1711,20 +1813,27 @@ def _panel_stats(settings: AppSettings, settings_file: Path, proc: Path) -> None
             st.success("Stats settings saved.")
     with s2:
         if st.button("Recalculate stats", key="recalc_stats"):
-            with st.spinner("Reloading scored listings…"):
-                clear_data_caches()
+            logger.info("Admin stats recalculation clicked")
+            with st.status("Recalculating stats…", expanded=True) as status:
                 try:
+                    st.write("Clearing Streamlit data caches…")
+                    clear_data_caches()
+                    st.write("Reloading scored listings…")
                     frame = load_scored()
-                except FileNotFoundError as exc:
-                    st.error(str(exc))
-                else:
+                    status.update(label="Stats refreshed", state="complete")
                     logger.info(
                         "Admin stats recalculation: %s offers after cache clear",
                         len(frame),
                     )
-                    st.success(
-                        f"Stats refreshed · {len(frame):,} scored offers loaded."
+                    set_admin_flash(
+                        "success",
+                        f"Stats refreshed · {len(frame):,} scored offers loaded.",
                     )
+                    st.rerun()
+                except FileNotFoundError as exc:
+                    logger.error("Stats recalculation missing scored: %s", exc)
+                    status.update(label="Stats refresh failed", state="error")
+                    st.error(str(exc))
 
 
 PanelFn = Callable[[AppSettings, Path, Path], None]
@@ -1766,6 +1875,7 @@ def render_admin() -> None:
     """Render Admin with left section nav (one short panel at a time)."""
     logger.info("Rendering Admin")
     st.caption("Pick a section — one panel at a time.")
+    pop_admin_flash()
 
     proc = processed_dir()
     settings_file = settings_path(proc)
@@ -1781,5 +1891,6 @@ def render_admin() -> None:
             label_visibility="collapsed",
         )
     with body:
+        logger.debug("Admin section=%s", section)
         st.subheader(str(section))
         panel_for_section(str(section))(settings, settings_file, proc)

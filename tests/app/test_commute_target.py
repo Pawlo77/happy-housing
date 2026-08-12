@@ -138,3 +138,45 @@ def test_recompute_updates_distance_commute_and_fingerprint(tmp_path: Path) -> N
     assert abs(float(loaded.commute_features_lon or 0) - 20.983) < 1e-6
     assert abs(float(loaded.commute_features_lat or 0) - 52.23) < 1e-6
     assert commute_target_stale(loaded) is False
+
+
+def test_recompute_progress_callback_emits_milestones(tmp_path: Path) -> None:
+    scored = pd.DataFrame({
+        "listing_id": ["a"],
+        "lat": [52.23],
+        "lon": [21.0],
+        "price_per_m2": [15000.0],
+        "area_m2": [50.0],
+        "rooms": [2.0],
+        "year_built": [2000.0],
+        "floor_no": [3.0],
+        "has_balcony": [1.0],
+        "has_garage": [0.0],
+        "has_lift": [1.0],
+        "in_oou": [0.0],
+        "dist_hospital_m": [500.0],
+        "district": ["Wola"],
+        "source": ["otodom"],
+    })
+    scored.to_parquet(tmp_path / "listings_scored.parquet", index=False)
+    save_app_settings(settings_path(tmp_path), AppSettings())
+    config = load_experiment_config(Path("configs/experiment.yaml"))
+    config = replace(
+        config,
+        routing=replace(config.routing, require_osrm=False),
+    )
+    steps: list[str] = []
+    recompute_commute_features(
+        tmp_path,
+        dest_lon=20.983,
+        dest_lat=52.23,
+        label="Test",
+        config=config,
+        projected_crs=config.bbox.projected_crs,
+        osrm_url="http://127.0.0.1:1",
+        use_otp_transit=False,
+        on_progress=steps.append,
+    )
+    assert any("Starting commute recompute" in s for s in steps)
+    assert any("Routing" in s for s in steps)
+    assert any("Done" in s for s in steps)

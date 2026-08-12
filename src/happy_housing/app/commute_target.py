@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -31,6 +32,9 @@ DEFAULT_COMMUTE_LABEL = "Rondo Daszyńskiego"
 
 COORD_EPS: float = 1e-5
 """Lon/lat equality tolerance for commute stale / pin-overlap detection."""
+
+ProgressCallback = Callable[[str], None]
+"""Optional UI progress hook (Admin ``st.status`` write)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,6 +146,16 @@ def mark_commute_features_applied(settings: AppSettings, target: CommuteTarget) 
     settings.commute_features_lat = float(target.lat)
 
 
+def _emit_progress(on_progress: ProgressCallback | None, message: str) -> None:
+    """Log an INFO milestone and optionally notify the UI."""
+    text = str(message).strip()
+    if not text:
+        return
+    logger.info("%s", text)
+    if on_progress is not None:
+        on_progress(text)
+
+
 def recompute_commute_features(
     processed: Path,
     *,
@@ -153,6 +167,7 @@ def recompute_commute_features(
     osrm_url: str,
     use_otp_transit: bool = False,
     otp_url: str | None = None,
+    on_progress: ProgressCallback | None = None,
 ) -> dict[str, Any]:
     """Refresh distance / commute / scores for a new destination.
 
@@ -160,15 +175,26 @@ def recompute_commute_features(
     ``transit_commute_min``, then re-scores with the saved LightGBM booster
     (no full HPO retrain). Persists commute feature fingerprint in app settings.
     """
+    dest_label = (label or "").strip() or DEFAULT_COMMUTE_LABEL
+    _emit_progress(
+        on_progress,
+        f"Starting commute recompute → {dest_label} "
+        f"({float(dest_lon):.5f}, {float(dest_lat):.5f})",
+    )
     scored_path = processed / "listings_scored.parquet"
     if not scored_path.exists():
         msg = f"Missing scored listings: {scored_path}"
+        logger.error("%s", msg)
         raise FileNotFoundError(msg)
+    _emit_progress(on_progress, f"Loading scored listings from {scored_path.name}…")
     frame = pd.read_parquet(scored_path)
     if frame.empty or "lat" not in frame.columns or "lon" not in frame.columns:
         msg = "Scored frame has no lon/lat rows to recompute"
+        logger.error("%s", msg)
         raise ValueError(msg)
+    logger.debug("Loaded %s scored rows for commute recompute", len(frame))
 
+    _emit_progress(on_progress, "Computing straight-line distance to target…")
     gdf = gpd.GeoDataFrame(
         frame,
         geometry=gpd.points_from_xy(
@@ -184,6 +210,13 @@ def recompute_commute_features(
     )
     gdf = nearest_distance_meters(gdf, target, projected_crs, "dist_daszynskiego_m")
     work = pd.DataFrame(gdf.drop(columns=["geometry"], errors="ignore"))
+
+    modes = "car/bike/walk" + (" + OTP transit" if use_otp_transit else "")
+    _emit_progress(
+        on_progress,
+        f"Routing {len(work):,} offers ({modes}) via OSRM"
+        f"{'/OTP' if use_otp_transit else ''}…",
+    )
     work = attach_active_mode_commutes(
         work,
         dest_lon=float(dest_lon),
@@ -193,9 +226,25 @@ def recompute_commute_features(
         use_otp_transit=bool(use_otp_transit),
         otp_url=otp_url or config.routing.otp_url,
     )
+    for col in (
+        "commute_min",
+        "bike_commute_min",
+        "walk_commute_min",
+        "transit_commute_min",
+    ):
+        if col not in work.columns:
+            continue
+        filled = int(pd.to_numeric(work[col], errors="coerce").notna().sum())
+        logger.debug(
+            "Commute column %s filled %s/%s",
+            col,
+            filled,
+            len(work),
+        )
 
     model_path = processed / "lightgbm_price_per_m2.txt"
     if model_path.exists():
+        _emit_progress(on_progress, "Rescoring with saved LightGBM model…")
         booster = lgb.Booster(model_file=str(model_path))
         meta = load_model_meta(model_path)
         work["model_price_per_m2"] = predict_price_per_m2(
@@ -214,10 +263,16 @@ def recompute_commute_features(
         )
     else:
         logger.warning("No model at %s — skipped rescore", model_path)
+        _emit_progress(
+            on_progress,
+            "No saved model found — skipped price rescore (distances still updated).",
+        )
 
+    _emit_progress(on_progress, f"Writing {scored_path.name}…")
     work.to_parquet(scored_path, index=False)
     enriched_path = processed / "listings_enriched.parquet"
     if enriched_path.exists():
+        _emit_progress(on_progress, f"Syncing {enriched_path.name}…")
         try:
             enriched = gpd.read_parquet(enriched_path)
             for col in (
@@ -236,12 +291,16 @@ def recompute_commute_features(
             logger.exception(
                 "Failed to sync enriched GeoParquet after commute recompute"
             )
+            _emit_progress(
+                on_progress,
+                "Warning: scored parquet updated, but enriched sync failed (see logs).",
+            )
 
     settings_file = settings_path(processed)
     settings = load_app_settings(settings_file)
     settings.commute_target_lon = float(dest_lon)
     settings.commute_target_lat = float(dest_lat)
-    settings.commute_target_label = (label or "").strip() or DEFAULT_COMMUTE_LABEL
+    settings.commute_target_label = dest_label
     mark_commute_features_applied(
         settings,
         CommuteTarget(
@@ -251,12 +310,9 @@ def recompute_commute_features(
         ),
     )
     save_app_settings(settings_file, settings)
-    logger.info(
-        "Recomputed commute for %s offers → %s (%.5f, %.5f)",
-        len(work),
-        settings.commute_target_label,
-        dest_lon,
-        dest_lat,
+    _emit_progress(
+        on_progress,
+        f"Done — recomputed commute for {len(work):,} offers → {dest_label}",
     )
     return {
         "n_offers": len(work),
