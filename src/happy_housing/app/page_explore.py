@@ -136,6 +136,7 @@ from happy_housing.app.maps import (
     build_explore_layers,
     build_spatial_layers,
     cached_explore_map_layers,
+    cached_spatial_map_layers,
     commute_route_layers,
     commute_target_layer,
     explore_map_camera,
@@ -1131,19 +1132,19 @@ def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
     st.markdown("##### Environment")
     military = st.checkbox(
         "Military areas",
-        value=True,
+        value=False,
         help=layer_help("military"),
         key="explore_ly_military",
     )
     rail_areas = st.checkbox(
         "Rail land / yards",
-        value=True,
+        value=False,
         help=layer_help("rail_areas"),
         key="explore_ly_rail_areas",
     )
     airport = st.checkbox(
         "Airport footprints",
-        value=True,
+        value=False,
         help=layer_help("airport"),
         key="explore_ly_airport",
     )
@@ -1621,20 +1622,44 @@ def _tab_spatial(
 
     map_col, chart_col = st.columns([1.35, 1.0], gap="large")
     with map_col:
-        layers = build_spatial_layers(
-            listings=filtered,
-            metric_key=metric_key,
-            traffic_sample=traffic_sample,
-            hour=hour,
-            show_hex=bool(show_hex) and metric_key != "traffic",
-            city_boundary=city_boundary,
-            district_boundaries=district_boundaries,
-            military=military,
-            rail_areas=rail_areas,
-            airport=airport,
-            flags=flags,
-            field_mode=field_mode,
+        listing_fp = (
+            listing_ids_fingerprint(filtered["listing_id"].astype(str).tolist())
+            if not filtered.empty and "listing_id" in filtered.columns
+            else ""
         )
+        spatial_key = (
+            listing_fp,
+            str(metric_key),
+            str(field_mode),
+            bool(show_hex) and metric_key != "traffic",
+            int(hour),
+            tuple(sorted(flags.to_dict().items())),
+            len(traffic_sample),
+            len(city_boundary),
+            len(district_boundaries),
+            len(military),
+            len(rail_areas),
+            len(airport),
+            len(filtered),
+        )
+
+        def _build_spatial() -> list[Any]:
+            return build_spatial_layers(
+                listings=filtered,
+                metric_key=metric_key,
+                traffic_sample=traffic_sample,
+                hour=hour,
+                show_hex=bool(show_hex) and metric_key != "traffic",
+                city_boundary=city_boundary,
+                district_boundaries=district_boundaries,
+                military=military,
+                rail_areas=rail_areas,
+                airport=airport,
+                flags=flags,
+                field_mode=field_mode,
+            )
+
+        layers = cached_spatial_map_layers(spatial_key, _build_spatial)
         if not layers:
             st.info(
                 "No spatial points for this metric under current filters "
@@ -1948,7 +1973,7 @@ def _render_shap(row_frame: pd.DataFrame) -> None:
         st.info("Model file missing — retrain from Admin.")
         return
     try:
-        import shap
+        import shap  # deferred: Offer SHAP path only
 
         booster, explainer = bundle
         cols = model_feature_columns(booster)
@@ -3007,10 +3032,7 @@ def render_explore() -> None:
 
     commute = resolve_commute_target(app_settings, config)
     if app_settings.chat_enabled:
-        from happy_housing.app.chat_ui import (
-            render_assistant_popover,
-            render_assistant_tab,
-        )
+        from happy_housing.app.chat_ui import render_assistant_popover
 
         render_assistant_popover(
             scored=frame,

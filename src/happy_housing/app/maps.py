@@ -950,6 +950,12 @@ _EXPLORE_MAP_LAYERS_KEY: str = "explore_map_layers_cache_key"
 _EXPLORE_MAP_LAYERS_VAL: str = "explore_map_layers_cache_val"
 """Session key for cached Explore ``pdk.Layer`` list."""
 
+_SPATIAL_MAP_LAYERS_KEY: str = "spatial_map_layers_cache_key"
+"""Session key for the Spatial map layer-cache fingerprint."""
+
+_SPATIAL_MAP_LAYERS_VAL: str = "spatial_map_layers_cache_val"
+"""Session key for cached Spatial ``pdk.Layer`` list."""
+
 
 def cached_explore_map_layers(
     cache_key: tuple[object, ...],
@@ -959,13 +965,42 @@ def cached_explore_map_layers(
 
     Callers must copy before appending ephemeral pins (address / focus).
     """
-    if st.session_state.get(_EXPLORE_MAP_LAYERS_KEY) == cache_key:
-        cached = st.session_state.get(_EXPLORE_MAP_LAYERS_VAL)
+    return _cached_session_layers(
+        cache_key,
+        builder,
+        key_name=_EXPLORE_MAP_LAYERS_KEY,
+        val_name=_EXPLORE_MAP_LAYERS_VAL,
+    )
+
+
+def cached_spatial_map_layers(
+    cache_key: tuple[object, ...],
+    builder: Callable[[], list[Any]],
+) -> list[Any]:
+    """Return cached Spatial layers when ``cache_key`` matches."""
+    return _cached_session_layers(
+        cache_key,
+        builder,
+        key_name=_SPATIAL_MAP_LAYERS_KEY,
+        val_name=_SPATIAL_MAP_LAYERS_VAL,
+    )
+
+
+def _cached_session_layers(
+    cache_key: tuple[object, ...],
+    builder: Callable[[], list[Any]],
+    *,
+    key_name: str,
+    val_name: str,
+) -> list[Any]:
+    """Session-scoped layer memo shared by Explore Map and Spatial."""
+    if st.session_state.get(key_name) == cache_key:
+        cached = st.session_state.get(val_name)
         if isinstance(cached, list):
             return list(cached)
     layers = list(builder())
-    st.session_state[_EXPLORE_MAP_LAYERS_KEY] = cache_key
-    st.session_state[_EXPLORE_MAP_LAYERS_VAL] = layers
+    st.session_state[key_name] = cache_key
+    st.session_state[val_name] = layers
     return list(layers)
 
 

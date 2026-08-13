@@ -177,11 +177,11 @@ class LayerFlags:
     """Warsaw administrative boundary outline."""
     district_boundaries: bool = False
     """Warsaw dzielnica (district) administrative polygons."""
-    military: bool = True
+    military: bool = False
     """OSM landuse=military polygons (olive)."""
-    rail_areas: bool = True
+    rail_areas: bool = False
     """OSM landuse=railway yard / corridor polygons (steel blue)."""
-    airport: bool = True
+    airport: bool = False
     """Aerodrome / airport footprints (violet; not Lden noise)."""
     commute_target: bool = False
     """Admin-configured commute destination pin."""
@@ -258,16 +258,9 @@ def explore_datasets_needed(
         return frozenset()
 
     needed: set[str] = set()
-    # Spatial always draws zone context + traffic heat for metrics.
+    # Spatial always needs traffic for the metric; zones follow flags.
     if name == "Spatial":
-        needed.update({
-            "city_boundary",
-            "district_boundaries",
-            "military",
-            "rail_areas",
-            "airport",
-            "traffic",
-        })
+        needed.add("traffic")
     if flags.noise_overlay and flags.noise_overlay != "off":
         needed.add("warsaw_noise")
     if flags.aq_overlay and flags.aq_overlay != "off":
@@ -597,6 +590,23 @@ def prepare_gunb_for_map(
     return slim_map_frame(work)
 
 
+_LISTING_MAP_SOURCE_COLUMNS: tuple[str, ...] = (
+    "listing_id",
+    "lat",
+    "lon",
+    "delta_price_per_m2",
+    "price_per_m2",
+    "area_m2",
+    "rooms",
+    "district",
+    "commute_min",
+    "transit_commute_min",
+    "bike_commute_min",
+    "walk_commute_min",
+)
+"""Columns read when building offer map pins (skip description / media)."""
+
+
 def prepare_listings_for_map(
     frame: pd.DataFrame,
     *,
@@ -611,7 +621,10 @@ def prepare_listings_for_map(
     """
     if frame.empty:
         return pd.DataFrame()
-    out = frame.copy()
+    keep = [c for c in _LISTING_MAP_SOURCE_COLUMNS if c in frame.columns]
+    if "lat" not in keep or "lon" not in keep or "listing_id" not in keep:
+        return pd.DataFrame()
+    out = frame.loc[:, keep].copy()
     out["lat"] = pd.to_numeric(out["lat"], errors="coerce")
     out["lon"] = pd.to_numeric(out["lon"], errors="coerce")
     out = out.dropna(subset=["lat", "lon"])
@@ -620,7 +633,7 @@ def prepare_listings_for_map(
     out["listing_id"] = out["listing_id"].astype(str)
     recommended = {str(x) for x in (recommended_ids or ())}
     out["is_recommended"] = out["listing_id"].isin(recommended)
-    delta = pd.to_numeric(out["delta_price_per_m2"], errors="coerce").fillna(0.0)
+    delta = pd.to_numeric(out.get("delta_price_per_m2"), errors="coerce").fillna(0.0)
     colors = listing_delta_rgba_columns(delta)
     out["color_r"] = colors["color_r"].to_numpy()
     out["color_g"] = colors["color_g"].to_numpy()
@@ -638,8 +651,7 @@ def prepare_listings_for_map(
     out["line_a"] = np.where(out["is_recommended"], 230, 160)
     out["line_width"] = np.where(out["is_recommended"], 3, 1)
     out["tooltip_name"] = out["listing_id"]
-    ppm = pd.to_numeric(out["price_per_m2"], errors="coerce")
-    total = pd.to_numeric(out["price_pln"], errors="coerce")
+    ppm = pd.to_numeric(out.get("price_per_m2"), errors="coerce")
     rooms = (
         pd.to_numeric(out["rooms"], errors="coerce")
         if "rooms" in out.columns
@@ -667,8 +679,6 @@ def prepare_listings_for_map(
         + district
         + " · "
         + _fmt_int(ppm, " zł/m²")
-        + " · Total "
-        + total.map(lambda v: f"{v:,.0f} zł" if pd.notna(v) else "—")
         + " · Δ "
         + _fmt_signed(delta)
         + "<br/>"

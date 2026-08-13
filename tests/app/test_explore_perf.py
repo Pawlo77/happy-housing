@@ -179,6 +179,56 @@ def test_explore_map_not_mounted_on_offer_for_speed() -> None:
     assert key_a != key_c
 
 
+def test_layer_flags_default_zones_off_for_fast_map() -> None:
+    """Heavy zone overlays stay opt-in so first Map paint stays light."""
+    flags = LayerFlags()
+    assert flags.military is False
+    assert flags.rail_areas is False
+    assert flags.airport is False
+    assert flags.city_boundary is False
+    assert flags.district_boundaries is False
+
+
+def test_explore_datasets_needed_spatial_skips_zones_when_off() -> None:
+    flags = LayerFlags(
+        military=False,
+        rail_areas=False,
+        airport=False,
+        city_boundary=False,
+        district_boundaries=False,
+        noise_overlay="off",
+    )
+    needed = explore_datasets_needed(section="Spatial", flags=flags)
+    assert "traffic" in needed
+    assert "military" not in needed
+    assert "airport" not in needed
+    assert "city_boundary" not in needed
+
+
+def test_prepare_listings_for_map_ignores_unused_columns() -> None:
+    """Map prep must not require copying description / media columns."""
+    import pandas as pd
+
+    from happy_housing.app.map_layers import prepare_listings_for_map
+
+    frame = pd.DataFrame({
+        "listing_id": ["a"],
+        "lat": [52.2],
+        "lon": [21.0],
+        "delta_price_per_m2": [-100.0],
+        "price_per_m2": [15000.0],
+        "area_m2": [50.0],
+        "rooms": [2.0],
+        "district": ["Wola"],
+        "description": ["x" * 50_000],
+        "image_urls_json": ["[]"],
+    })
+    out = prepare_listings_for_map(frame)
+    assert "description" not in out.columns
+    assert "tooltip_detail" in out.columns
+    assert len(out) == 1
+
+
 def test_amenity_layers_skips_copy_when_all_toggles_off() -> None:
     """No work when hospitals / fire / police are all disabled."""
     import geopandas as gpd

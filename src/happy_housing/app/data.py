@@ -86,19 +86,22 @@ def _with_listed_month(frame: pd.DataFrame) -> pd.DataFrame:
     return frame
 
 
-@st.cache_data(show_spinner=False)  # type: ignore[misc]
-def _read_scored(
+@st.cache_resource(show_spinner=False)  # type: ignore[misc]
+def _read_scored_resource(
     path: str, mtime: float, otodom_path: str, otodom_mtime: float
 ) -> pd.DataFrame:
-    """Cached parquet read keyed by path + mtime (+ Otodom for market backfill)."""
+    """Cached scored frame (resource — no per-call pickle copy).
+
+    Callers must treat the returned frame as read-only. Filter/map helpers
+    already allocate new frames instead of mutating in place.
+    """
     del mtime, otodom_mtime  # cache keys only
     frame = pd.read_parquet(path)
     frame = backfill_market_primary(
         frame,
         otodom_path=Path(otodom_path) if otodom_path else None,
     )
-    frame = promote_listing_flags(_with_listed_month(frame))
-    return frame
+    return promote_listing_flags(_with_listed_month(frame))
 
 
 def load_scored() -> pd.DataFrame:
@@ -110,7 +113,7 @@ def load_scored() -> pd.DataFrame:
             f"Missing {path}. Run pipeline from Admin or: make pipeline"
         )
     oto = processed_dir() / "otodom_listings.parquet"
-    frame = _read_scored(
+    frame = _read_scored_resource(
         str(path),
         path.stat().st_mtime,
         str(oto) if oto.exists() else "",
@@ -131,7 +134,7 @@ def _read_amenities(
 ) -> gpd.GeoDataFrame:
     """Cached amenity load keyed by resolved paths + newest mtime."""
     del mtime
-    import geopandas as gpd
+    import geopandas as gpd  # deferred: avoid cold-start tax on load_scored
 
     cache = Path(cache_path)
     fixture = Path(fixture_path)
@@ -272,6 +275,8 @@ def load_warsaw_noise_overlay(overlay_key: str) -> NoiseMapOverlay | None:
     bounds_raw = payload["bounds"]
     if not isinstance(bounds_raw, list) or len(bounds_raw) != 4:
         return None
+    from happy_housing.gis.warsaw_noise import NoiseMapOverlay
+
     return NoiseMapOverlay(
         layer_key=str(payload["layer_key"]),
         image_data_uri=str(payload["image_data_uri"]),
@@ -347,6 +352,8 @@ def load_gios_aq_overlay(overlay_key: str) -> AqMapOverlay | None:
     bounds_raw = payload["bounds"]
     if not isinstance(bounds_raw, list) or len(bounds_raw) != 4:
         return None
+    from happy_housing.gis.gios_aq_field import AqMapOverlay
+
     return AqMapOverlay(
         layer_key=str(payload["layer_key"]),
         image_data_uri=str(payload["image_data_uri"]),
@@ -367,7 +374,7 @@ def _shap_bundle(
 ) -> tuple[lgb.Booster, shap.TreeExplainer]:
     """Cached LightGBM booster + SHAP TreeExplainer keyed by path + mtime."""
     del mtime
-    import lightgbm as lgb
+    import lightgbm as lgb  # deferred: avoid cold-start tax on load_scored
     import shap
 
     booster = lgb.Booster(model_file=model_file)
@@ -407,7 +414,7 @@ def _read_json_points(path: str, mtime: float) -> pd.DataFrame:
 def _shops_from_geojson(path: str, mtime: float) -> pd.DataFrame:
     """Cached shop points extracted from an OSM shops GeoJSON."""
     del mtime
-    import geopandas as gpd
+    import geopandas as gpd  # deferred: avoid cold-start tax on load_scored
 
     gdf = gpd.read_file(path)
     return pd.DataFrame({

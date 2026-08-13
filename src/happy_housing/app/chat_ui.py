@@ -9,7 +9,9 @@ import pandas as pd
 import streamlit as st
 
 from happy_housing.app.app_settings import AppSettings
+from happy_housing.app.chat_agent import run_chat_turn
 from happy_housing.app.chat_store import (
+    ChatConversation,
     chat_db_path,
     create_conversation,
     delete_conversation,
@@ -18,6 +20,7 @@ from happy_housing.app.chat_store import (
 )
 from happy_housing.app.chat_tools import ChatToolContext
 from happy_housing.app.explore_nav import open_explore_offer
+from happy_housing.app.io_cache import file_mtime
 from happy_housing.app.llm_metrics import llm_metrics_path
 from happy_housing.app.preferences import UserPreferences, preferences_path
 from happy_housing.gis.amenity_catalog import coerce_amenity_weights
@@ -28,10 +31,25 @@ ACTIVE_CONV_KEY = "assistant_active_conversation_id"
 """Session key for the active Assistant conversation id."""
 
 
+@st.cache_data(show_spinner=False)  # type: ignore[misc]
+def _list_conversations_cached(path: str, mtime: float) -> list[ChatConversation]:
+    """Mtime-keyed conversation list (skip DuckDB on every Explore rerun)."""
+    del mtime
+    return list_conversations(Path(path))
+
+
+def _conversations_for(db: Path) -> list[ChatConversation]:
+    """Load Assistant conversations with Streamlit cache when possible."""
+    return _list_conversations_cached(  # type: ignore[no-any-return]
+        str(db.resolve()),
+        file_mtime(db),
+    )
+
+
 def _ensure_active_conversation(db: Path) -> str:
     active = st.session_state.get(ACTIVE_CONV_KEY)
     if active:
-        ids = {c.id for c in list_conversations(db)}
+        ids = {c.id for c in _conversations_for(db)}
         if active in ids:
             return str(active)
     conv = create_conversation(db, title="New chat")
@@ -78,8 +96,6 @@ def _handle_prompt(
     prefs: UserPreferences,
     settings: AppSettings,
 ) -> None:
-    from happy_housing.app.chat_agent import run_chat_turn
-
     ctx = _build_ctx(
         scored=scored,
         processed=processed,
@@ -103,6 +119,7 @@ def _handle_prompt(
         open_explore_offer(result.open_listing_id)
 
 
+@st.fragment  # type: ignore[misc]
 def render_assistant_popover(
     *,
     scored: pd.DataFrame,
@@ -110,13 +127,16 @@ def render_assistant_popover(
     prefs: UserPreferences,
     settings: AppSettings,
 ) -> None:
-    """Compact always-available Assistant (stock ``st.popover``)."""
+    """Compact always-available Assistant (stock ``st.popover``).
+
+    Fragment-scoped so chat input / conversation switches do not re-run Explore.
+    """
     if not settings.chat_enabled:
         return
     db = chat_db_path(processed)
     with st.popover("Assistant", help="Ask about offers, prefs, board, area opinions"):
         conversation_id = _ensure_active_conversation(db)
-        convs = list_conversations(db)
+        convs = _conversations_for(db)
         labels = {c.id: f"{c.title} · {c.updated_at[:16]}" for c in convs}
         options = list(labels.keys())
         if options:
@@ -131,18 +151,18 @@ def render_assistant_popover(
             )
             if pick != conversation_id:
                 st.session_state[ACTIVE_CONV_KEY] = pick
-                st.rerun()
+                st.rerun(scope="fragment")
         c1, c2 = st.columns(2)
         with c1:
             if st.button("New chat", key="assistant_popover_new"):
                 conv = create_conversation(db, title="New chat")
                 st.session_state[ACTIVE_CONV_KEY] = conv.id
-                st.rerun()
+                st.rerun(scope="fragment")
         with c2:
             if st.button("Delete", key="assistant_popover_del"):
                 delete_conversation(db, conversation_id)
                 st.session_state.pop(ACTIVE_CONV_KEY, None)
-                st.rerun()
+                st.rerun(scope="fragment")
         _render_transcript(db, conversation_id)
         prompt = st.chat_input(
             "Ask about offers, prefs, areas…",
@@ -158,7 +178,7 @@ def render_assistant_popover(
                 prefs=prefs,
                 settings=settings,
             )
-            st.rerun()
+            st.rerun(scope="fragment")
 
 
 def render_assistant_tab(
@@ -181,7 +201,7 @@ def render_assistant_tab(
             conv = create_conversation(db, title="New chat")
             st.session_state[ACTIVE_CONV_KEY] = conv.id
             st.rerun()
-        for conv in list_conversations(db):
+        for conv in _conversations_for(db):
             selected = conv.id == conversation_id
             label = conv.title or "Chat"
             if st.button(

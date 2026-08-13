@@ -163,9 +163,9 @@ def test_layer_flags_default_offers_on() -> None:
     assert flags.city_boundary is False
     assert flags.district_boundaries is False
     assert flags.noise_overlay == "off"
-    assert flags.military is True
-    assert flags.rail_areas is True
-    assert flags.airport is True
+    assert flags.military is False
+    assert flags.rail_areas is False
+    assert flags.airport is False
     assert flags.transit_intensity is False
     assert flags.transit_show_metro is False
     assert flags.shop_show_grocery is False

@@ -133,3 +133,21 @@ def test_cached_explore_map_layers_reuses_until_key_changes() -> None:
     again_k1.append("y")
     with patch("happy_housing.app.maps.st", fake_st):
         assert cached_explore_map_layers(("k1",), builder) == ["layer-3"]
+
+
+def test_cached_spatial_map_layers_isolated_from_explore_cache() -> None:
+    from unittest.mock import patch
+
+    from happy_housing.app.maps import (
+        cached_explore_map_layers,
+        cached_spatial_map_layers,
+    )
+
+    session: dict[str, object] = {}
+    fake_st = MagicMock()
+    fake_st.session_state = session
+    with patch("happy_housing.app.maps.st", fake_st):
+        explore = cached_explore_map_layers(("same",), lambda: ["explore"])
+        spatial = cached_spatial_map_layers(("same",), lambda: ["spatial"])
+    assert explore == ["explore"]
+    assert spatial == ["spatial"]

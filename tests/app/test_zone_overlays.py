@@ -80,13 +80,18 @@ def test_zone_polygon_layer_and_explore_defaults() -> None:
     flags = LayerFlags()
     assert flags.city_boundary is False
     assert flags.noise_overlay == "off"
-    assert flags.military is True
-    assert flags.rail_areas is True
-    assert flags.airport is True
+    assert flags.military is False
+    assert flags.rail_areas is False
+    assert flags.airport is False
 
     layers = build_explore_layers(
         listings=__import__("pandas").DataFrame(),
-        flags=LayerFlags(city_boundary=True),
+        flags=LayerFlags(
+            city_boundary=True,
+            military=True,
+            rail_areas=True,
+            airport=True,
+        ),
         amenities=__import__("geopandas").GeoDataFrame(geometry=[], crs="EPSG:4326"),
         shops=__import__("pandas").DataFrame(),
         stops=__import__("pandas").DataFrame(),
@@ -128,7 +133,7 @@ def test_spatial_layers_include_zone_overlays() -> None:
         military=_poly("JW", 20.9, 52.2),
         rail_areas=None,
         airport=_poly("Chopin", 20.96, 52.16),
-        flags=LayerFlags(city_boundary=True),
+        flags=LayerFlags(city_boundary=True, military=True, airport=True),
     )
     ids = {getattr(layer, "id", None) for layer in layers}
     assert "city-boundary" in ids

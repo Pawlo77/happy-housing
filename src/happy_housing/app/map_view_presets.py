@@ -84,12 +84,7 @@ _LAYER_NAME_BITS: tuple[tuple[str, str], ...] = (
 )
 """Enabled-layer fragments for auto names (skip default-on env zones unless off)."""
 
-_DEFAULT_ON_SKIP_IN_NAME: frozenset[str] = frozenset({
-    "offers",
-    "military",
-    "rail_areas",
-    "airport",
-})
+_DEFAULT_ON_SKIP_IN_NAME: frozenset[str] = frozenset({"offers"})
 """Layers that are True by default — only mention when False (as ``no X``)."""
 
 
