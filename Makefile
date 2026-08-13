@@ -87,8 +87,8 @@ osrm-prepare: ## Download Mazowieckie PBF and build OSRM MLD graph into docker/d
 pipeline: ## Full ingest → GIS → train/score → recommend (FORCE=1 to recompute)
 	uv run python -m happy_housing.pipeline $(if $(filter 1,$(FORCE)),--force,)
 
-app: ## Launch Streamlit GUI (requires pipeline outputs; settings in .streamlit/config.toml)
-	uv run streamlit run src/happy_housing/app/streamlit_app.py
+app: ## Launch Streamlit GUI + Ops job worker (fork-safe job spawn)
+	uv run python -m happy_housing.app.ops_app_main
 
 mlflow: ## Launch MLflow UI for local runs
 	@PORT="$(MLFLOW_PORT)"; \

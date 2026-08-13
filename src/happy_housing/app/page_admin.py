@@ -12,7 +12,6 @@ import streamlit as st
 
 from happy_housing.app.admin_flash import pop_admin_flash, set_admin_flash
 from happy_housing.app.admin_jobs import (
-    cursor_agent_sandbox_active,
     format_log_lines_markdown,
     job_elapsed_s,
     load_active_job,
@@ -283,16 +282,11 @@ def _panel_ops(settings: AppSettings, settings_file: Path, proc: Path) -> None:
     st.divider()
     _render_ops_services(config)
     st.divider()
-    if sys.platform == "darwin":
-        st.info(
-            "Ops jobs launch via macOS osascript (avoids Streamlit fork SIGSEGV). "
-            "CLI fallback: `uv run python -m happy_housing.pipeline`."
-        )
-    elif cursor_agent_sandbox_active():
-        st.warning(
-            "This Streamlit process was started under the **Cursor agent sandbox**. "
-            "Prefer `make app` from Terminal.app if Ops jobs fail to start."
-        )
+    st.info(
+        "Ops jobs use `posix_spawn` + a background worker started by `make app` "
+        "(Streamlit cannot fork children on macOS). "
+        "CLI fallback: `uv run python -m happy_housing.pipeline`."
+    )
     _render_ops_job_monitor(settings, proc)
     st.divider()
 

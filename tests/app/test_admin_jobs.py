@@ -4,7 +4,7 @@ import json
 import sys
 import time
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from happy_housing.app.admin_jobs import (
     AdminJobState,
@@ -15,6 +15,7 @@ from happy_housing.app.admin_jobs import (
     load_active_job,
     read_log_tail,
     refresh_admin_job,
+    run_queued_admin_job,
     start_admin_job,
     stop_admin_job,
 )
@@ -81,7 +82,6 @@ def test_refresh_reads_exit_sidecar_without_popen(tmp_path: Path) -> None:
         if (jobs_dir(root) / f"{job.job_id}.exit").exists():
             break
         time.sleep(0.05)
-    # Drop in-process handle (simulates Streamlit worker reload).
     from happy_housing.app import admin_jobs as mod
 
     mod._CHILDREN.pop(job.job_id, None)
@@ -133,28 +133,41 @@ def test_cursor_agent_sandbox_active_reads_env(monkeypatch) -> None:  # type: ig
     assert cursor_agent_sandbox_active() is True
 
 
-def test_start_admin_job_uses_osascript_on_darwin(tmp_path: Path) -> None:
-    """macOS always uses osascript so Streamlit never forks job children."""
+def test_start_admin_job_queues_when_posix_spawn_fails(tmp_path: Path) -> None:
     root = tmp_path / "processed"
-    fake = MagicMock(returncode=0, stdout="4242\n", stderr="")
-
-    with (
-        patch("happy_housing.app.admin_jobs.sys.platform", "darwin"),
-        patch(
-            "happy_housing.app.admin_jobs.subprocess.run",
-            return_value=fake,
-        ) as run_mock,
-        patch("happy_housing.app.admin_jobs.subprocess.Popen") as popen_mock,
+    with patch(
+        "happy_housing.app.admin_jobs._spawn_via_posix_spawn",
+        side_effect=OSError("boom"),
     ):
         job = start_admin_job(
             name="pipe",
             command=[sys.executable, "-c", "print(1)"],
             processed_dir=root,
         )
-    assert job.pid == 4242
-    popen_mock.assert_not_called()
-    assert run_mock.called
-    argv = run_mock.call_args.args[0]
-    assert argv[0] == "osascript"
-    assert job.error is None
-    assert (jobs_dir(root) / f"{job.job_id}.py").exists()
+    assert job.pid == 0
+    assert job.error is not None
+    err = (job.error or "").lower()
+    assert "queued" in err or "worker" in err
+    request = jobs_dir(root) / f"{job.job_id}.request"
+    assert request.exists()
+    # Worker claim path.
+    assert run_queued_admin_job(root, job.job_id) is True
+    claimed = refresh_admin_job(root, job.job_id)
+    # May still be running briefly.
+    assert claimed.pid > 0 or claimed.status in {"succeeded", "failed", "running"}
+
+
+def test_refresh_keeps_queued_job_running(tmp_path: Path) -> None:
+    root = tmp_path / "processed"
+    with patch(
+        "happy_housing.app.admin_jobs._spawn_via_posix_spawn",
+        side_effect=OSError("boom"),
+    ):
+        job = start_admin_job(
+            name="queued",
+            command=[sys.executable, "-c", "print(1)"],
+            processed_dir=root,
+        )
+    refreshed = refresh_admin_job(root, job.job_id)
+    assert refreshed.status == "running"
+    assert refreshed.pid == 0
