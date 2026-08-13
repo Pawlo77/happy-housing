@@ -49,7 +49,7 @@ def _normalize_proxy(raw: str) -> str | None:
     return text
 
 
-def fetch_proxyscrape_proxies(*, limit: int = 40) -> list[str]:
+def fetch_proxyscrape_proxies(*, limit: int = 80) -> list[str]:
     """Pull a fresh free HTTP proxy list from ProxyScrape (direct, no proxy)."""
     try:
         response = requests.get(_PROXYSCRAPE_URL, timeout=20)
@@ -69,7 +69,7 @@ def fetch_proxyscrape_proxies(*, limit: int = 40) -> list[str]:
     return out
 
 
-def fetch_free_proxy_lib_proxies(*, limit: int = 8) -> list[str]:
+def fetch_free_proxy_lib_proxies(*, limit: int = 12) -> list[str]:
     """Pull working proxies via the ``free-proxy`` (``fp``) library."""
     try:
         from fp.fp import FreeProxy  # type: ignore[import-not-found]  # no stubs
@@ -96,8 +96,8 @@ def fetch_free_proxy_lib_proxies(*, limit: int = 8) -> list[str]:
 def _default_fetchers() -> list[ProxyFetcher]:
     """Built-in free-proxy sources (library first, list API second)."""
     return [
-        lambda: fetch_free_proxy_lib_proxies(limit=8),
-        lambda: fetch_proxyscrape_proxies(limit=40),
+        lambda: fetch_free_proxy_lib_proxies(limit=12),
+        lambda: fetch_proxyscrape_proxies(limit=80),
     ]
 
 
@@ -162,6 +162,7 @@ class FreeProxyPool:
             return self._acquire_unlocked()
 
     def _acquire_unlocked(self) -> str | None:
+        refill_attempts = 0
         while True:
             while self._queue:
                 candidate = self._queue.popleft()
@@ -170,10 +171,17 @@ class FreeProxyPool:
                 self._current = candidate
                 logger.info("Using free proxy %s", candidate)
                 return candidate
+            refill_attempts += 1
             if not self._refill_unlocked():
-                logger.warning("Free proxy pool empty — continuing without proxy")
-                self._current = None
-                return None
+                if refill_attempts >= 2:
+                    logger.warning(
+                        "Free proxy pool empty (%s bad) — continuing without proxy",
+                        len(self._bad),
+                    )
+                    self._current = None
+                    return None
+                # Second chance: fetchers may return a fresh batch.
+                continue
 
     def _refill_unlocked(self) -> bool:
         added = 0

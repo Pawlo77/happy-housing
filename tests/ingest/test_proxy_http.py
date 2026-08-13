@@ -124,6 +124,77 @@ def test_resilient_get_skips_rotation_when_proxies_disabled(
     assert rotates == 0
 
 
+def test_resilient_get_proxy_errors_do_not_burn_content_retries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Dead free proxies rotate until one works; content retries stay intact."""
+    configure_http_proxies(enabled=True)
+    proxies = [f"http://10.0.0.{i}:8000" for i in range(1, 8)]
+    monkeypatch.setattr(
+        proxy_pool,
+        "_default_fetchers",
+        lambda: [lambda: list(proxies)],
+    )
+    reset_http_proxies_for_tests()
+    configure_http_proxies(enabled=True)
+    monkeypatch.setattr(http_client.time, "sleep", lambda _s: None)
+
+    calls: list[dict[str, Any]] = []
+
+    class SeqSession:
+        def __init__(self) -> None:
+            self.proxies: dict[str, str] = {}
+
+        def get(self, url: str, timeout: object = None, **kwargs: object) -> MagicMock:
+            _ = url, timeout, kwargs
+            calls.append({"proxies": dict(self.proxies)})
+            # Direct → 403, then 5 dead proxies, then success.
+            n = len(calls)
+            response = MagicMock()
+            if n == 1:
+                response.status_code = 403
+                response.raise_for_status.side_effect = requests.HTTPError(
+                    "403", response=response
+                )
+                return response
+            if n < 7:
+                raise requests.exceptions.ProxyError(f"dead-{n}")
+            response.status_code = 200
+            response.raise_for_status.return_value = None
+            return response
+
+    out = resilient_get(
+        SeqSession(),  # type: ignore[arg-type]
+        "https://example.test/offer",
+        retries=3,
+        label="detail",
+    )
+    assert out is not None
+    assert out.status_code == 200
+    assert len(calls) == 7
+    assert calls[0]["proxies"] == {}
+    assert calls[-1]["proxies"].get("http") in proxies
+
+
+def test_pool_refills_when_queue_exhausted() -> None:
+    batches = [
+        ["http://1.1.1.1:1", "http://1.1.1.2:1"],
+        ["http://2.2.2.1:1"],
+    ]
+    state = {"i": 0}
+
+    def _fetcher() -> list[str]:
+        i = state["i"]
+        state["i"] = min(i + 1, len(batches) - 1)
+        return list(batches[i])
+
+    pool = FreeProxyPool(fetchers=[_fetcher])
+    assert pool.ensure() == "http://1.1.1.1:1"
+    assert pool.rotate(reason="bad") == "http://1.1.1.2:1"
+    # Queue empty → refill pulls next batch.
+    assert pool.rotate(reason="bad") == "http://2.2.2.1:1"
+
+
 def test_otodom_http_get_rotates_on_403(monkeypatch: pytest.MonkeyPatch) -> None:
     from happy_housing.ingest import otodom
 
