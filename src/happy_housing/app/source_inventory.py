@@ -130,6 +130,48 @@ def _inspect_path(path: Path) -> tuple[int | None, float | None]:
     return None, mtime
 
 
+@dataclass(frozen=True, slots=True)
+class ResolvedSourceArtifact:
+    """First existing catalog artifact with disk stats."""
+
+    path: Path | None
+    """Absolute path when present."""
+    origin: RootName | Literal["missing"]
+    """Which root won, or ``missing``."""
+    row_count: int | None
+    """Feature/row count when countable."""
+    mtime: float | None
+    """Filesystem mtime when present."""
+
+
+def resolve_source_artifact(
+    key: str,
+    *,
+    processed_dir: Path,
+    cache_dir: Path,
+    fixtures_dir: Path,
+) -> ResolvedSourceArtifact:
+    """Resolve preferred artifact for a catalog ``key`` (first existing wins)."""
+    roots = _resolve_roots(processed_dir, cache_dir, fixtures_dir)
+    refs = _SOURCE_ARTIFACTS.get(key, ())
+    for ref in refs:
+        candidate = roots[ref.root] / ref.name
+        if candidate.exists():
+            n, mtime = _inspect_path(candidate)
+            return ResolvedSourceArtifact(
+                path=candidate,
+                origin=ref.root,
+                row_count=n,
+                mtime=mtime,
+            )
+    return ResolvedSourceArtifact(
+        path=None,
+        origin="missing",
+        row_count=None,
+        mtime=None,
+    )
+
+
 def build_source_inventory(
     catalog: tuple[DataSource, ...] | list[DataSource],
     *,
@@ -138,30 +180,22 @@ def build_source_inventory(
     fixtures_dir: Path,
 ) -> list[SourceInventoryRow]:
     """Build equal-structure inventory rows for Data-sources cards."""
-    roots = _resolve_roots(processed_dir, cache_dir, fixtures_dir)
     rows: list[SourceInventoryRow] = []
     for src in catalog:
-        refs = _SOURCE_ARTIFACTS.get(src.key, ())
-        chosen: Path | None = None
-        origin = "missing"
-        for ref in refs:
-            candidate = roots[ref.root] / ref.name
-            if candidate.exists():
-                chosen = candidate
-                origin = ref.root
-                break
-        n: int | None = None
-        mtime: float | None = None
-        if chosen is not None:
-            n, mtime = _inspect_path(chosen)
+        resolved = resolve_source_artifact(
+            src.key,
+            processed_dir=processed_dir,
+            cache_dir=cache_dir,
+            fixtures_dir=fixtures_dir,
+        )
         rows.append(
             SourceInventoryRow(
                 name=src.name,
                 url=src.url,
                 role=src.role,
-                rows_label=format_row_count(n, src.unit),
-                fetched_label=format_fetched_at(mtime),
-                origin_label=origin,
+                rows_label=format_row_count(resolved.row_count, src.unit),
+                fetched_label=format_fetched_at(resolved.mtime),
+                origin_label=resolved.origin,
             )
         )
     return rows
