@@ -30,11 +30,12 @@ _ACTIVE_NAME: str = "active.json"
 """Pointer file naming the current Ops job id."""
 
 _SIGSEGV_HINT: str = (
-    "Child died SIGSEGV (rc=-11). Streamlit was likely started under the "
-    "Cursor agent sandbox — stop the app and run `make app` from Terminal.app "
-    "(or Cursor terminal with full permissions), then retry Ops."
+    "Child died SIGSEGV (rc=-11) before writing logs — usually macOS "
+    "fork-unsafe Streamlit parent. Ops now launches via osascript; "
+    "hard-refresh the app after pulling latest, or run "
+    "`uv run python -m happy_housing.pipeline` in Terminal."
 )
-"""User-facing hint when seatbelt kills job children."""
+"""User-facing hint when the job child never starts."""
 
 
 @dataclass(slots=True)
@@ -112,7 +113,7 @@ def _exit_path(processed_dir: Path, job_id: str) -> Path:
 
 
 def _runner_path(processed_dir: Path, job_id: str) -> Path:
-    return jobs_dir(processed_dir) / f"{job_id}.sh"
+    return jobs_dir(processed_dir) / f"{job_id}.py"
 
 
 def _active_path(processed_dir: Path) -> Path:
@@ -221,8 +222,18 @@ def refresh_admin_job(processed_dir: Path, job_id: str) -> AdminJobState:
     if proc is not None:
         returncode = proc.poll()
         if returncode is None:
-            return state
-        _CHILDREN.pop(job_id, None)
+            # Prefer sidecar when the wrapper finished but Popen lingers.
+            exit_code = _read_exit_code(processed_dir, job_id)
+            if exit_code is not None:
+                returncode = exit_code
+                _CHILDREN.pop(job_id, None)
+            else:
+                return state
+        else:
+            _CHILDREN.pop(job_id, None)
+            exit_code = _read_exit_code(processed_dir, job_id)
+            if exit_code is not None:
+                returncode = exit_code
     else:
         exit_code = _read_exit_code(processed_dir, job_id)
         if exit_code is not None:
@@ -271,39 +282,63 @@ def _write_runner_script(
     exit_path: Path,
     env: dict[str, str],
 ) -> None:
-    """Write a zsh wrapper that tees logs and records the exit code."""
-    exports = [
-        f"export {shlex.quote(key)}={shlex.quote(value)}"
-        for key, value in sorted(env.items())
-        if key and key.isidentifier()
-    ]
-    body = "\n".join([
-        "#!/bin/zsh",
-        "set +e",
-        f"cd {shlex.quote(str(cwd))} || exit 126",
-        *exports,
-        f"exec >>{shlex.quote(str(log_path))} 2>&1",
-        "print -- 'Admin job runner pid='$$",
-        f"print -- 'Admin job cwd='{shlex.quote(str(cwd))}",
-        f"print -- 'Admin job cmd='{shlex.quote(shlex.join(command))}",
-        shlex.join(command),
-        "rc=$?",
-        'print -- "Admin job exit rc=$rc"',
-        f'print -r -- "$rc" >{shlex.quote(str(exit_path))}',
-        "exit $rc",
-        "",
-    ])
+    """Write a Python wrapper that tees logs and records the exit code."""
+    payload = {
+        "cwd": str(cwd.resolve()),
+        "log_path": str(log_path.resolve()),
+        "exit_path": str(exit_path.resolve()),
+        "command": [str(c) for c in command],
+        "env": {str(k): str(v) for k, v in env.items()},
+    }
+    body = (
+        '"""Auto-generated Admin Ops job runner."""\n'
+        "from __future__ import annotations\n\n"
+        "import os\n"
+        "import subprocess\n"
+        "import sys\n"
+        "from pathlib import Path\n\n"
+        f"PAYLOAD = {payload!r}\n\n"
+        "def main() -> None:\n"
+        '    cwd = Path(PAYLOAD["cwd"])\n'
+        '    log_path = Path(PAYLOAD["log_path"])\n'
+        '    exit_path = Path(PAYLOAD["exit_path"])\n'
+        '    command = list(PAYLOAD["command"])\n'
+        "    env = os.environ.copy()\n"
+        '    env.update({str(k): str(v) for k, v in PAYLOAD["env"].items()})\n'
+        "    os.chdir(cwd)\n"
+        "    log_path.parent.mkdir(parents=True, exist_ok=True)\n"
+        '    with log_path.open("a", encoding="utf-8", buffering=1) as log:\n'
+        '        log.write(f"Admin job runner pid={os.getpid()}\\n")\n'
+        '        log.write(f"Admin job cwd={cwd}\\n")\n'
+        '        log.write(f"Admin job cmd={command!r}\\n")\n'
+        "        log.flush()\n"
+        "        completed = subprocess.run(\n"
+        "            command,\n"
+        "            stdout=log,\n"
+        "            stderr=subprocess.STDOUT,\n"
+        "            env=env,\n"
+        "            check=False,\n"
+        "        )\n"
+        "        rc = int(completed.returncode)\n"
+        '        log.write(f"Admin job exit rc={rc}\\n")\n'
+        '    exit_path.write_text(f"{rc}\\n", encoding="utf-8")\n'
+        "    raise SystemExit(rc)\n\n"
+        'if __name__ == "__main__":\n'
+        "    main()\n"
+    )
+    # Project rule: avoid needless future annotations in src — this is a
+    # generated throwaway runner under data/, not library code.
+    body = body.replace("from __future__ import annotations\n\n", "")
     runner.write_text(body, encoding="utf-8")
-    runner.chmod(0o755)
 
 
 def _applescript_quote(value: str) -> str:
     return value.replace("\\", "\\\\").replace('"', '\\"')
 
 
-def _spawn_via_osascript(runner: Path) -> int:
-    """Start ``runner`` outside Cursor seatbelt; return child pid."""
-    shell = f"{shlex.quote(str(runner))} >/dev/null 2>&1 & echo $!"
+def _spawn_via_osascript(launcher: list[str]) -> int:
+    """Start ``launcher`` outside the Streamlit process tree; return child pid."""
+    shell = f"{shlex.join(launcher)} >/dev/null 2>&1 & echo $!"
     completed = subprocess.run(  # nosec B603 B607 — fixed osascript argv
         ["osascript", "-e", f'do shell script "{_applescript_quote(shell)}"'],
         check=False,
@@ -332,20 +367,19 @@ def start_admin_job(
     stamp = datetime.now(tz=UTC).strftime("%Y%m%dT%H%M%S")
     safe = re.sub(r"[^a-zA-Z0-9_-]+", "_", name).strip("_") or "job"
     job_id = f"{stamp}_{safe}"
-    log_path = root / f"{job_id}.log"
+    log_path = (root / f"{job_id}.log").resolve()
     log_path.write_text("", encoding="utf-8")
-    exit_path = _exit_path(processed_dir, job_id)
+    exit_path = _exit_path(processed_dir, job_id).resolve()
     if exit_path.exists():
         exit_path.unlink()
-    runner = _runner_path(processed_dir, job_id)
+    runner = _runner_path(processed_dir, job_id).resolve()
     child_env = {k: str(v) for k, v in os.environ.items()}
     if env:
         child_env.update({k: str(v) for k, v in env.items()})
     child_env.setdefault("PYTHONUNBUFFERED", "1")
-    # Avoid leaking Cursor seatbelt markers into the worker when we can.
     child_env.pop("CURSOR_AGENT", None)
     child_env.pop("__CURSOR_SANDBOX_ENV_RESTORE", None)
-    cwd = Path.cwd()
+    cwd = Path.cwd().resolve()
     runner_env = {
         "PYTHONUNBUFFERED": child_env.get("PYTHONUNBUFFERED", "1"),
         "HAPPY_HOUSING_LOG_LEVEL": child_env.get("HAPPY_HOUSING_LOG_LEVEL", "INFO"),
@@ -354,6 +388,7 @@ def start_admin_job(
         "TMPDIR": child_env.get("TMPDIR", ""),
         "VIRTUAL_ENV": child_env.get("VIRTUAL_ENV", ""),
         "LANG": child_env.get("LANG", "en_US.UTF-8"),
+        "PYTHONPATH": child_env.get("PYTHONPATH", ""),
     }
     for key in (
         "DOCKER_HOST",
@@ -375,22 +410,30 @@ def start_admin_job(
         env=runner_env,
     )
 
+    # Prefer the same interpreter as the job command when it is a python path.
+    python_bin = sys.executable
+    if command and Path(str(command[0])).name.startswith("python"):
+        python_bin = str(command[0])
+    launcher = [python_bin, str(runner)]
+
     proc: subprocess.Popen[str] | None = None
     spawn_error: str | None = None
-    if sys.platform == "darwin" and cursor_agent_sandbox_active():
+    # macOS: never fork from Streamlit (multithreaded / fork-unsafe → SIGSEGV).
+    # Always ask launchd/osascript to start the runner in a fresh process tree.
+    if sys.platform == "darwin":
         try:
-            pid = _spawn_via_osascript(runner)
+            pid = _spawn_via_osascript(launcher)
             logger.info(
-                "Started admin job %s via osascript escape pid=%s → %s",
+                "Started admin job %s via osascript pid=%s → %s",
                 job_id,
                 pid,
                 log_path,
             )
         except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
-            logger.warning("osascript escape failed (%s); falling back to Popen", exc)
+            logger.warning("osascript spawn failed (%s); falling back to Popen", exc)
             spawn_error = str(exc)
             proc = subprocess.Popen(  # nosec B603 — runner script, shell=False
-                [str(runner)],
+                launcher,
                 cwd=str(cwd),
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
@@ -400,7 +443,7 @@ def start_admin_job(
             pid = int(proc.pid)
     else:
         proc = subprocess.Popen(  # nosec B603 — runner script, shell=False
-            [str(runner)],
+            launcher,
             cwd=str(cwd),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -419,7 +462,7 @@ def start_admin_job(
         started_at=_utc_now(),
         finished_at=None,
         returncode=None,
-        log_path=str(log_path.resolve()),
+        log_path=str(log_path),
         error=spawn_error,
     )
     _write_state(processed_dir, state)

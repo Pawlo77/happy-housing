@@ -283,12 +283,15 @@ def _panel_ops(settings: AppSettings, settings_file: Path, proc: Path) -> None:
     st.divider()
     _render_ops_services(config)
     st.divider()
-    if cursor_agent_sandbox_active():
+    if sys.platform == "darwin":
+        st.info(
+            "Ops jobs launch via macOS osascript (avoids Streamlit fork SIGSEGV). "
+            "CLI fallback: `uv run python -m happy_housing.pipeline`."
+        )
+    elif cursor_agent_sandbox_active():
         st.warning(
             "This Streamlit process was started under the **Cursor agent sandbox**. "
-            "Ops jobs may die instantly with `returncode=-11`. "
-            "Prefer `make app` from Terminal.app (or a Cursor terminal with full "
-            "permissions). Jobs now try an osascript escape on macOS."
+            "Prefer `make app` from Terminal.app if Ops jobs fail to start."
         )
     _render_ops_job_monitor(settings, proc)
     st.divider()

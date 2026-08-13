@@ -133,15 +133,12 @@ def test_cursor_agent_sandbox_active_reads_env(monkeypatch) -> None:  # type: ig
     assert cursor_agent_sandbox_active() is True
 
 
-def test_start_admin_job_uses_osascript_escape_on_darwin(tmp_path: Path) -> None:
+def test_start_admin_job_uses_osascript_on_darwin(tmp_path: Path) -> None:
+    """macOS always uses osascript so Streamlit never forks job children."""
     root = tmp_path / "processed"
     fake = MagicMock(returncode=0, stdout="4242\n", stderr="")
 
     with (
-        patch(
-            "happy_housing.app.admin_jobs.cursor_agent_sandbox_active",
-            return_value=True,
-        ),
         patch("happy_housing.app.admin_jobs.sys.platform", "darwin"),
         patch(
             "happy_housing.app.admin_jobs.subprocess.run",
@@ -160,3 +157,4 @@ def test_start_admin_job_uses_osascript_escape_on_darwin(tmp_path: Path) -> None
     argv = run_mock.call_args.args[0]
     assert argv[0] == "osascript"
     assert job.error is None
+    assert (jobs_dir(root) / f"{job.job_id}.py").exists()
