@@ -82,9 +82,14 @@ _TRANSIT_SHOW_FIELDS: tuple[str, ...] = (
 """Transit mode toggles (no master Transit lines flag)."""
 
 
-def listing_delta_rgba(delta_zl_m2: float) -> tuple[int, int, int, int]:
+def listing_delta_rgba(
+    delta_zl_m2: float,
+    *,
+    scale_zl: float = _DELTA_COLOR_SCALE_ZL,
+) -> tuple[int, int, int, int]:
     """Map listing-model delta zl/m2 to continuous RGBA (green → amber → red)."""
-    t = 0.5 * (float(np.tanh(float(delta_zl_m2) / _DELTA_COLOR_SCALE_ZL)) + 1.0)
+    scale = max(100.0, float(scale_zl))
+    t = 0.5 * (float(np.tanh(float(delta_zl_m2) / scale)) + 1.0)
     if t <= 0.5:
         u = t * 2.0
         lo, hi = _DELTA_UNDER_RGB, _DELTA_MID_RGB
@@ -95,10 +100,15 @@ def listing_delta_rgba(delta_zl_m2: float) -> tuple[int, int, int, int]:
     return (rgb[0], rgb[1], rgb[2], _DELTA_COLOR_ALPHA)
 
 
-def listing_delta_rgba_columns(delta: pd.Series) -> pd.DataFrame:
+def listing_delta_rgba_columns(
+    delta: pd.Series,
+    *,
+    scale_zl: float = _DELTA_COLOR_SCALE_ZL,
+) -> pd.DataFrame:
     """Vectorized RGBA columns for offer ScatterplotLayer fills."""
     values = pd.to_numeric(delta, errors="coerce").fillna(0.0).to_numpy(dtype=float)
-    t = 0.5 * (np.tanh(values / _DELTA_COLOR_SCALE_ZL) + 1.0)
+    scale = max(100.0, float(scale_zl))
+    t = 0.5 * (np.tanh(values / scale) + 1.0)
     left = t <= 0.5
     u = np.where(left, t * 2.0, (t - 0.5) * 2.0)
     lo_arr = np.empty((len(values), 3), dtype=float)
@@ -349,6 +359,10 @@ def recommended_pins_memo_key(
     otodom_pool_default: bool,
     amenity_weights: Mapping[str, float] | None,
     commute_mode: object,
+    delta_scale_zl: float = 2000.0,
+    dist_cap_m: float = 2000.0,
+    opened_penalty: float = 0.5,
+    skipped_penalty: float = 3.0,
 ) -> tuple[object, ...]:
     """Session memo key for map recommended-pin ids (skip full rescoring)."""
     weights = tuple(
@@ -371,6 +385,10 @@ def recommended_pins_memo_key(
         bool(otodom_pool_default),
         weights,
         str(commute_mode or ""),
+        round(float(delta_scale_zl), 1),
+        round(float(dist_cap_m), 1),
+        round(float(opened_penalty), 6),
+        round(float(skipped_penalty), 6),
     )
 
 
@@ -624,6 +642,7 @@ def prepare_listings_for_map(
     *,
     recommended_ids: frozenset[str] | set[str] | None = None,
     commute_mode: object | None = None,
+    delta_scale_zl: float = _DELTA_COLOR_SCALE_ZL,
 ) -> pd.DataFrame:
     """Listing pins with delta colours and rich hover fields.
 
@@ -646,7 +665,7 @@ def prepare_listings_for_map(
     recommended = {str(x) for x in (recommended_ids or ())}
     out["is_recommended"] = out["listing_id"].isin(recommended)
     delta = pd.to_numeric(out.get("delta_price_per_m2"), errors="coerce").fillna(0.0)
-    colors = listing_delta_rgba_columns(delta)
+    colors = listing_delta_rgba_columns(delta, scale_zl=delta_scale_zl)
     out["color_r"] = colors["color_r"].to_numpy()
     out["color_g"] = colors["color_g"].to_numpy()
     out["color_b"] = colors["color_b"].to_numpy()
@@ -767,7 +786,11 @@ def prepare_city_pois_for_map(
     return slim_map_frame(out)
 
 
-def prepare_shops_for_map(frame: pd.DataFrame) -> pd.DataFrame:
+def prepare_shops_for_map(
+    frame: pd.DataFrame,
+    *,
+    max_points: int = MAX_SHOP_MAP_POINTS,
+) -> pd.DataFrame:
     """Shop POIs with category + OSM tag in the hover detail."""
     if frame.empty:
         return pd.DataFrame()
@@ -778,7 +801,7 @@ def prepare_shops_for_map(frame: pd.DataFrame) -> pd.DataFrame:
     out["lat"] = pd.to_numeric(out["lat"], errors="coerce")
     out["lon"] = pd.to_numeric(out["lon"], errors="coerce")
     out = out.dropna(subset=["lat", "lon"])
-    out = limit_map_points(out, MAX_SHOP_MAP_POINTS)
+    out = limit_map_points(out, max_points)
     if "shop" in out.columns:
         shop = out["shop"].astype(str)
     else:

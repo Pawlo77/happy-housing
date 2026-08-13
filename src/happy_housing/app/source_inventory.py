@@ -55,9 +55,18 @@ _SOURCE_ARTIFACTS: dict[str, tuple[ArtifactRef, ...]] = {
         ArtifactRef("processed", "gunb_mazowieckie.parquet"),
         ArtifactRef("fixtures", "gunb_points.json"),
     ),
+    "crime": (
+        ArtifactRef("processed", "crime_by_district.parquet"),
+        ArtifactRef("cache", "crime_panorama"),
+    ),
     "oou": (
         ArtifactRef("fixtures", "chopin_aircraft_lden.geojson"),
         ArtifactRef("fixtures", "chopin_aircraft_lnight.geojson"),
+    ),
+    "traffic": (ArtifactRef("cache", "traffic_roads.parquet"),),
+    "bike_paths": (
+        ArtifactRef("cache", "bike_paths.geojson"),
+        ArtifactRef("fixtures", "bike_paths.geojson"),
     ),
 }
 """Preferred artifact paths per catalog ``key`` (first existing wins)."""

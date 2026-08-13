@@ -6,6 +6,7 @@ import json
 import logging
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -112,10 +113,28 @@ class AppSettings:
     """Weight for transit-stop proximity term."""
     recommender_w_overprice: float = 0.15
     """Penalty weight for overpriced asks."""
+    recommender_delta_scale_zl: float = 2000.0
+    """zł/m² soft-cap for bargain/overprice score terms."""
+    recommender_dist_cap_m: float = 2000.0
+    """Amenity proximity soft-cap (metres) in the recommender."""
+    recommender_opened_penalty: float = 0.5
+    """Extra demotion weight when an offer was opened."""
+    recommender_skipped_penalty: float = 3.0
+    """Extra demotion weight when an offer was skipped."""
     recommender_otodom_pool_default: bool = True
     """When prefs sources empty, score Otodom/fixture only."""
     recommender_amenity_weights: dict[str, float] | None = None
     """Per-amenity score weights (-1..+1); None -> catalog defaults (all 0)."""
+    explore_default_hour: int = 8
+    """Default Explore Map time-of-day slider (0-23)."""
+    explore_default_basemap: str = "Streets"
+    """Default Explore basemap: Streets or Satellite."""
+    map_max_gunb_points: int = 3000
+    """Max GUNB permit pins drawn on Explore Map."""
+    map_max_shop_points: int = 5000
+    """Max shop pins drawn on Explore Map."""
+    map_delta_color_scale_zl: float = 1500.0
+    """Listing pin colour tanh scale (zł/m² delta)."""
     stats_min_district_offers: int = 5
     """Minimum offers before a district appears on Stats scoreboards."""
     stats_top_n: int = 15
@@ -466,11 +485,103 @@ def load_app_settings(path: Path) -> AppSettings:
                 payload.get("recommender_w_overprice", defaults.recommender_w_overprice)
             ),
         ),
+        recommender_delta_scale_zl=max(
+            100.0,
+            float(
+                payload.get(
+                    "recommender_delta_scale_zl",
+                    defaults.recommender_delta_scale_zl,
+                )
+            ),
+        ),
+        recommender_dist_cap_m=max(
+            100.0,
+            float(
+                payload.get(
+                    "recommender_dist_cap_m",
+                    defaults.recommender_dist_cap_m,
+                )
+            ),
+        ),
+        recommender_opened_penalty=max(
+            0.0,
+            float(
+                payload.get(
+                    "recommender_opened_penalty",
+                    defaults.recommender_opened_penalty,
+                )
+            ),
+        ),
+        recommender_skipped_penalty=max(
+            0.0,
+            float(
+                payload.get(
+                    "recommender_skipped_penalty",
+                    defaults.recommender_skipped_penalty,
+                )
+            ),
+        ),
         recommender_otodom_pool_default=bool(
             payload.get(
                 "recommender_otodom_pool_default",
                 defaults.recommender_otodom_pool_default,
             )
+        ),
+        explore_default_hour=min(
+            23,
+            max(
+                0,
+                int(
+                    payload.get(
+                        "explore_default_hour",
+                        defaults.explore_default_hour,
+                    )
+                ),
+            ),
+        ),
+        explore_default_basemap=(
+            "Satellite"
+            if str(
+                payload.get(
+                    "explore_default_basemap",
+                    defaults.explore_default_basemap,
+                )
+            ).strip()
+            == "Satellite"
+            else "Streets"
+        ),
+        map_max_gunb_points=max(
+            100,
+            min(
+                50_000,
+                int(
+                    payload.get(
+                        "map_max_gunb_points",
+                        defaults.map_max_gunb_points,
+                    )
+                ),
+            ),
+        ),
+        map_max_shop_points=max(
+            100,
+            min(
+                50_000,
+                int(
+                    payload.get(
+                        "map_max_shop_points",
+                        defaults.map_max_shop_points,
+                    )
+                ),
+            ),
+        ),
+        map_delta_color_scale_zl=max(
+            100.0,
+            float(
+                payload.get(
+                    "map_delta_color_scale_zl",
+                    defaults.map_delta_color_scale_zl,
+                )
+            ),
         ),
         recommender_amenity_weights=coerce_amenity_weights(
             payload.get(
@@ -688,6 +799,31 @@ def load_app_settings(path: Path) -> AppSettings:
             int(payload.get("chat_max_tool_rounds", defaults.chat_max_tool_rounds)),
         ),
     )
+
+
+def recommender_kwargs_from_settings(settings: AppSettings) -> dict[str, Any]:
+    """Keyword args shared by score / retrain / top-N recommendation helpers."""
+    return {
+        "demotion_alpha": float(settings.recommender_demotion_alpha),
+        "w_bargain": float(settings.recommender_w_bargain),
+        "w_commute": float(settings.recommender_w_commute),
+        "w_transit": float(settings.recommender_w_transit),
+        "w_overprice": float(settings.recommender_w_overprice),
+        "otodom_pool_default": bool(settings.recommender_otodom_pool_default),
+        "delta_scale_zl": float(settings.recommender_delta_scale_zl),
+        "dist_cap_m": float(settings.recommender_dist_cap_m),
+        "opened_penalty": float(settings.recommender_opened_penalty),
+        "skipped_penalty": float(settings.recommender_skipped_penalty),
+    }
+
+
+def map_render_kwargs_from_settings(settings: AppSettings) -> dict[str, Any]:
+    """Explore map pin colour scale and point caps from Admin settings."""
+    return {
+        "delta_scale_zl": float(settings.map_delta_color_scale_zl),
+        "max_gunb_points": int(settings.map_max_gunb_points),
+        "max_shop_points": int(settings.map_max_shop_points),
+    }
 
 
 def _opt_lon_lat(value: object) -> float | None:

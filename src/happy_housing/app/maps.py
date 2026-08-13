@@ -19,6 +19,7 @@ from happy_housing.app.commute_target import CommuteTarget, commute_compare_poin
 from happy_housing.app.data import load_config
 from happy_housing.app.io_cache import file_mtime
 from happy_housing.app.map_layers import (
+    MAX_GUNB_MAP_POINTS,
     MAX_SHOP_MAP_POINTS,
     SHOP_CATEGORY_LABELS,
     LayerFlags,
@@ -209,12 +210,14 @@ def listings_scatter_layer(
     *,
     recommended_ids: frozenset[str] | set[str] | None = None,
     commute_mode: object | None = None,
+    delta_scale_zl: float = 1_500.0,
 ) -> list[pdk.Layer]:
     """Scatterplot of filtered offers; recommended pins draw larger on top."""
     map_df = prepare_listings_for_map(
         frame,
         recommended_ids=recommended_ids,
         commute_mode=commute_mode,
+        delta_scale_zl=delta_scale_zl,
     )
     if map_df.empty:
         return []
@@ -474,6 +477,7 @@ def shops_layers(
     show_home: bool = True,
     show_mobility: bool = True,
     show_other: bool = True,
+    max_points: int = MAX_SHOP_MAP_POINTS,
 ) -> list[pdk.Layer]:
     """One IconLayer per enabled shop subcategory (emoji markers)."""
     enabled: set[str] = set()
@@ -502,7 +506,7 @@ def shops_layers(
     work["lon"] = pd.to_numeric(work["lon"], errors="coerce")
     work = work.dropna(subset=["lat", "lon"])
     # Cap once across categories so the map payload stays bounded.
-    work = limit_map_points(work, MAX_SHOP_MAP_POINTS)
+    work = limit_map_points(work, max_points)
     if work.empty:
         return []
     if "shop" not in work.columns:
@@ -515,7 +519,7 @@ def shops_layers(
         subset = work.loc[work["shop_category"] == category]
         if subset.empty:
             continue
-        prepared = prepare_shops_for_map(subset)
+        prepared = prepare_shops_for_map(subset, max_points=max_points)
         layer = _icon(
             prepared,
             layer_id=f"shops-{category}",
@@ -804,9 +808,13 @@ def air_stations_layer(stations: pd.DataFrame) -> pdk.Layer | None:
     )
 
 
-def gunb_layer(points: pd.DataFrame) -> pdk.Layer | None:
+def gunb_layer(
+    points: pd.DataFrame,
+    *,
+    max_points: int = MAX_GUNB_MAP_POINTS,
+) -> pdk.Layer | None:
     """GUNB construction / permit markers (star); capped for message size."""
-    prepared = prepare_gunb_for_map(points)
+    prepared = prepare_gunb_for_map(points, max_points=max_points)
     return _icon(
         prepared,
         layer_id="gunb",
@@ -923,6 +931,9 @@ def explore_map_layer_cache_key(
     focus: MapAddressFocus | None,
     overlay_counts: Mapping[str, int],
     commute_mode: object | None = None,
+    delta_scale_zl: float = 1_500.0,
+    max_gunb_points: int = MAX_GUNB_MAP_POINTS,
+    max_shop_points: int = MAX_SHOP_MAP_POINTS,
 ) -> tuple[object, ...]:
     """Cache key for rebuilt Explore pydeck layers (skip rebuild on pin click)."""
     focus_key: tuple[object, ...] | None
@@ -938,10 +949,13 @@ def explore_map_layer_cache_key(
         str(basemap),
         round(float(commute_lon), 5),
         round(float(commute_lat), 5),
-        tuple(sorted(str(x) for x in recommended_ids)),
+        tuple(sorted(recommended_ids)),
         focus_key,
         counts,
-        str(commute_mode or ""),
+        str(commute_mode),
+        round(float(delta_scale_zl), 1),
+        int(max_gunb_points),
+        int(max_shop_points),
     )
 
 
@@ -1308,6 +1322,9 @@ def build_explore_layers(
     aq_overlay: AqMapOverlay | None = None,
     recommended_ids: frozenset[str] | set[str] | None = None,
     commute_mode: object | None = None,
+    delta_scale_zl: float = 1_500.0,
+    max_gunb_points: int = MAX_GUNB_MAP_POINTS,
+    max_shop_points: int = MAX_SHOP_MAP_POINTS,
 ) -> list[pdk.Layer]:
     """Assemble enabled Explore map layers in draw order."""
     layers: list[pdk.Layer] = []
@@ -1367,6 +1384,7 @@ def build_explore_layers(
                 show_home=flags.shop_show_home,
                 show_mobility=flags.shop_show_mobility,
                 show_other=flags.shop_show_other,
+                max_points=max_shop_points,
             )
         )
     layers.extend(
@@ -1384,7 +1402,7 @@ def build_explore_layers(
         if air is not None:
             layers.append(air)
     if flags.gunb:
-        gunb_pts = gunb_layer(gunb)
+        gunb_pts = gunb_layer(gunb, max_points=max_gunb_points)
         if gunb_pts is not None:
             layers.append(gunb_pts)
     if flags.commute_target:
@@ -1397,6 +1415,7 @@ def build_explore_layers(
                 listings,
                 recommended_ids=recommended_ids,
                 commute_mode=commute_mode,
+                delta_scale_zl=delta_scale_zl,
             )
         )
     logger.debug(

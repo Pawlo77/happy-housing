@@ -181,13 +181,17 @@ def score_offers(
     w_overprice: float = 0.15,
     otodom_pool_default: bool = True,
     commute_mode: object | None = None,
+    delta_scale_zl: float = 2000.0,
+    dist_cap_m: float = RECOMMENDER_DIST_CAP_M,
+    opened_penalty: float = 0.5,
+    skipped_penalty: float = 3.0,
 ) -> pd.DataFrame:
     """Rank offers by bargain + proximity (+ soft prefs / amenity weights).
 
     When ``prefs.enabled``, hard-filters first via ``apply_preferences``.
     Non-zero ``amenity_weights`` nudge score by proximity to each type
     (positive = prefer near, negative = prefer far), capped at
-    ``RECOMMENDER_DIST_CAP_M``. ``commute_mode`` selects which door-to-door
+    ``dist_cap_m``. ``commute_mode`` selects which door-to-door
     minutes column feeds the commute term (default: public transport).
     """
     work = frame
@@ -213,11 +217,12 @@ def score_offers(
         w_bargain=w_bargain, w_commute=w_commute, w_transit=w_transit
     )
     wo = max(0.0, float(w_overprice))
+    scale = max(100.0, float(delta_scale_zl))
     delta = _col(work, "delta_price_per_m2")
     commute = _col(work, commute_column_for_mode(commute_mode))
     transit = _col(work, "dist_transit_stop_m")
-    bargain = ((-delta).clip(lower=0.0) / 2000.0).clip(upper=1.0).fillna(0.0)
-    overprice = (delta.clip(lower=0.0) / 2000.0).clip(upper=1.0).fillna(0.0)
+    bargain = ((-delta).clip(lower=0.0) / scale).clip(upper=1.0).fillna(0.0)
+    overprice = (delta.clip(lower=0.0) / scale).clip(upper=1.0).fillna(0.0)
     commute_cap = (
         float(prefs.max_commute_min)
         if prefs is not None and prefs.max_commute_min
@@ -235,7 +240,7 @@ def score_offers(
         noise_bonus = (1.0 - _col(work, "in_oou").fillna(0.0).clip(0.0, 1.0)) * 0.15
     amenity_bonus = pd.Series(0.0, index=work.index, dtype=float)
     weights = amenity_weights or {}
-    cap = float(RECOMMENDER_DIST_CAP_M)
+    cap = max(100.0, float(dist_cap_m))
     for key in amenity_keys():
         weight = float(weights.get(key, 0.0) or 0.0)
         if abs(weight) < 1e-9:
@@ -273,7 +278,10 @@ def score_offers(
         .map(lambda lid: 1.0 if (impressions.get(lid) or {}).get("skipped") else 0.0)
     )
     demoted = base / (
-        1.0 + float(demotion_alpha) * counts + 0.5 * opened + 3.0 * skipped
+        1.0
+        + float(demotion_alpha) * counts
+        + float(opened_penalty) * opened
+        + float(skipped_penalty) * skipped
     )
     out = pd.DataFrame({
         "listing_id": work["listing_id"].astype(str),
@@ -301,6 +309,10 @@ def retrain_recommender(
     w_overprice: float = 0.15,
     otodom_pool_default: bool = True,
     commute_mode: object | None = None,
+    delta_scale_zl: float = 2000.0,
+    dist_cap_m: float = RECOMMENDER_DIST_CAP_M,
+    opened_penalty: float = 0.5,
+    skipped_penalty: float = 3.0,
 ) -> dict[str, float]:
     """Rescore the universe, persist metrics, return summary stats."""
     logger.info(
@@ -323,6 +335,10 @@ def retrain_recommender(
         w_overprice=w_overprice,
         otodom_pool_default=otodom_pool_default,
         commute_mode=commute_mode,
+        delta_scale_zl=delta_scale_zl,
+        dist_cap_m=dist_cap_m,
+        opened_penalty=opened_penalty,
+        skipped_penalty=skipped_penalty,
     )
     top = ranked.head(max(1, int(top_n)))
     unseen = 0.0
@@ -390,6 +406,10 @@ def top_recommendations(
     otodom_pool_default: bool = True,
     exclude_ids: frozenset[str] | set[str] | None = None,
     commute_mode: object | None = None,
+    delta_scale_zl: float = 2000.0,
+    dist_cap_m: float = RECOMMENDER_DIST_CAP_M,
+    opened_penalty: float = 0.5,
+    skipped_penalty: float = 3.0,
 ) -> pd.DataFrame:
     """Return top-N ranked listing rows; optionally record impressions + metrics."""
     impressions = load_impressions(impressions_path(processed_dir))
@@ -405,6 +425,10 @@ def top_recommendations(
         w_overprice=w_overprice,
         otodom_pool_default=otodom_pool_default,
         commute_mode=commute_mode,
+        delta_scale_zl=delta_scale_zl,
+        dist_cap_m=dist_cap_m,
+        opened_penalty=opened_penalty,
+        skipped_penalty=skipped_penalty,
     )
     if exclude_ids:
         blocked = {str(x) for x in exclude_ids}
@@ -429,6 +453,10 @@ def top_recommendations(
             w_overprice=w_overprice,
             otodom_pool_default=otodom_pool_default,
             commute_mode=commute_mode,
+            delta_scale_zl=delta_scale_zl,
+            dist_cap_m=dist_cap_m,
+            opened_penalty=opened_penalty,
+            skipped_penalty=skipped_penalty,
         )
     ids = top["listing_id"].tolist()
     conf_map = dict(zip(top["listing_id"], top["confidence"], strict=True))

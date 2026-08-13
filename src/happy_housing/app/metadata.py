@@ -174,6 +174,20 @@ DEFAULT_SOURCE_CATALOG: tuple[DataSource, ...] = (
         key="oou",
         unit="zones",
     ),
+    DataSource(
+        name="OSM traffic sample (roads)",
+        url="https://www.openstreetmap.org/",
+        role="Diurnal street-activity field for Explore Map / Spatial traffic.",
+        key="traffic",
+        unit="segments",
+    ),
+    DataSource(
+        name="OSM bicycle infrastructure",
+        url="https://www.openstreetmap.org/",
+        role="Bike-path coverage features and Explore Map bike layer.",
+        key="bike_paths",
+        unit="ways",
+    ),
 )
 """Canonical data sources with URLs for the Home page."""
 

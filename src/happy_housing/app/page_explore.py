@@ -19,7 +19,13 @@ from happy_housing.app.ai_review import (
     review_context_hash,
     reviews_db_path,
 )
-from happy_housing.app.app_settings import AppSettings, load_app_settings, settings_path
+from happy_housing.app.app_settings import (
+    AppSettings,
+    load_app_settings,
+    map_render_kwargs_from_settings,
+    recommender_kwargs_from_settings,
+    settings_path,
+)
 from happy_housing.app.board_sort import (
     BOARD_SORT_OPTIONS,
     BOARD_SORT_RECOMMENDATION,
@@ -255,17 +261,12 @@ def _refresh_recommender_after_feedback(
         scored,
         processed_dir=processed_dir,
         top_n=int(app_settings.recommender_top_n),
-        demotion_alpha=float(app_settings.recommender_demotion_alpha),
         prefs=prefs,
         amenity_weights=coerce_amenity_weights(
             app_settings.recommender_amenity_weights
         ),
-        w_bargain=float(app_settings.recommender_w_bargain),
-        w_commute=float(app_settings.recommender_w_commute),
-        w_transit=float(app_settings.recommender_w_transit),
-        w_overprice=float(app_settings.recommender_w_overprice),
-        otodom_pool_default=bool(app_settings.recommender_otodom_pool_default),
         commute_mode=app_settings.commute_display_mode,
+        **recommender_kwargs_from_settings(app_settings),
     )
     st.session_state.pop(NEWS_REC_IDS_KEY, None)
 
@@ -287,22 +288,18 @@ def _recommended_listing_ids(
 ) -> frozenset[str]:
     """Current promising ids for map highlighting (starred excluded)."""
     path = scored_path()
+    rec_kw = recommender_kwargs_from_settings(app_settings)
     memo_key = recommended_pins_memo_key(
         scored_mtime=file_mtime(path) if path.exists() else 0.0,
         scored_rows=len(scored),
         prefs_payload=prefs.to_dict(),
         starred=starred,
         top_n=int(app_settings.recommender_top_n),
-        demotion_alpha=float(app_settings.recommender_demotion_alpha),
-        w_bargain=float(app_settings.recommender_w_bargain),
-        w_commute=float(app_settings.recommender_w_commute),
-        w_transit=float(app_settings.recommender_w_transit),
-        w_overprice=float(app_settings.recommender_w_overprice),
-        otodom_pool_default=bool(app_settings.recommender_otodom_pool_default),
         amenity_weights=coerce_amenity_weights(
             app_settings.recommender_amenity_weights
         ),
         commute_mode=app_settings.commute_display_mode,
+        **rec_kw,
     )
     if st.session_state.get(_REC_IDS_CACHE_KEY) == memo_key:
         cached = st.session_state.get(_REC_IDS_CACHE_VAL)
@@ -312,19 +309,14 @@ def _recommended_listing_ids(
         scored,
         processed_dir=processed_dir,
         top_n=int(app_settings.recommender_top_n),
-        demotion_alpha=float(app_settings.recommender_demotion_alpha),
         prefs=prefs,
         amenity_weights=coerce_amenity_weights(
             app_settings.recommender_amenity_weights
         ),
         record=False,
-        w_bargain=float(app_settings.recommender_w_bargain),
-        w_commute=float(app_settings.recommender_w_commute),
-        w_transit=float(app_settings.recommender_w_transit),
-        w_overprice=float(app_settings.recommender_w_overprice),
-        otodom_pool_default=bool(app_settings.recommender_otodom_pool_default),
         exclude_ids=starred,
         commute_mode=app_settings.commute_display_mode,
+        **rec_kw,
     )
     result = (
         frozenset() if top.empty else frozenset(top["listing_id"].astype(str).tolist())
@@ -409,6 +401,9 @@ def _cached_build_explore_layers(
     commute_label: str,
     recommended_ids: frozenset[str] | None,
     commute_mode: object | None,
+    delta_scale_zl: float = 1_500.0,
+    max_gunb_points: int = 3_000,
+    max_shop_points: int = 5_000,
 ) -> list[Any]:
     """Build Explore pydeck layers with session cache (Map + Offer Map)."""
     listing_fp = (
@@ -427,6 +422,9 @@ def _cached_build_explore_layers(
         recommended_ids=rec_ids,
         focus=None,
         commute_mode=commute_mode,
+        delta_scale_zl=delta_scale_zl,
+        max_gunb_points=max_gunb_points,
+        max_shop_points=max_shop_points,
         overlay_counts=_explore_overlay_counts(
             filtered=filtered,
             amenities=amenities,
@@ -478,6 +476,9 @@ def _cached_build_explore_layers(
             commute_label=commute_label,
             recommended_ids=recommended_ids,
             commute_mode=commute_mode,
+            delta_scale_zl=delta_scale_zl,
+            max_gunb_points=max_gunb_points,
+            max_shop_points=max_shop_points,
         )
 
     return cached_explore_map_layers(cache_key, _build)
@@ -963,13 +964,23 @@ def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
             ):
                 st.session_state[key] = False
 
+    settings = load_app_settings(settings_path(processed_dir()))
+    if "explore_hour" not in st.session_state:
+        st.session_state["explore_hour"] = int(settings.explore_default_hour)
+    if "explore_basemap" not in st.session_state:
+        st.session_state["explore_basemap"] = (
+            "Satellite"
+            if str(settings.explore_default_basemap) == "Satellite"
+            else "Streets"
+        )
+
     _apply_pending_map_view_preset()
     _render_map_view_presets_ui()
     basemap = (
         st.segmented_control(
             "Basemap",
             options=["Streets", "Satellite"],
-            default="Streets",
+            default=st.session_state.get("explore_basemap") or "Streets",
             help=BASEMAP_HELP,
             key="explore_basemap",
         )
@@ -1008,7 +1019,7 @@ def _sidebar_map_controls() -> tuple[LayerFlags, int, str]:
             "Time of day (transit & traffic)",
             min_value=0,
             max_value=23,
-            value=8,
+            value=int(st.session_state.get("explore_hour", 8)),
             format="%02d:00",
             help=(
                 "Filters GTFS departures by hour and scales the traffic-intensity "
@@ -1439,6 +1450,9 @@ def _tab_map(
     commute_label: str = "Commute target",
     recommended_ids: frozenset[str] | None = None,
     commute_mode: object | None = None,
+    delta_scale_zl: float = 1_500.0,
+    max_gunb_points: int = 3_000,
+    max_shop_points: int = 5_000,
 ) -> None:
     """Market map with toggleable livability overlays.
 
@@ -1479,6 +1493,9 @@ def _tab_map(
         commute_label=commute_label,
         recommended_ids=recommended_ids,
         commute_mode=commute_mode,
+        delta_scale_zl=delta_scale_zl,
+        max_gunb_points=max_gunb_points,
+        max_shop_points=max_shop_points,
     )
     if focus is not None:
         layers.append(address_search_layer(focus.lon, focus.lat, label=focus.label))
@@ -2306,6 +2323,9 @@ def _tab_offer(
                 commute_label=commute_label,
                 recommended_ids=recommended_ids,
                 commute_mode=route_mode,
+                delta_scale_zl=float(app_settings.map_delta_color_scale_zl),
+                max_gunb_points=int(app_settings.map_max_gunb_points),
+                max_shop_points=int(app_settings.map_max_shop_points),
             )
             if route_plan is not None:
                 if not flags.commute_target:
@@ -2386,11 +2406,12 @@ def _tab_board(
     enriched = enrich_board_recommendations(
         slim,
         impressions=impressions,
-        demotion_alpha=float(app_settings.recommender_demotion_alpha),
         prefs=prefs,
         amenity_weights=coerce_amenity_weights(
             app_settings.recommender_amenity_weights
         ),
+        commute_mode=app_settings.commute_display_mode,
+        **recommender_kwargs_from_settings(app_settings),
     )
     labels = [label for _, label in BOARD_SORT_OPTIONS]
     keys = [key for key, _ in BOARD_SORT_OPTIONS]
@@ -2510,23 +2531,19 @@ def _tab_news(
             "listings. Skip replaces a card; starring an offer also refreshes."
         )
     previous = st.session_state.get(NEWS_REC_IDS_KEY)
+    rec_kw = recommender_kwargs_from_settings(app_settings)
     promising = top_recommendations(
         scored,
         processed_dir=proc,
         top_n=int(app_settings.recommender_top_n),
-        demotion_alpha=float(app_settings.recommender_demotion_alpha),
         prefs=prefs,
         amenity_weights=coerce_amenity_weights(
             app_settings.recommender_amenity_weights
         ),
         record=False,
-        w_bargain=float(app_settings.recommender_w_bargain),
-        w_commute=float(app_settings.recommender_w_commute),
-        w_transit=float(app_settings.recommender_w_transit),
-        w_overprice=float(app_settings.recommender_w_overprice),
-        otodom_pool_default=bool(app_settings.recommender_otodom_pool_default),
         exclude_ids=starred,
         commute_mode=app_settings.commute_display_mode,
+        **rec_kw,
     )
     current_ids = (
         tuple(promising["listing_id"].astype(str).tolist())
@@ -2539,17 +2556,12 @@ def _tab_news(
             scored,
             processed_dir=proc,
             top_n=int(app_settings.recommender_top_n),
-            demotion_alpha=float(app_settings.recommender_demotion_alpha),
             prefs=prefs,
             amenity_weights=coerce_amenity_weights(
                 app_settings.recommender_amenity_weights
             ),
-            w_bargain=float(app_settings.recommender_w_bargain),
-            w_commute=float(app_settings.recommender_w_commute),
-            w_transit=float(app_settings.recommender_w_transit),
-            w_overprice=float(app_settings.recommender_w_overprice),
-            otodom_pool_default=bool(app_settings.recommender_otodom_pool_default),
             commute_mode=app_settings.commute_display_mode,
+            **rec_kw,
         )
         st.session_state[NEWS_REC_IDS_KEY] = current_ids
     if promising.empty:
@@ -3130,6 +3142,7 @@ def render_explore() -> None:
             if explore_needs_recommended_pins(section, offer_subtab)
             else frozenset()
         ),
+        **map_render_kwargs_from_settings(app_settings),
     }
     tab_map, tab_spatial, tab_offer, tab_board, tab_news, tab_chat, tab_prefs = st.tabs(
         list(EXPLORE_SECTIONS),

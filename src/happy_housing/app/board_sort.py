@@ -68,6 +68,16 @@ def enrich_board_recommendations(
     demotion_alpha: float,
     prefs: UserPreferences | None = None,
     amenity_weights: dict[str, float] | None = None,
+    w_bargain: float = 0.50,
+    w_commute: float = 0.25,
+    w_transit: float = 0.20,
+    w_overprice: float = 0.15,
+    otodom_pool_default: bool = True,
+    commute_mode: object | None = None,
+    delta_scale_zl: float = 2000.0,
+    dist_cap_m: float = 2000.0,
+    opened_penalty: float = 0.5,
+    skipped_penalty: float = 3.0,
 ) -> pd.DataFrame:
     """Attach recommender confidence and seen flags for board display/sort."""
     if frame.empty or "listing_id" not in frame.columns:
@@ -85,6 +95,16 @@ def enrich_board_recommendations(
         impressions=impressions,
         prefs=prefs,
         amenity_weights=amenity_weights,
+        w_bargain=w_bargain,
+        w_commute=w_commute,
+        w_transit=w_transit,
+        w_overprice=w_overprice,
+        otodom_pool_default=otodom_pool_default,
+        commute_mode=commute_mode,
+        delta_scale_zl=delta_scale_zl,
+        dist_cap_m=dist_cap_m,
+        opened_penalty=opened_penalty,
+        skipped_penalty=skipped_penalty,
     )
     conf = ranked.set_index("listing_id")["confidence"]
     work["confidence"] = work["listing_id"].map(conf).astype(float)
