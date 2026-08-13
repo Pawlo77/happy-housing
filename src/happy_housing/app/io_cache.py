@@ -6,12 +6,12 @@ import json
 import logging
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, TypeVar
-
-import geopandas as gpd
-import pyarrow.parquet as pq
+from typing import TYPE_CHECKING, Any, TypeVar
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    import geopandas as gpd
 
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -65,6 +65,8 @@ def read_json(path: str, mtime: float) -> Any:
 def read_geojson_gdf(path: str, mtime: float) -> gpd.GeoDataFrame:
     """Cached GeoJSON / GeoPandas read keyed by path + mtime."""
     del mtime
+    import geopandas as gpd
+
     return gpd.read_file(path)
 
 
@@ -72,6 +74,8 @@ def read_geojson_gdf(path: str, mtime: float) -> gpd.GeoDataFrame:
 def parquet_num_rows(path: str, mtime: float) -> int | None:
     """Cached parquet footer row count keyed by path + mtime."""
     del mtime
+    import pyarrow.parquet as pq
+
     try:
         meta = pq.ParquetFile(path).metadata
         return int(meta.num_rows) if meta is not None else None

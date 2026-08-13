@@ -11,7 +11,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import requests
-import shap
 import streamlit as st
 
 from happy_housing.app.ai_review import (
@@ -39,7 +38,6 @@ from happy_housing.app.charts import (
     bar_chart,
     diverging_bar_chart,
 )
-from happy_housing.app.chat_ui import render_assistant_popover, render_assistant_tab
 from happy_housing.app.commute_modes import (
     coerce_commute_display_mode,
     commute_series,
@@ -1950,6 +1948,8 @@ def _render_shap(row_frame: pd.DataFrame) -> None:
         st.info("Model file missing — retrain from Admin.")
         return
     try:
+        import shap
+
         booster, explainer = bundle
         cols = model_feature_columns(booster)
         features = build_feature_matrix(row_frame, cols)
@@ -3006,12 +3006,18 @@ def render_explore() -> None:
     )
 
     commute = resolve_commute_target(app_settings, config)
-    render_assistant_popover(
-        scored=frame,
-        processed=proc,
-        prefs=prefs,
-        settings=app_settings,
-    )
+    if app_settings.chat_enabled:
+        from happy_housing.app.chat_ui import (
+            render_assistant_popover,
+            render_assistant_tab,
+        )
+
+        render_assistant_popover(
+            scored=frame,
+            processed=proc,
+            prefs=prefs,
+            settings=app_settings,
+        )
     map_kwargs = {
         "amenities": amenities,
         "shops": shops,
@@ -3144,6 +3150,8 @@ def render_explore() -> None:
             )
     with tab_chat:
         if tab_chat.open:
+            from happy_housing.app.chat_ui import render_assistant_tab
+
             render_assistant_tab(
                 scored=frame,
                 processed=proc,

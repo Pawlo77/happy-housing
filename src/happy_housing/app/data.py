@@ -5,21 +5,25 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-import geopandas as gpd
-import lightgbm as lgb
 import pandas as pd
-import shap
 import streamlit as st
 
 from happy_housing.app.io_cache import clear_io_caches, file_mtime, read_geojson_gdf
 from happy_housing.app.listing_attrs import promote_listing_flags
 from happy_housing.app.metadata import RunMetadata, load_run_metadata
 from happy_housing.config import ExperimentConfig, load_experiment_config
-from happy_housing.gis.gios_aq_field import AqMapOverlay
-from happy_housing.gis.warsaw_noise import NoiseMapOverlay
 from happy_housing.ingest import build_gtfs_stop_hourly
 from happy_housing.ingest.market import backfill_market_primary
+
+if TYPE_CHECKING:
+    import geopandas as gpd
+    import lightgbm as lgb
+    import shap
+
+    from happy_housing.gis.gios_aq_field import AqMapOverlay
+    from happy_housing.gis.warsaw_noise import NoiseMapOverlay
 
 logger = logging.getLogger(__name__)
 
@@ -127,6 +131,8 @@ def _read_amenities(
 ) -> gpd.GeoDataFrame:
     """Cached amenity load keyed by resolved paths + newest mtime."""
     del mtime
+    import geopandas as gpd
+
     cache = Path(cache_path)
     fixture = Path(fixture_path)
     if cache.exists():
@@ -361,6 +367,9 @@ def _shap_bundle(
 ) -> tuple[lgb.Booster, shap.TreeExplainer]:
     """Cached LightGBM booster + SHAP TreeExplainer keyed by path + mtime."""
     del mtime
+    import lightgbm as lgb
+    import shap
+
     booster = lgb.Booster(model_file=model_file)
     return booster, shap.TreeExplainer(booster)
 
@@ -398,6 +407,8 @@ def _read_json_points(path: str, mtime: float) -> pd.DataFrame:
 def _shops_from_geojson(path: str, mtime: float) -> pd.DataFrame:
     """Cached shop points extracted from an OSM shops GeoJSON."""
     del mtime
+    import geopandas as gpd
+
     gdf = gpd.read_file(path)
     return pd.DataFrame({
         "name": gdf["name"] if "name" in gdf.columns else "Shop",

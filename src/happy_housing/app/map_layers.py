@@ -639,6 +639,7 @@ def prepare_listings_for_map(
     out["line_width"] = np.where(out["is_recommended"], 3, 1)
     out["tooltip_name"] = out["listing_id"]
     ppm = pd.to_numeric(out["price_per_m2"], errors="coerce")
+    total = pd.to_numeric(out["price_pln"], errors="coerce")
     rooms = (
         pd.to_numeric(out["rooms"], errors="coerce")
         if "rooms" in out.columns
@@ -666,6 +667,8 @@ def prepare_listings_for_map(
         + district
         + " · "
         + _fmt_int(ppm, " zł/m²")
+        + " · Total "
+        + total.map(lambda v: f"{v:,.0f} zł" if pd.notna(v) else "—")
         + " · Δ "
         + _fmt_signed(delta)
         + "<br/>"

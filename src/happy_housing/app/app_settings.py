@@ -7,11 +7,6 @@ import logging
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from happy_housing.app.commute_modes import coerce_commute_display_mode
-from happy_housing.app.io_cache import read_json
-from happy_housing.gis.amenity_catalog import coerce_amenity_weights
-from happy_housing.models.metrics import coerce_opt_metric
-
 logger = logging.getLogger(__name__)
 
 DEFAULT_LM_MODEL = "gemma-4-31b-it-mlx"
@@ -266,6 +261,11 @@ def _opt_positive_int(value: object) -> int | None:
 
 def load_app_settings(path: Path) -> AppSettings:
     """Load settings; missing/invalid → defaults."""
+    from happy_housing.app.commute_modes import coerce_commute_display_mode
+    from happy_housing.app.io_cache import read_json
+    from happy_housing.gis.amenity_catalog import coerce_amenity_weights
+    from happy_housing.models.metrics import coerce_opt_metric
+
     defaults = AppSettings()
     if not path.exists():
         return defaults

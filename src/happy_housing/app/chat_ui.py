@@ -9,7 +9,6 @@ import pandas as pd
 import streamlit as st
 
 from happy_housing.app.app_settings import AppSettings
-from happy_housing.app.chat_agent import run_chat_turn
 from happy_housing.app.chat_store import (
     chat_db_path,
     create_conversation,
@@ -79,6 +78,8 @@ def _handle_prompt(
     prefs: UserPreferences,
     settings: AppSettings,
 ) -> None:
+    from happy_housing.app.chat_agent import run_chat_turn
+
     ctx = _build_ctx(
         scored=scored,
         processed=processed,
