@@ -73,9 +73,9 @@ Tunables: Admin → Stats (including SHAP sample size).
 
 ### Admin
 
-Top **pills** navigate short panels (Ops · Commute · Sources · Explore · Price
-model · Recommendations · Offer AI · …) — scrape / recompute, freshness, AI
-tunables, and memory. No raw JSON dump.
+Top **pills** navigate short panels (Ops · Freshness · Commute · Sources · Explore ·
+Price model · Recommendations · Offer AI · …) — scrape / recompute, local-disk
+freshness, AI tunables, and memory. No raw JSON dump.
 
 ![Admin — Overview](docs/screenshots/09-admin.png)
 

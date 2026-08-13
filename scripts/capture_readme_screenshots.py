@@ -103,15 +103,20 @@ def main() -> None:
 
         _nav(page, "Admin")
         page.wait_for_timeout(3000)
+        try:
+            page.get_by_role("radio", name="Freshness").click()
+            page.wait_for_timeout(2500)
+        except Exception as exc:
+            print(f"skip Admin Freshness section: {exc}")
         _shot(page, "09-admin.png")
         try:
-            page.get_by_text("Stats", exact=True).last.click()
+            page.get_by_role("radio", name="Stats").click()
             page.wait_for_timeout(2500)
             _shot(page, "10-admin-settings.png")
         except Exception as exc:
             print(f"skip Admin Stats section: {exc}")
             try:
-                page.get_by_text("Offer AI", exact=True).click()
+                page.get_by_role("radio", name="Offer AI").click()
                 page.wait_for_timeout(2500)
                 _shot(page, "10-admin-settings.png")
             except Exception as exc2:
