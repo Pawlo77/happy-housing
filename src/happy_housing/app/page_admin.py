@@ -180,7 +180,7 @@ def _render_ops_services(config: object) -> None:
     checks = check_pipeline_services(osrm_url=osrm_url, otp_url=otp_url)
     cols = st.columns(len(checks))
     for col, check in zip(cols, checks, strict=True):
-        with col:
+        with col, st.container(border=True):
             st.metric(
                 check.label,
                 "up" if check.ok else "down",
@@ -260,24 +260,30 @@ def _panel_ops(settings: AppSettings, settings_file: Path, proc: Path) -> None:
         "Tune ingest URLs and caps under **Sources**. Jobs run in the "
         "background; watch the live log window (not a blocking spinner)."
     )
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Processed dir", config.data.processed_path().name)
-    c2.metric(
-        "Last pipeline refresh",
-        (
-            meta.refreshed_at[:19].replace("T", " ")
-            if meta and meta.refreshed_at
-            else "—"
-        ),
-    )
-    c3.metric(
-        "Fixtures",
-        config.data.fixtures_path().name,
-    )
-    st.caption(f"Config: `configs/experiment.yaml` · `{config.data.fixtures_path()}`")
+    with st.container(border=True):
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Processed dir", config.data.processed_path().name)
+        c2.metric(
+            "Last pipeline refresh",
+            (
+                meta.refreshed_at[:19].replace("T", " ")
+                if meta and meta.refreshed_at
+                else "—"
+            ),
+        )
+        c3.metric(
+            "Fixtures",
+            config.data.fixtures_path().name,
+        )
+        st.caption(
+            f"Config: `configs/experiment.yaml` · `{config.data.fixtures_path()}`"
+        )
 
+    st.divider()
     _render_ops_services(config)
+    st.divider()
     _render_ops_job_monitor(settings, proc)
+    st.divider()
 
     limits = resolve_ingest_limits(settings, config)
     flags = resolve_ingest_flags(settings, config)
@@ -289,228 +295,274 @@ def _panel_ops(settings: AppSettings, settings_file: Path, proc: Path) -> None:
     olx_listings = (
         "∞" if limits.olx_max_listings is None else f"{limits.olx_max_listings:,}"
     )
-    st.subheader("Recompute & redownload")
+
+    st.subheader("Jobs")
     st.caption(
-        f"Saved Sources caps · Otodom pages `{pages}` · listings `{listings}` · "
-        f"incremental `{'on' if limits.otodom_incremental else 'off'}` · "
-        f"OLX listings `{olx_listings}` · "
-        f"incremental `{'on' if limits.olx_incremental else 'off'}` · "
-        f"rent `{'on' if limits.olx_include_rent else 'off'}` · "
-        f"RCN rows `{rcn}`. Incremental scrapes = newest-first + early-stop."
-    )
-    scrape_in_pipe = st.checkbox(
-        "Scrape Otodom inside pipeline",
-        value=bool(flags.scrape_otodom),
-        key="pipe_scrape_otodom",
-    )
-    scrape_olx_in_pipe = st.checkbox(
-        "Scrape OLX inside pipeline",
-        value=bool(flags.scrape_olx),
-        key="pipe_scrape_olx",
-    )
-    force_refresh = st.checkbox(
-        "Force full recompute (ignore step cache)",
-        value=bool(settings.pipeline_force_refresh),
-        help=(
-            "Re-run enrich, train, score, and recommender even when inputs "
-            "are unchanged. Leave off for incremental pipelines."
-        ),
-        key="pipe_force_refresh",
-    )
-    force_gis = st.checkbox(
-        "Force GIS / remote source refresh",
-        value=False,
-        help=(
-            "Ignore OSM / Warsaw map / GUNB WFS caches and re-download remote "
-            "GIS artifacts on the next pipeline run."
-        ),
-        key="pipe_force_gis",
+        f"Caps from **Sources** · Otodom `{pages}` pages / `{listings}` listings "
+        f"(incr `{'on' if limits.otodom_incremental else 'off'}`) · "
+        f"OLX `{olx_listings}` "
+        f"(incr `{'on' if limits.olx_incremental else 'off'}`, "
+        f"rent `{'on' if limits.olx_include_rent else 'off'}`) · "
+        f"RCN `{rcn}`."
     )
 
-    r1, r2, r3, r4 = st.columns(4)
-    with r1:
-        if st.button("Run Otodom scrape", type="primary", key="run_otodom"):
-            if scrape_in_pipe != bool(settings.scrape_otodom_in_pipeline):
-                settings.scrape_otodom_in_pipeline = bool(scrape_in_pipe)
-                settings.pipeline_overrides_enabled = True
-                save_app_settings(settings_file, settings)
-            out_path = processed_dir() / "otodom_listings.parquet"
-            pages_arg = (
-                "None"
-                if limits.otodom_max_pages is None
-                else str(int(limits.otodom_max_pages))
+    scrape_col, pipe_col = st.columns(2)
+    with scrape_col, st.container(border=True):
+        st.markdown("**Listing scrapes**")
+        st.caption("Background jobs · watch the live log above.")
+        scrape_in_pipe = st.checkbox(
+            "Include Otodom in pipeline",
+            value=bool(flags.scrape_otodom),
+            key="pipe_scrape_otodom",
+        )
+        scrape_olx_in_pipe = st.checkbox(
+            "Include OLX in pipeline",
+            value=bool(flags.scrape_olx),
+            key="pipe_scrape_olx",
+        )
+        s1, s2 = st.columns(2)
+        with s1:
+            run_otodom = st.button(
+                "Otodom scrape",
+                type="primary",
+                key="run_otodom",
+                use_container_width=True,
             )
-            listings_arg = (
-                "None"
-                if limits.otodom_max_listings is None
-                else str(int(limits.otodom_max_listings))
+        with s2:
+            run_olx = st.button(
+                "OLX scrape",
+                type="primary",
+                key="run_olx",
+                use_container_width=True,
             )
-            incr_arg = "True" if limits.otodom_incremental else "False"
-            proxy_flag = bool(settings.http_free_proxies_enabled)
-            level = str(settings.log_level)
-            cmd = [
-                sys.executable,
-                "-c",
-                (
-                    "from pathlib import Path; "
-                    "from happy_housing.logging_config import configure_logging; "
-                    "from happy_housing.ingest.proxy_pool import "
-                    "configure_http_proxies; "
-                    "from happy_housing.ingest.otodom import scrape_otodom_warsaw; "
-                    f"configure_logging({level!r}, force=True); "
-                    f"configure_http_proxies(enabled={proxy_flag!r}); "
-                    f"scrape_otodom_warsaw(Path({str(out_path)!r}), "
-                    f"max_pages={pages_arg}, max_listings={listings_arg}, "
-                    f"incremental={incr_arg})"
-                ),
-            ]
-            logger.info(
-                "Admin starting Otodom scrape → %s (max_pages=%s max_listings=%s "
-                "incremental=%s)",
-                out_path,
-                pages_arg,
-                listings_arg,
-                incr_arg,
+    with pipe_col, st.container(border=True):
+        st.markdown("**Pipeline**")
+        st.caption("Enrich → train → score → recommend.")
+        force_refresh = st.checkbox(
+            "Force full recompute",
+            value=bool(settings.pipeline_force_refresh),
+            help=(
+                "Re-run enrich, train, score, and recommender even when "
+                "inputs are unchanged."
+            ),
+            key="pipe_force_refresh",
+        )
+        force_gis = st.checkbox(
+            "Force GIS / remote refresh",
+            value=False,
+            help=(
+                "Ignore OSM / Warsaw map / GUNB WFS caches on the next pipeline run."
+            ),
+            key="pipe_force_gis",
+        )
+        p1, p2 = st.columns(2)
+        with p1:
+            run_pipe = st.button(
+                "Run pipeline",
+                type="primary",
+                key="run_pipe",
+                use_container_width=True,
             )
-            _launch_ops_job(
-                name="otodom_scrape",
-                command=cmd,
-                processed=proc,
-                log_level=level,
+        with p2:
+            clear_steps = st.button(
+                "Clear step cache",
+                key="admin_clear_step_cache",
+                use_container_width=True,
             )
-    with r2:
-        if st.button("Run OLX scrape", type="primary", key="run_olx"):
-            if scrape_olx_in_pipe != bool(settings.scrape_olx_in_pipeline):
-                settings.scrape_olx_in_pipeline = bool(scrape_olx_in_pipe)
-                settings.pipeline_overrides_enabled = True
-                save_app_settings(settings_file, settings)
-            out_path = processed_dir() / "olx_listings.parquet"
-            listings_arg = (
-                "None"
-                if limits.olx_max_listings is None
-                else str(int(limits.olx_max_listings))
-            )
-            incr_arg = "True" if limits.olx_incremental else "False"
-            rent_arg = "True" if limits.olx_include_rent else "False"
-            proxy_flag = bool(settings.http_free_proxies_enabled)
-            level = str(settings.log_level)
-            cmd = [
-                sys.executable,
-                "-c",
-                (
-                    "from pathlib import Path; "
-                    "from happy_housing.logging_config import configure_logging; "
-                    "from happy_housing.ingest.proxy_pool import "
-                    "configure_http_proxies; "
-                    "from happy_housing.ingest.olx import scrape_olx_warsaw; "
-                    f"configure_logging({level!r}, force=True); "
-                    f"configure_http_proxies(enabled={proxy_flag!r}); "
-                    f"scrape_olx_warsaw(Path({str(out_path)!r}), "
-                    f"max_listings={listings_arg}, incremental={incr_arg}, "
-                    f"include_rent={rent_arg})"
-                ),
-            ]
-            logger.info(
-                "Admin starting OLX scrape → %s (max_listings=%s incremental=%s "
-                "rent=%s)",
-                out_path,
-                listings_arg,
-                incr_arg,
-                rent_arg,
-            )
-            _launch_ops_job(
-                name="olx_scrape",
-                command=cmd,
-                processed=proc,
-                log_level=level,
-            )
-    with r3:
-        if st.button(
-            "Run pipeline (enrich + train + score + recommend)",
-            type="primary",
-            key="run_pipe",
-        ):
+
+    if run_otodom:
+        if scrape_in_pipe != bool(settings.scrape_otodom_in_pipeline):
             settings.scrape_otodom_in_pipeline = bool(scrape_in_pipe)
-            settings.scrape_olx_in_pipeline = bool(scrape_olx_in_pipe)
-            settings.pipeline_force_refresh = bool(force_refresh)
             settings.pipeline_overrides_enabled = True
             save_app_settings(settings_file, settings)
-            gis_flag = bool(force_gis)
-            level = str(settings.log_level)
-            cmd = [
-                sys.executable,
-                "-c",
-                (
-                    "from happy_housing.logging_config import configure_logging; "
-                    "from happy_housing.pipeline import run_pipeline; "
-                    f"configure_logging({level!r}, force=True); "
-                    f"run_pipeline(force_gis_refresh={gis_flag!r})"
-                ),
-            ]
-            logger.info(
-                "Admin starting pipeline (overrides saved; force_gis=%s)",
-                gis_flag,
-            )
-            _launch_ops_job(
-                name="pipeline",
-                command=cmd,
-                processed=proc,
-                log_level=level,
-            )
-    with r4:
-        if st.button("Clear pipeline step cache", key="admin_clear_step_cache"):
-            removed = clear_pipeline_step_cache(proc)
-            clear_data_caches()
-            if removed:
-                st.success("Deleted pipeline_steps.json — next run recomputes steps.")
-            else:
-                st.info("No pipeline_steps.json present.")
+        out_path = processed_dir() / "otodom_listings.parquet"
+        pages_arg = (
+            "None"
+            if limits.otodom_max_pages is None
+            else str(int(limits.otodom_max_pages))
+        )
+        listings_arg = (
+            "None"
+            if limits.otodom_max_listings is None
+            else str(int(limits.otodom_max_listings))
+        )
+        incr_arg = "True" if limits.otodom_incremental else "False"
+        proxy_flag = bool(settings.http_free_proxies_enabled)
+        level = str(settings.log_level)
+        cmd = [
+            sys.executable,
+            "-c",
+            (
+                "from pathlib import Path; "
+                "from happy_housing.logging_config import configure_logging; "
+                "from happy_housing.ingest.proxy_pool import "
+                "configure_http_proxies; "
+                "from happy_housing.ingest.otodom import scrape_otodom_warsaw; "
+                f"configure_logging({level!r}, force=True); "
+                f"configure_http_proxies(enabled={proxy_flag!r}); "
+                f"scrape_otodom_warsaw(Path({str(out_path)!r}), "
+                f"max_pages={pages_arg}, max_listings={listings_arg}, "
+                f"incremental={incr_arg})"
+            ),
+        ]
+        logger.info(
+            "Admin starting Otodom scrape → %s (max_pages=%s max_listings=%s "
+            "incremental=%s)",
+            out_path,
+            pages_arg,
+            listings_arg,
+            incr_arg,
+        )
+        _launch_ops_job(
+            name="otodom_scrape",
+            command=cmd,
+            processed=proc,
+            log_level=level,
+        )
 
-    st.subheader("Logging & Streamlit caches")
-    log_level = st.selectbox(
-        "App log level",
-        options=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-        index=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"].index(
-            settings.log_level
-            if settings.log_level in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
-            else "INFO"
-        ),
-        help="Applies to happy_housing.* loggers (stderr). Env "
-        "HAPPY_HOUSING_LOG_LEVEL overrides when set at process start.",
-        key="settings_log_level",
-    )
-    poll_s = st.number_input(
-        "Ops log refresh (s)",
-        min_value=1.0,
-        max_value=30.0,
-        value=float(settings.ops_log_poll_s),
-        step=1.0,
-        key="settings_ops_log_poll_s",
-    )
-    tail_n = st.number_input(
-        "Ops log tail lines",
-        min_value=20,
-        max_value=2000,
-        value=int(settings.ops_log_tail_lines),
-        step=20,
-        key="settings_ops_log_tail_lines",
-    )
-    g1, g2, _g3 = st.columns([1, 1, 3])
-    with g1:
-        if st.button("Save logging settings", key="save_logging_settings"):
-            settings.log_level = str(log_level)
-            settings.ops_log_poll_s = float(poll_s)
-            settings.ops_log_tail_lines = int(tail_n)
+    if run_olx:
+        if scrape_olx_in_pipe != bool(settings.scrape_olx_in_pipeline):
+            settings.scrape_olx_in_pipeline = bool(scrape_olx_in_pipe)
+            settings.pipeline_overrides_enabled = True
             save_app_settings(settings_file, settings)
-            configure_logging(settings.log_level, force=True)
-            logger.info("App log level set to %s", settings.log_level)
-            st.success(f"Log level saved: {settings.log_level}")
-            st.rerun()
-    with g2:
-        if st.button("Clear Streamlit data caches", key="admin_clear_caches"):
-            clear_data_caches()
-            logger.info("Cleared Streamlit data caches from Admin")
-            st.success("Caches cleared.")
+        out_path = processed_dir() / "olx_listings.parquet"
+        listings_arg = (
+            "None"
+            if limits.olx_max_listings is None
+            else str(int(limits.olx_max_listings))
+        )
+        incr_arg = "True" if limits.olx_incremental else "False"
+        rent_arg = "True" if limits.olx_include_rent else "False"
+        proxy_flag = bool(settings.http_free_proxies_enabled)
+        level = str(settings.log_level)
+        cmd = [
+            sys.executable,
+            "-c",
+            (
+                "from pathlib import Path; "
+                "from happy_housing.logging_config import configure_logging; "
+                "from happy_housing.ingest.proxy_pool import "
+                "configure_http_proxies; "
+                "from happy_housing.ingest.olx import scrape_olx_warsaw; "
+                f"configure_logging({level!r}, force=True); "
+                f"configure_http_proxies(enabled={proxy_flag!r}); "
+                f"scrape_olx_warsaw(Path({str(out_path)!r}), "
+                f"max_listings={listings_arg}, incremental={incr_arg}, "
+                f"include_rent={rent_arg})"
+            ),
+        ]
+        logger.info(
+            "Admin starting OLX scrape → %s (max_listings=%s incremental=%s rent=%s)",
+            out_path,
+            listings_arg,
+            incr_arg,
+            rent_arg,
+        )
+        _launch_ops_job(
+            name="olx_scrape",
+            command=cmd,
+            processed=proc,
+            log_level=level,
+        )
+
+    if run_pipe:
+        settings.scrape_otodom_in_pipeline = bool(scrape_in_pipe)
+        settings.scrape_olx_in_pipeline = bool(scrape_olx_in_pipe)
+        settings.pipeline_force_refresh = bool(force_refresh)
+        settings.pipeline_overrides_enabled = True
+        save_app_settings(settings_file, settings)
+        gis_flag = bool(force_gis)
+        level = str(settings.log_level)
+        cmd = [
+            sys.executable,
+            "-c",
+            (
+                "from happy_housing.logging_config import configure_logging; "
+                "from happy_housing.pipeline import run_pipeline; "
+                f"configure_logging({level!r}, force=True); "
+                f"run_pipeline(force_gis_refresh={gis_flag!r})"
+            ),
+        ]
+        logger.info(
+            "Admin starting pipeline (overrides saved; force_gis=%s)",
+            gis_flag,
+        )
+        _launch_ops_job(
+            name="pipeline",
+            command=cmd,
+            processed=proc,
+            log_level=level,
+        )
+
+    if clear_steps:
+        removed = clear_pipeline_step_cache(proc)
+        clear_data_caches()
+        if removed:
+            st.success("Deleted pipeline_steps.json — next run recomputes steps.")
+        else:
+            st.info("No pipeline_steps.json present.")
+
+    st.divider()
+    st.subheader("Logging & caches")
+    with st.container(border=True):
+        log_level = st.selectbox(
+            "App log level",
+            options=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+            index=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"].index(
+                settings.log_level
+                if settings.log_level
+                in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+                else "INFO"
+            ),
+            help=(
+                "Applies to happy_housing.* loggers (stderr). Env "
+                "HAPPY_HOUSING_LOG_LEVEL overrides when set at process start."
+            ),
+            key="settings_log_level",
+        )
+        l1, l2 = st.columns(2)
+        with l1:
+            poll_s = st.number_input(
+                "Ops log refresh (s)",
+                min_value=1.0,
+                max_value=30.0,
+                value=float(settings.ops_log_poll_s),
+                step=1.0,
+                key="settings_ops_log_poll_s",
+            )
+        with l2:
+            tail_n = st.number_input(
+                "Ops log tail lines",
+                min_value=20,
+                max_value=2000,
+                value=int(settings.ops_log_tail_lines),
+                step=20,
+                key="settings_ops_log_tail_lines",
+            )
+        g1, g2 = st.columns(2)
+        with g1:
+            if st.button(
+                "Save logging settings",
+                key="save_logging_settings",
+                use_container_width=True,
+            ):
+                settings.log_level = str(log_level)
+                settings.ops_log_poll_s = float(poll_s)
+                settings.ops_log_tail_lines = int(tail_n)
+                save_app_settings(settings_file, settings)
+                configure_logging(settings.log_level, force=True)
+                logger.info("App log level set to %s", settings.log_level)
+                st.success(f"Log level saved: {settings.log_level}")
+                st.rerun()
+        with g2:
+            if st.button(
+                "Clear Streamlit caches",
+                key="admin_clear_caches",
+                use_container_width=True,
+            ):
+                clear_data_caches()
+                logger.info("Cleared Streamlit data caches from Admin")
+                st.success("Caches cleared.")
 
 
 def _panel_freshness(settings: AppSettings, settings_file: Path, proc: Path) -> None:
@@ -530,62 +582,80 @@ def _panel_freshness(settings: AppSettings, settings_file: Path, proc: Path) -> 
         source_warn_h=float(settings.freshness_source_warn_h),
         derived_warn_h=float(settings.freshness_derived_warn_h),
     )
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Sources ok", report.n_sources_ok)
-    m2.metric("Fixture only", report.n_sources_fixture)
-    m3.metric("Missing / empty", report.n_sources_missing + report.n_sources_empty)
-    m4.metric(
-        "Derived ok / stale / missing",
-        (
-            f"{report.n_derived_ok} / {report.n_derived_stale} / "
-            f"{report.n_derived_missing}"
-        ),
-    )
-
-    st.subheader("Data sources")
-    st.dataframe(
-        sources_to_frame(report.sources),
-        hide_index=True,
-        width="stretch",
-    )
-    st.subheader("Derived products")
-    st.dataframe(
-        derived_to_frame(report.derived),
-        hide_index=True,
-        width="stretch",
-    )
-
-    st.subheader("Warn thresholds")
-    c1, c2 = st.columns(2)
-    with c1:
-        source_warn = st.number_input(
-            "Source age warn (hours)",
-            min_value=1.0,
-            max_value=8760.0,
-            value=float(settings.freshness_source_warn_h),
-            step=24.0,
-            help="Marks age_warn when a source mtime is older than this.",
-            key="settings_freshness_source_warn_h",
+    with st.container(border=True):
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Sources ok", report.n_sources_ok)
+        m2.metric("Fixture only", report.n_sources_fixture)
+        m3.metric(
+            "Missing / empty",
+            report.n_sources_missing + report.n_sources_empty,
         )
-    with c2:
-        derived_warn = st.number_input(
-            "Derived age warn (hours)",
-            min_value=1.0,
-            max_value=8760.0,
-            value=float(settings.freshness_derived_warn_h),
-            step=24.0,
-            help=(
-                "Marks derived products stale when older than this, "
-                "even if newer than sources."
+        m4.metric(
+            "Derived ok / stale / missing",
+            (
+                f"{report.n_derived_ok} / {report.n_derived_stale} / "
+                f"{report.n_derived_missing}"
             ),
-            key="settings_freshness_derived_warn_h",
         )
-    if st.button("Save freshness settings", key="save_freshness_settings"):
-        settings.freshness_source_warn_h = float(source_warn)
-        settings.freshness_derived_warn_h = float(derived_warn)
-        save_app_settings(settings_file, settings)
-        st.success("Freshness warn thresholds saved.")
-        st.rerun()
+
+    st.divider()
+    src_col, der_col = st.columns(2)
+    with src_col, st.container(border=True):
+        st.markdown("**Data sources**")
+        st.dataframe(
+            sources_to_frame(report.sources),
+            hide_index=True,
+            width="stretch",
+        )
+    with der_col, st.container(border=True):
+        st.markdown("**Derived products**")
+        st.dataframe(
+            derived_to_frame(report.derived),
+            hide_index=True,
+            width="stretch",
+        )
+
+    st.divider()
+    with st.container(border=True):
+        st.markdown("**Warn thresholds**")
+        c1, c2, c3 = st.columns([2, 2, 1])
+        with c1:
+            source_warn = st.number_input(
+                "Source age warn (hours)",
+                min_value=1.0,
+                max_value=8760.0,
+                value=float(settings.freshness_source_warn_h),
+                step=24.0,
+                help="Marks age_warn when a source mtime is older than this.",
+                key="settings_freshness_source_warn_h",
+            )
+        with c2:
+            derived_warn = st.number_input(
+                "Derived age warn (hours)",
+                min_value=1.0,
+                max_value=8760.0,
+                value=float(settings.freshness_derived_warn_h),
+                step=24.0,
+                help=(
+                    "Marks derived products stale when older than this, "
+                    "even if newer than sources."
+                ),
+                key="settings_freshness_derived_warn_h",
+            )
+        with c3:
+            st.write("")
+            st.write("")
+            if st.button(
+                "Save",
+                key="save_freshness_settings",
+                use_container_width=True,
+                type="primary",
+            ):
+                settings.freshness_source_warn_h = float(source_warn)
+                settings.freshness_derived_warn_h = float(derived_warn)
+                save_app_settings(settings_file, settings)
+                st.success("Freshness warn thresholds saved.")
+                st.rerun()
 
 
 def _panel_commute(settings: AppSettings, settings_file: Path, proc: Path) -> None:
@@ -2294,7 +2364,6 @@ def panel_for_section(section: str) -> PanelFn:
 def render_admin() -> None:
     """Render Admin with top section pills (one short panel at a time)."""
     logger.info("Rendering Admin")
-    st.caption("Pick a section — one panel at a time.")
     pop_admin_flash()
 
     proc = processed_dir()
@@ -2312,4 +2381,6 @@ def render_admin() -> None:
         section = ADMIN_SECTIONS[0]
     logger.debug("Admin section=%s", section)
     st.subheader(str(section))
+    st.caption("One panel at a time · settings persist under processed data.")
+    st.divider()
     panel_for_section(str(section))(settings, settings_file, proc)
