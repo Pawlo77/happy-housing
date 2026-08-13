@@ -87,6 +87,7 @@ from happy_housing.ingest.gios_aq import (
 )
 from happy_housing.ingest.gunb import download_gunb_mazowieckie, gunb_points_gdf
 from happy_housing.ingest.market import ensure_market_primary
+from happy_housing.ingest.olx import scrape_olx_warsaw
 from happy_housing.ingest.otodom import scrape_otodom_warsaw
 from happy_housing.ingest.proxy_pool import configure_http_proxies
 from happy_housing.ingest.rcn import extract_rcn_transactions
@@ -213,8 +214,10 @@ def run_pipeline(
     download_remote: bool | None = None,
     use_osm: bool | None = None,
     scrape_otodom: bool | None = None,
+    scrape_olx: bool | None = None,
     otodom_max_pages: int | None = None,
     otodom_max_listings: int | None = None,
+    olx_max_listings: int | None = None,
     rcn_max_rows: int | None = None,
     force_gis_refresh: bool = False,
     force_pipeline: bool | None = None,
@@ -223,7 +226,7 @@ def run_pipeline(
 
     ``download_remote`` True/False forces all remote sources on/off; ``None``
     uses Admin Pipeline overrides when saved, else downloads everything.
-    Explicit ``otodom_max_*`` / ``rcn_max_rows`` kwargs override resolved caps.
+    Explicit listing / RCN kwargs override resolved caps.
     ``force_gis_refresh`` ignores OSM / Warsaw map caches and re-downloads.
     ``force_pipeline`` (or Admin ``pipeline_force_refresh``) ignores step
     fingerprints and re-exports GTFS/GIOŚ/RCN plus enrich/train/score/recommend.
@@ -251,10 +254,11 @@ def run_pipeline(
         download_remote=download_remote,
         use_osm=use_osm,
         scrape_otodom=scrape_otodom,
+        scrape_olx=scrape_olx,
     )
     logger.info(
         "Pipeline start (gtfs=%s gios=%s rcn=%s gunb=%s crime=%s osm=%s "
-        "otodom=%s force=%s)",
+        "otodom=%s olx=%s force=%s)",
         flags.download_gtfs,
         flags.download_gios,
         flags.download_rcn,
@@ -262,6 +266,7 @@ def run_pipeline(
         flags.download_crime,
         flags.use_osm,
         flags.scrape_otodom,
+        flags.scrape_olx,
         force,
     )
     page_cap = (
@@ -271,6 +276,9 @@ def run_pipeline(
         otodom_max_listings
         if otodom_max_listings is not None
         else limits.otodom_max_listings
+    )
+    olx_listing_cap = (
+        olx_max_listings if olx_max_listings is not None else limits.olx_max_listings
     )
     rcn_cap = rcn_max_rows if rcn_max_rows is not None else limits.rcn_max_rows
     raw = config.data.raw_path()
@@ -316,6 +324,37 @@ def run_pipeline(
         otodom.to_parquet(otodom_parquet, index=False)
         otodom["source"] = "otodom"
         listings_parts.append(otodom)
+
+    olx_parquet = processed / "olx_listings.parquet"
+    if flags.scrape_olx:
+        try:
+            with log_step(logger, "olx_scrape"):
+                olx = scrape_olx_warsaw(
+                    olx_parquet,
+                    max_listings=olx_listing_cap,
+                    incremental=limits.olx_incremental,
+                    include_rent=limits.olx_include_rent,
+                )
+            olx["source"] = "olx"
+            listings_parts.append(olx)
+        except Exception as exc:
+            logger.warning("OLX scrape failed: %s", exc)
+            if olx_parquet.exists():
+                olx = apply_fx_to_listings_frame(
+                    pd.read_parquet(olx_parquet),
+                    fx_cache_path(processed),
+                )
+                olx.to_parquet(olx_parquet, index=False)
+                olx["source"] = "olx"
+                listings_parts.append(olx)
+    elif olx_parquet.exists():
+        olx = apply_fx_to_listings_frame(
+            pd.read_parquet(olx_parquet),
+            fx_cache_path(processed),
+        )
+        olx.to_parquet(olx_parquet, index=False)
+        olx["source"] = "olx"
+        listings_parts.append(olx)
 
     gtfs_parquet = processed / "gtfs_stops.parquet"
     gios_parquet = processed / "gios_stations.parquet"

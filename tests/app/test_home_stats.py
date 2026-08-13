@@ -11,6 +11,9 @@ def test_source_catalog_has_names_and_https_urls() -> None:
     assert len(DEFAULT_SOURCE_CATALOG) >= 5
     names = [s.name for s in DEFAULT_SOURCE_CATALOG]
     assert names == DEFAULT_SOURCES
+    keys = {s.key for s in DEFAULT_SOURCE_CATALOG}
+    assert "otodom" in keys
+    assert "olx" in keys
     for src in DEFAULT_SOURCE_CATALOG:
         assert src.name
         assert src.url.startswith("https://")

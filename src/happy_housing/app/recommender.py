@@ -24,7 +24,7 @@ from happy_housing.gis.amenity_catalog import (
 
 logger = logging.getLogger(__name__)
 
-_BUYER_SOURCES: frozenset[str] = frozenset({"otodom", "fixture"})
+_BUYER_SOURCES: frozenset[str] = frozenset({"otodom", "olx", "fixture"})
 """Default candidate sources when prefs do not set sources."""
 
 

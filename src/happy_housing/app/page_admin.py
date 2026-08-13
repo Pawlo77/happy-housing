@@ -287,17 +287,27 @@ def _panel_ops(settings: AppSettings, settings_file: Path, proc: Path) -> None:
         "∞" if limits.otodom_max_listings is None else str(limits.otodom_max_listings)
     )
     rcn = "∞" if limits.rcn_max_rows is None else f"{limits.rcn_max_rows:,}"
+    olx_listings = (
+        "∞" if limits.olx_max_listings is None else f"{limits.olx_max_listings:,}"
+    )
     st.subheader("Recompute & redownload")
     st.caption(
         f"Saved Sources caps · Otodom pages `{pages}` · listings `{listings}` · "
         f"incremental `{'on' if limits.otodom_incremental else 'off'}` · "
-        f"RCN rows `{rcn}`. Incremental Otodom = newest-first + early-stop "
-        "(not a full site walk)."
+        f"OLX listings `{olx_listings}` · "
+        f"incremental `{'on' if limits.olx_incremental else 'off'}` · "
+        f"rent `{'on' if limits.olx_include_rent else 'off'}` · "
+        f"RCN rows `{rcn}`. Incremental scrapes = newest-first + early-stop."
     )
     scrape_in_pipe = st.checkbox(
         "Scrape Otodom inside pipeline",
         value=bool(flags.scrape_otodom),
         key="pipe_scrape_otodom",
+    )
+    scrape_olx_in_pipe = st.checkbox(
+        "Scrape OLX inside pipeline",
+        value=bool(flags.scrape_olx),
+        key="pipe_scrape_olx",
     )
     force_refresh = st.checkbox(
         "Force full recompute (ignore step cache)",
@@ -318,7 +328,7 @@ def _panel_ops(settings: AppSettings, settings_file: Path, proc: Path) -> None:
         key="pipe_force_gis",
     )
 
-    r1, r2, r3 = st.columns(3)
+    r1, r2, r3, r4 = st.columns(4)
     with r1:
         if st.button("Run Otodom scrape", type="primary", key="run_otodom"):
             if scrape_in_pipe != bool(settings.scrape_otodom_in_pipeline):
@@ -370,12 +380,59 @@ def _panel_ops(settings: AppSettings, settings_file: Path, proc: Path) -> None:
                 log_level=level,
             )
     with r2:
+        if st.button("Run OLX scrape", type="primary", key="run_olx"):
+            if scrape_olx_in_pipe != bool(settings.scrape_olx_in_pipeline):
+                settings.scrape_olx_in_pipeline = bool(scrape_olx_in_pipe)
+                settings.pipeline_overrides_enabled = True
+                save_app_settings(settings_file, settings)
+            out_path = processed_dir() / "olx_listings.parquet"
+            listings_arg = (
+                "None"
+                if limits.olx_max_listings is None
+                else str(int(limits.olx_max_listings))
+            )
+            incr_arg = "True" if limits.olx_incremental else "False"
+            rent_arg = "True" if limits.olx_include_rent else "False"
+            proxy_flag = bool(settings.http_free_proxies_enabled)
+            level = str(settings.log_level)
+            cmd = [
+                sys.executable,
+                "-c",
+                (
+                    "from pathlib import Path; "
+                    "from happy_housing.logging_config import configure_logging; "
+                    "from happy_housing.ingest.proxy_pool import "
+                    "configure_http_proxies; "
+                    "from happy_housing.ingest.olx import scrape_olx_warsaw; "
+                    f"configure_logging({level!r}, force=True); "
+                    f"configure_http_proxies(enabled={proxy_flag!r}); "
+                    f"scrape_olx_warsaw(Path({str(out_path)!r}), "
+                    f"max_listings={listings_arg}, incremental={incr_arg}, "
+                    f"include_rent={rent_arg})"
+                ),
+            ]
+            logger.info(
+                "Admin starting OLX scrape → %s (max_listings=%s incremental=%s "
+                "rent=%s)",
+                out_path,
+                listings_arg,
+                incr_arg,
+                rent_arg,
+            )
+            _launch_ops_job(
+                name="olx_scrape",
+                command=cmd,
+                processed=proc,
+                log_level=level,
+            )
+    with r3:
         if st.button(
             "Run pipeline (enrich + train + score + recommend)",
             type="primary",
             key="run_pipe",
         ):
             settings.scrape_otodom_in_pipeline = bool(scrape_in_pipe)
+            settings.scrape_olx_in_pipeline = bool(scrape_olx_in_pipe)
             settings.pipeline_force_refresh = bool(force_refresh)
             settings.pipeline_overrides_enabled = True
             save_app_settings(settings_file, settings)
@@ -401,7 +458,7 @@ def _panel_ops(settings: AppSettings, settings_file: Path, proc: Path) -> None:
                 processed=proc,
                 log_level=level,
             )
-    with r3:
+    with r4:
         if st.button("Clear pipeline step cache", key="admin_clear_step_cache"):
             removed = clear_pipeline_step_cache(proc)
             clear_data_caches()
@@ -778,6 +835,10 @@ def _apply_pipeline_widgets(
     max_pages: int | None,
     max_listings: int | None,
     incremental: bool,
+    olx_unlimited: bool,
+    olx_max_listings: int | None,
+    olx_incremental: bool,
+    olx_include_rent: bool,
     http_free_proxies_enabled: bool,
     download_rcn: bool,
     rcn_unlimited: bool,
@@ -796,6 +857,7 @@ def _apply_pipeline_widgets(
     crime_panorama_7z_url: str,
     use_osm: bool,
     scrape_in_pipe: bool,
+    scrape_olx_in_pipe: bool,
     snap_out_of_parks: bool,
     bike_path_coverage_radius_m: float,
     traffic_neighbourhood_radius_m: float,
@@ -805,6 +867,9 @@ def _apply_pipeline_widgets(
     settings.otodom_max_pages = None if otodom_unlimited else max_pages
     settings.otodom_max_listings = None if otodom_unlimited else max_listings
     settings.otodom_incremental = bool(incremental)
+    settings.olx_max_listings = None if olx_unlimited else olx_max_listings
+    settings.olx_incremental = bool(olx_incremental)
+    settings.olx_include_rent = bool(olx_include_rent)
     settings.http_free_proxies_enabled = bool(http_free_proxies_enabled)
     settings.download_rcn = bool(download_rcn)
     settings.rcn_max_rows = None if rcn_unlimited else rcn_max_rows
@@ -822,6 +887,7 @@ def _apply_pipeline_widgets(
     settings.crime_panorama_7z_url = str(crime_panorama_7z_url).strip()
     settings.use_osm = bool(use_osm)
     settings.scrape_otodom_in_pipeline = bool(scrape_in_pipe)
+    settings.scrape_olx_in_pipeline = bool(scrape_olx_in_pipe)
     settings.snap_listings_out_of_parks = bool(snap_out_of_parks)
     settings.bike_path_coverage_radius_m = float(bike_path_coverage_radius_m)
     settings.traffic_neighbourhood_radius_m = float(traffic_neighbourhood_radius_m)
@@ -876,6 +942,40 @@ def _panel_sources(settings: AppSettings, settings_file: Path, proc: Path) -> No
             "rebuild."
         ),
         key="pipe_otodom_incremental",
+    )
+
+    st.subheader("OLX")
+    olx_unlimited = st.checkbox(
+        "Unlimited OLX listings",
+        value=limits.olx_max_listings is None,
+        help=(
+            "District-tiled public offers API. City-wide offset is unreliable; "
+            "we walk each Warsaw district newest-first."
+        ),
+        key="pipe_olx_unlimited",
+    )
+    olx_max_listings: int | None = None
+    if not olx_unlimited:
+        olx_max_listings = int(
+            st.number_input(
+                "Max OLX listings",
+                min_value=10,
+                max_value=100_000,
+                value=int(limits.olx_max_listings or 2000),
+                key="pipe_olx_max_listings",
+            )
+        )
+    olx_incremental = st.checkbox(
+        "OLX incremental (new/updated only)",
+        value=bool(limits.olx_incremental),
+        help="Newest-first per district; early-stop when pages are already known.",
+        key="pipe_olx_incremental",
+    )
+    olx_include_rent = st.checkbox(
+        "Include OLX rentals",
+        value=bool(limits.olx_include_rent),
+        help="Rent rows stay in Explore; price-model labels use sale only.",
+        key="pipe_olx_include_rent",
     )
     http_free_proxies_enabled = st.checkbox(
         "Rotate free HTTP proxies on 403/429",
@@ -1042,6 +1142,7 @@ def _panel_sources(settings: AppSettings, settings_file: Path, proc: Path) -> No
     scrape_in_pipe = bool(
         st.session_state.get("pipe_scrape_otodom", flags.scrape_otodom)
     )
+    scrape_olx_in_pipe = bool(st.session_state.get("pipe_scrape_olx", flags.scrape_olx))
     with st.expander("Source URLs", expanded=False):
         rcn_zip_url = st.text_input(
             "RCN zip URL",
@@ -1080,6 +1181,10 @@ def _panel_sources(settings: AppSettings, settings_file: Path, proc: Path) -> No
             max_pages=max_pages,
             max_listings=max_listings,
             incremental=incremental,
+            olx_unlimited=olx_unlimited,
+            olx_max_listings=olx_max_listings,
+            olx_incremental=olx_incremental,
+            olx_include_rent=olx_include_rent,
             http_free_proxies_enabled=http_free_proxies_enabled,
             download_rcn=download_rcn,
             rcn_unlimited=rcn_unlimited,
@@ -1098,6 +1203,7 @@ def _panel_sources(settings: AppSettings, settings_file: Path, proc: Path) -> No
             crime_panorama_7z_url=crime_panorama_7z_url,
             use_osm=use_osm,
             scrape_in_pipe=scrape_in_pipe,
+            scrape_olx_in_pipe=scrape_olx_in_pipe,
             snap_out_of_parks=snap_out_of_parks,
             bike_path_coverage_radius_m=bike_path_coverage_radius_m,
             traffic_neighbourhood_radius_m=traffic_neighbourhood_radius_m,

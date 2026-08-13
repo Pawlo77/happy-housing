@@ -35,6 +35,7 @@ class SourceInventoryRow:
 
 _SOURCE_ARTIFACTS: dict[str, tuple[ArtifactRef, ...]] = {
     "otodom": (ArtifactRef("processed", "otodom_listings.parquet"),),
+    "olx": (ArtifactRef("processed", "olx_listings.parquet"),),
     "rcn": (ArtifactRef("processed", "rcn_transactions.parquet"),),
     "osm": (
         ArtifactRef("cache", "osm_amenities.geojson"),

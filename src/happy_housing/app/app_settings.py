@@ -199,12 +199,20 @@ class AppSettings:
     """Otodom listing cap; None = unlimited (when overrides enabled)."""
     otodom_incremental: bool = True
     """Merge Otodom scrape into existing parquet."""
+    olx_max_listings: int | None = None
+    """OLX listing cap; None = unlimited (when overrides enabled)."""
+    olx_incremental: bool = True
+    """Merge OLX scrape into existing parquet."""
+    olx_include_rent: bool = False
+    """Include Warsaw flat rentals from OLX (not used as price-model labels)."""
     http_free_proxies_enabled: bool = True
     """Rotate free HTTP proxies on 403/429 for Otodom + other ingest downloads."""
     rcn_max_rows: int | None = None
     """RCN extract row cap; None = full GML (when overrides enabled)."""
     scrape_otodom_in_pipeline: bool = True
     """Scrape Otodom when running the full pipeline."""
+    scrape_olx_in_pipeline: bool = True
+    """Scrape OLX when running the full pipeline."""
     use_osm: bool = True
     """Fetch OSM amenities + shops during pipeline."""
     snap_listings_out_of_parks: bool = True
@@ -740,6 +748,11 @@ def load_app_settings(path: Path) -> AppSettings:
         otodom_incremental=bool(
             payload.get("otodom_incremental", defaults.otodom_incremental)
         ),
+        olx_max_listings=_opt_positive_int(payload.get("olx_max_listings")),
+        olx_incremental=bool(payload.get("olx_incremental", defaults.olx_incremental)),
+        olx_include_rent=bool(
+            payload.get("olx_include_rent", defaults.olx_include_rent)
+        ),
         http_free_proxies_enabled=bool(
             payload.get(
                 "http_free_proxies_enabled",
@@ -751,6 +764,12 @@ def load_app_settings(path: Path) -> AppSettings:
             payload.get(
                 "scrape_otodom_in_pipeline",
                 defaults.scrape_otodom_in_pipeline,
+            )
+        ),
+        scrape_olx_in_pipeline=bool(
+            payload.get(
+                "scrape_olx_in_pipeline",
+                defaults.scrape_olx_in_pipeline,
             )
         ),
         use_osm=bool(payload.get("use_osm", defaults.use_osm)),

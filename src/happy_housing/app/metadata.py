@@ -104,6 +104,13 @@ DEFAULT_SOURCE_CATALOG: tuple[DataSource, ...] = (
         unit="listings",
     ),
     DataSource(
+        name="OLX (public offers API)",
+        url="https://www.olx.pl/",
+        role="Warsaw flat asks via public OLX offers API (district-tiled).",
+        key="olx",
+        unit="listings",
+    ),
+    DataSource(
         name="UM Warszawa RCN (transaction GML)",
         url="https://mapa.um.warszawa.pl/",
         role="Notarial transaction prices for fair-value context.",

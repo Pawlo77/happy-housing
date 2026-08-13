@@ -147,10 +147,10 @@ _HPO_SPACE: dict[str, list[Any]] = {
 }
 """Expanded LightGBM search space (deep trees + L1/Huber for MAPE-ish fits)."""
 
-_LABEL_SOURCES_OTODOM: frozenset[str] = frozenset({"otodom", "fixture"})
+_LABEL_SOURCES_OTODOM: frozenset[str] = frozenset({"otodom", "olx", "fixture"})
 """Sources treated as ask-price labels when ``train_otodom_labels_only``."""
 
-_LABEL_SOURCES_BUYER: frozenset[str] = frozenset({"otodom", "fixture"})
+_LABEL_SOURCES_BUYER: frozenset[str] = frozenset({"otodom", "olx", "fixture"})
 """Buyer-facing ask sources for recommender default pool."""
 
 
@@ -718,8 +718,11 @@ def train_price_model(
     if settings.train_otodom_labels_only and "source" in frame.columns:
         sources = frame["source"].astype(str).str.lower()
         work = frame.loc[sources.isin(_LABEL_SOURCES_OTODOM)].copy()
+        if "listing_kind" in work.columns:
+            kinds = work["listing_kind"].astype(str).str.lower().fillna("sale")
+            work = work.loc[kinds != "rent"].copy()
         logger.info(
-            "Train labels filtered to Otodom/fixture: %s → %s rows",
+            "Train labels filtered to Otodom/OLX/fixture (sale): %s → %s rows",
             len(frame),
             len(work),
         )
@@ -1077,6 +1080,9 @@ def oof_predict_price_per_m2(
     if settings.train_otodom_labels_only and "source" in frame.columns:
         sources = frame["source"].astype(str).str.lower()
         label_mask = sources.isin(_LABEL_SOURCES_OTODOM)
+        if "listing_kind" in frame.columns:
+            kinds = frame["listing_kind"].astype(str).str.lower().fillna("sale")
+            label_mask = label_mask & (kinds != "rent")
 
     labeled_idx = frame.index[label_mask].to_list()
 

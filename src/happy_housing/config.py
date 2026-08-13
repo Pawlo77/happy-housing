@@ -262,11 +262,22 @@ class IngestLimitsConfig:
     """Geocoded Otodom listings; ``None`` keeps every successful detail."""
     otodom_incremental: bool = True
     """Merge into existing Otodom parquet; fetch only new/updated cards."""
+    olx_max_listings: int | None = None
+    """Geocoded OLX listings; ``None`` keeps every normalized offer."""
+    olx_incremental: bool = True
+    """Merge into existing OLX parquet; early-stop on known newest pages."""
+    olx_include_rent: bool = False
+    """Also harvest Warsaw flat rentals (excluded from price-model labels)."""
     rcn_max_rows: int | None = None
     """RCN joined Warsaw rows; ``None`` parses the full GML."""
 
     def __post_init__(self) -> None:
-        for name in ("otodom_max_pages", "otodom_max_listings", "rcn_max_rows"):
+        for name in (
+            "otodom_max_pages",
+            "otodom_max_listings",
+            "olx_max_listings",
+            "rcn_max_rows",
+        ):
             value = getattr(self, name)
             if value is not None and int(value) <= 0:
                 object.__setattr__(self, name, None)
@@ -286,11 +297,13 @@ class IngestLimitsConfig:
             value = int(mapping[key])
             return None if value <= 0 else value
 
-        incremental = mapping.get("otodom_incremental", True)
         return cls(
             otodom_max_pages=_opt_int("otodom_max_pages"),
             otodom_max_listings=_opt_int("otodom_max_listings"),
-            otodom_incremental=bool(incremental),
+            otodom_incremental=bool(mapping.get("otodom_incremental", True)),
+            olx_max_listings=_opt_int("olx_max_listings"),
+            olx_incremental=bool(mapping.get("olx_incremental", True)),
+            olx_include_rent=bool(mapping.get("olx_include_rent", False)),
             rcn_max_rows=_opt_int("rcn_max_rows"),
         )
 

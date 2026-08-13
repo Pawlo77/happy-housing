@@ -50,6 +50,9 @@ ingest:
   otodom_max_listings: null
   # true = newest-first merge into existing parquet (skip unchanged details)
   otodom_incremental: true
+  olx_max_listings: null
+  olx_incremental: true
+  olx_include_rent: false
   rcn_max_rows: null
 
 logging:

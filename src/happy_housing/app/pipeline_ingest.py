@@ -24,6 +24,8 @@ class IngestFlags:
     """Fetch OSM amenities + shops (else fixtures)."""
     scrape_otodom: bool
     """Scrape Otodom inside the pipeline."""
+    scrape_olx: bool
+    """Scrape OLX inside the pipeline."""
 
 
 def resolve_ingest_limits(
@@ -37,6 +39,9 @@ def resolve_ingest_limits(
         otodom_max_pages=settings.otodom_max_pages,
         otodom_max_listings=settings.otodom_max_listings,
         otodom_incremental=bool(settings.otodom_incremental),
+        olx_max_listings=settings.olx_max_listings,
+        olx_incremental=bool(settings.olx_incremental),
+        olx_include_rent=bool(settings.olx_include_rent),
         rcn_max_rows=settings.rcn_max_rows,
     )
 
@@ -73,12 +78,13 @@ def resolve_ingest_flags(
     download_remote: bool | None = None,
     use_osm: bool | None = None,
     scrape_otodom: bool | None = None,
+    scrape_olx: bool | None = None,
 ) -> IngestFlags:
     """Resolve per-source download flags.
 
     ``download_remote`` True/False forces all remote sources on/off (CLI
     back-compat). ``None`` uses Admin overrides when enabled, else all on.
-    Explicit ``use_osm`` / ``scrape_otodom`` kwargs always win when not None.
+    Explicit scrape kwargs always win when not None.
     """
     del config  # reserved for future YAML defaults
     if download_remote is True:
@@ -108,6 +114,13 @@ def resolve_ingest_flags(
     else:
         scrape = True
 
+    if scrape_olx is not None:
+        scrape_olx_flag = bool(scrape_olx)
+    elif settings.pipeline_overrides_enabled:
+        scrape_olx_flag = bool(settings.scrape_olx_in_pipeline)
+    else:
+        scrape_olx_flag = True
+
     return IngestFlags(
         download_gtfs=base_gtfs,
         download_gios=base_gios,
@@ -116,4 +129,5 @@ def resolve_ingest_flags(
         download_crime=base_crime,
         use_osm=osm,
         scrape_otodom=scrape,
+        scrape_olx=scrape_olx_flag,
     )
