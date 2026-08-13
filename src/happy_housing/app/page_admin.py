@@ -223,10 +223,12 @@ def _render_ops_job_monitor(settings: AppSettings, processed: Path) -> None:
                 f"Job {job.status} · returncode={job.returncode} · {job.error or ''}"
             )
         log_text = read_log_tail(Path(job.log_path), max_lines=tail_n)
-        lines = log_text.splitlines() if log_text else []
+        # Newest first so the tile's default (top) scroll keeps live lines visible
+        # without custom CSS/JS auto-scroll.
+        lines = list(reversed(log_text.splitlines())) if log_text else []
         st.caption(
-            f"Tail {len(lines)} / {tail_n} lines · refresh every {poll_s:.0f}s · "
-            f"`{job.log_path}`"
+            f"Newest {len(lines)} / {tail_n} lines (top) · refresh every "
+            f"{poll_s:.0f}s · `{job.log_path}`"
         )
         with st.container(height=320, border=True):
             st.markdown(format_log_lines_markdown(lines))
