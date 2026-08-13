@@ -206,7 +206,8 @@ def _panel_ops(settings: AppSettings, settings_file: Path, proc: Path) -> None:
     st.caption(
         f"Saved Sources caps · Otodom pages `{pages}` · listings `{listings}` · "
         f"incremental `{'on' if limits.otodom_incremental else 'off'}` · "
-        f"RCN rows `{rcn}`."
+        f"RCN rows `{rcn}`. Incremental Otodom = newest-first + early-stop "
+        "(not a full site walk)."
     )
     scrape_in_pipe = st.checkbox(
         "Scrape Otodom inside pipeline",
@@ -725,8 +726,10 @@ def _panel_sources(settings: AppSettings, settings_file: Path, proc: Path) -> No
         "Incremental (new/updated only)",
         value=bool(limits.otodom_incremental),
         help=(
-            "Sort newest-first, stop once known pages repeat, skip unchanged "
-            "detail fetches, merge into existing parquet."
+            "Sort by=LATEST&direction=DESC, stop after known newest pages, "
+            "skip unchanged detail fetches, merge into existing parquet. "
+            "Unlimited page caps still early-stop — uncheck only for a full "
+            "rebuild."
         ),
         key="pipe_otodom_incremental",
     )

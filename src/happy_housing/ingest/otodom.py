@@ -422,6 +422,7 @@ def fetch_search_page(
     timeout_s: float | tuple[float, float] = DEFAULT_TIMEOUT,
     retries: int = 5,
     sort_by: str | None = None,
+    sort_direction: str | None = None,
 ) -> dict[str, Any] | None:
     """Fetch one Otodom search results page.
 
@@ -432,6 +433,8 @@ def fetch_search_page(
     params: dict[str, Any] = {"limit": limit, "page": page}
     if sort_by:
         params["by"] = sort_by
+    if sort_direction:
+        params["direction"] = sort_direction
     url = f"{_SEARCH_URL}?{urlencode(params)}"
     try:
         response = _http_get(
@@ -918,6 +921,34 @@ def merge_otodom_frames(
     )
 
 
+def max_existing_listed_at(existing: pd.DataFrame) -> pd.Timestamp | None:
+    """Newest parseable ``listed_at`` in a prior Otodom frame, else ``None``."""
+    if existing.empty or "listed_at" not in existing.columns:
+        return None
+    series = pd.to_datetime(existing["listed_at"], errors="coerce", utc=True)
+    if series.isna().all():
+        return None
+    return pd.Timestamp(series.max())
+
+
+def cards_at_or_before_watermark(
+    cards: list[dict[str, Any]],
+    watermark: pd.Timestamp | None,
+) -> bool:
+    """True when every card with a date is at/before ``watermark``."""
+    if watermark is None or not cards:
+        return False
+    saw = False
+    for card in cards:
+        ts = pd.to_datetime(card.get("listed_at"), errors="coerce", utc=True)
+        if pd.isna(ts):
+            return False
+        saw = True
+        if pd.Timestamp(ts) > watermark:
+            return False
+    return saw
+
+
 def scrape_otodom_warsaw(
     output_parquet: Path,
     *,
@@ -933,10 +964,11 @@ def scrape_otodom_warsaw(
     """Scrape Warsaw flat-sale listings from Otodom into a parquet file.
 
     Search-page HTTP failures are skipped after retries (run continues). Detail
-    failures drop that listing only. When ``incremental`` and an existing
-    parquet is present, search is sorted newest-first and stops after
-    ``stop_after_known_pages`` fully-known pages; only new/price-changed cards
-    hit the detail endpoint; results merge into the prior file.
+    failures drop that listing only.     When ``incremental`` and an existing
+    parquet is present, search is sorted newest-first (``by=LATEST`` +
+    ``direction=DESC``) and stops after ``stop_after_known_pages`` fully-known
+    pages; only new/price-changed cards hit the detail endpoint; results merge
+    into the prior file.
 
     Args:
         output_parquet: Destination path.
@@ -962,12 +994,17 @@ def scrape_otodom_warsaw(
     existing_by_id = _existing_by_id(existing)
     use_incremental = bool(incremental and existing_by_id)
     sort_by = "LATEST" if use_incremental else None
+    sort_direction = "DESC" if use_incremental else None
+    listed_watermark = max_existing_listed_at(existing) if use_incremental else None
     if use_incremental:
         logger.info(
-            "Otodom incremental mode: %s prior listings; sort=%s stop_after_known=%s",
+            "Otodom incremental mode: %s prior listings; sort=%s direction=%s "
+            "stop_after_known=%s watermark=%s",
             len(existing_by_id),
             sort_by,
+            sort_direction,
             stop_after_known_pages,
+            listed_watermark,
         )
 
     session = _session()
@@ -987,6 +1024,7 @@ def scrape_otodom_warsaw(
                 limit=page_size,
                 timeout_s=timeout_s,
                 sort_by=sort_by,
+                sort_direction=sort_direction,
             )
         except Exception as exc:
             logger.warning("Otodom search page %s unexpected error: %s", page, exc)
@@ -1023,13 +1061,17 @@ def scrape_otodom_warsaw(
                 page_needs_refresh = True
         if use_incremental and page_all_known and not page_needs_refresh:
             known_page_streak += 1
+            stop_need = max(1, int(stop_after_known_pages))
+            if cards_at_or_before_watermark(page_cards, listed_watermark):
+                # Newest-first + already at/before prior max listed_at → 1 page.
+                stop_need = 1
             logger.info(
                 "Otodom page %s fully known (%s/%s); early-stop soon",
                 page,
                 known_page_streak,
-                stop_after_known_pages,
+                stop_need,
             )
-            if known_page_streak >= max(1, stop_after_known_pages):
+            if known_page_streak >= stop_need:
                 logger.info("Otodom incremental early-stop at page %s", page)
                 break
         else:
