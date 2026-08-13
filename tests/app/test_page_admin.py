@@ -8,12 +8,12 @@ from happy_housing.app.page_admin import ADMIN_SECTIONS, panel_for_section
 
 
 def test_admin_sections_cover_planned_ia() -> None:
-    """Left-nav labels match the short-panel IA (no mega-tabs)."""
+    """Top-nav pills match the short-panel IA (Ops hub first)."""
     assert ADMIN_SECTIONS == (
-        "Overview",
+        "Ops",
         "Commute",
-        "Run",
         "Sources",
+        "Explore",
         "Price model",
         "Recommendations",
         "Offer AI",

@@ -13,6 +13,10 @@ import pandas as pd
 import streamlit as st
 
 from happy_housing.app.admin_flash import pop_admin_flash, set_admin_flash
+from happy_housing.app.admin_ops import (
+    build_ops_freshness_frame,
+    clear_pipeline_step_cache,
+)
 from happy_housing.app.ai_review import (
     DEFAULT_SYSTEM_PROMPT,
     clear_ai_review_session_keys,
@@ -22,6 +26,7 @@ from happy_housing.app.ai_review import (
 from happy_housing.app.app_settings import (
     AppSettings,
     load_app_settings,
+    recommender_kwargs_from_settings,
     save_app_settings,
     settings_path,
 )
@@ -103,10 +108,10 @@ from happy_housing.models.metrics import (
 logger = logging.getLogger(__name__)
 
 ADMIN_SECTIONS: tuple[str, ...] = (
-    "Overview",
+    "Ops",
     "Commute",
-    "Run",
     "Sources",
+    "Explore",
     "Price model",
     "Recommendations",
     "Offer AI",
@@ -116,7 +121,7 @@ ADMIN_SECTIONS: tuple[str, ...] = (
     "Stars & News",
     "Stats",
 )
-"""Left-nav section labels (task frequency order)."""
+"""Top-nav section labels (Ops hub first, then tunables)."""
 
 
 def _assert_never(value: object) -> Never:
@@ -154,28 +159,207 @@ def _cached_place_search(query: str) -> tuple[dict[str, float | str | int], ...]
     )
 
 
-def _panel_overview(settings: AppSettings, settings_file: Path, proc: Path) -> None:
-    """Paths, last refresh, log level, cache clear."""
-    del proc  # unused; signature shared with other panels
+def _panel_ops(settings: AppSettings, settings_file: Path, proc: Path) -> None:
+    """Freshness, recompute / redownload, logging, and caches."""
     config = load_config()
     meta = load_metadata()
-    st.caption("Experiment paths and last pipeline refresh.")
-    c1, c2 = st.columns(2)
+    st.caption(
+        "Ops hub — data freshness, scrape / pipeline, logging, and caches. "
+        "Tune ingest URLs and caps under **Sources**."
+    )
+    c1, c2, c3 = st.columns(3)
     c1.metric("Processed dir", config.data.processed_path().name)
     c2.metric(
-        "Last refresh",
+        "Last pipeline refresh",
         (
             meta.refreshed_at[:19].replace("T", " ")
             if meta and meta.refreshed_at
             else "—"
         ),
     )
-    st.caption(
-        "Config file: `configs/experiment.yaml` · fixtures: "
-        f"`{config.data.fixtures_path()}`"
+    c3.metric(
+        "Fixtures",
+        config.data.fixtures_path().name,
+    )
+    st.caption(f"Config: `configs/experiment.yaml` · `{config.data.fixtures_path()}`")
+
+    st.subheader("Data freshness")
+    freshness = build_ops_freshness_frame(
+        processed_dir=proc,
+        cache_dir=config.data.cache_path(),
+        fixtures_dir=config.data.fixtures_path(),
+    )
+    st.dataframe(
+        freshness.drop(columns=["url"], errors="ignore"),
+        hide_index=True,
+        width="stretch",
     )
 
-    st.subheader("Logging")
+    limits = resolve_ingest_limits(settings, config)
+    flags = resolve_ingest_flags(settings, config)
+    pages = "∞" if limits.otodom_max_pages is None else str(limits.otodom_max_pages)
+    listings = (
+        "∞" if limits.otodom_max_listings is None else str(limits.otodom_max_listings)
+    )
+    rcn = "∞" if limits.rcn_max_rows is None else f"{limits.rcn_max_rows:,}"
+    st.subheader("Recompute & redownload")
+    st.caption(
+        f"Saved Sources caps · Otodom pages `{pages}` · listings `{listings}` · "
+        f"incremental `{'on' if limits.otodom_incremental else 'off'}` · "
+        f"RCN rows `{rcn}`."
+    )
+    scrape_in_pipe = st.checkbox(
+        "Scrape Otodom inside pipeline",
+        value=bool(flags.scrape_otodom),
+        key="pipe_scrape_otodom",
+    )
+    force_refresh = st.checkbox(
+        "Force full recompute (ignore step cache)",
+        value=bool(settings.pipeline_force_refresh),
+        help=(
+            "Re-run enrich, train, score, and recommender even when inputs "
+            "are unchanged. Leave off for incremental pipelines."
+        ),
+        key="pipe_force_refresh",
+    )
+    force_gis = st.checkbox(
+        "Force GIS / remote source refresh",
+        value=False,
+        help=(
+            "Ignore OSM / Warsaw map / GUNB WFS caches and re-download remote "
+            "GIS artifacts on the next pipeline run."
+        ),
+        key="pipe_force_gis",
+    )
+
+    r1, r2, r3 = st.columns(3)
+    with r1:
+        if st.button("Run Otodom scrape", type="primary", key="run_otodom"):
+            if scrape_in_pipe != bool(settings.scrape_otodom_in_pipeline):
+                settings.scrape_otodom_in_pipeline = bool(scrape_in_pipe)
+                settings.pipeline_overrides_enabled = True
+                save_app_settings(settings_file, settings)
+            out_path = processed_dir() / "otodom_listings.parquet"
+            pages_arg = (
+                "None"
+                if limits.otodom_max_pages is None
+                else str(int(limits.otodom_max_pages))
+            )
+            listings_arg = (
+                "None"
+                if limits.otodom_max_listings is None
+                else str(int(limits.otodom_max_listings))
+            )
+            incr_arg = "True" if limits.otodom_incremental else "False"
+            proxy_flag = bool(settings.http_free_proxies_enabled)
+            cmd = [
+                sys.executable,
+                "-c",
+                (
+                    "from pathlib import Path; "
+                    "from happy_housing.logging_config import configure_logging; "
+                    "from happy_housing.ingest.proxy_pool import "
+                    "configure_http_proxies; "
+                    "from happy_housing.ingest.otodom import scrape_otodom_warsaw; "
+                    "configure_logging(); "
+                    f"configure_http_proxies(enabled={proxy_flag!r}); "
+                    f"scrape_otodom_warsaw(Path({str(out_path)!r}), "
+                    f"max_pages={pages_arg}, max_listings={listings_arg}, "
+                    f"incremental={incr_arg})"
+                ),
+            ]
+            logger.info(
+                "Admin starting Otodom scrape → %s (max_pages=%s max_listings=%s "
+                "incremental=%s)",
+                out_path,
+                pages_arg,
+                listings_arg,
+                incr_arg,
+            )
+            with st.status(
+                "Scraping Otodom (may take hours)…",
+                expanded=True,
+            ) as status:
+                st.write(
+                    f"max_pages={pages_arg} · max_listings={listings_arg} · "
+                    f"incremental={incr_arg}"
+                )
+                try:
+                    code, log = _run_command(cmd, timeout_s=24 * 3600)
+                except subprocess.TimeoutExpired:
+                    logger.error("Otodom scrape timed out")
+                    status.update(label="Otodom scrape timed out", state="error")
+                    st.error("Scrape timed out.")
+                else:
+                    st.code(log[-8000:] or "(no output)")
+                    if code == 0:
+                        clear_data_caches()
+                        logger.info("Otodom scrape finished → %s", out_path)
+                        status.update(label="Otodom scrape complete", state="complete")
+                        st.success(f"Scrape finished → {out_path}")
+                    else:
+                        logger.error("Otodom scrape failed (exit %s)", code)
+                        status.update(label="Otodom scrape failed", state="error")
+                        st.error(f"Scrape failed (exit {code})")
+    with r2:
+        if st.button(
+            "Run pipeline (enrich + train + score + recommend)",
+            type="primary",
+            key="run_pipe",
+        ):
+            settings.scrape_otodom_in_pipeline = bool(scrape_in_pipe)
+            settings.pipeline_force_refresh = bool(force_refresh)
+            settings.pipeline_overrides_enabled = True
+            save_app_settings(settings_file, settings)
+            gis_flag = bool(force_gis)
+            cmd = [
+                sys.executable,
+                "-c",
+                (
+                    "from happy_housing.pipeline import run_pipeline; "
+                    f"run_pipeline(force_gis_refresh={gis_flag!r})"
+                ),
+            ]
+            logger.info(
+                "Admin starting pipeline (overrides saved; force_gis=%s)",
+                gis_flag,
+            )
+            with st.status(
+                "Running pipeline (may take hours)…",
+                expanded=True,
+            ) as status:
+                st.write(
+                    f"scrape_otodom={bool(scrape_in_pipe)} · "
+                    f"force_refresh={bool(force_refresh)} · "
+                    f"force_gis={gis_flag}"
+                )
+                try:
+                    code, log = _run_command(cmd, timeout_s=24 * 3600)
+                except subprocess.TimeoutExpired:
+                    logger.error("Pipeline timed out")
+                    status.update(label="Pipeline timed out", state="error")
+                    st.error("Pipeline timed out.")
+                else:
+                    st.code(log[-12000:] or "(no output)")
+                    if code == 0:
+                        clear_data_caches()
+                        logger.info("Pipeline finished successfully")
+                        status.update(label="Pipeline complete", state="complete")
+                        st.success("Pipeline finished — Home metrics refreshed.")
+                    else:
+                        logger.error("Pipeline failed (exit %s)", code)
+                        status.update(label="Pipeline failed", state="error")
+                        st.error(f"Pipeline failed (exit {code})")
+    with r3:
+        if st.button("Clear pipeline step cache", key="admin_clear_step_cache"):
+            removed = clear_pipeline_step_cache(proc)
+            clear_data_caches()
+            if removed:
+                st.success("Deleted pipeline_steps.json — next run recomputes steps.")
+            else:
+                st.info("No pipeline_steps.json present.")
+
+    st.subheader("Logging & Streamlit caches")
     log_level = st.selectbox(
         "App log level",
         options=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
@@ -498,154 +682,6 @@ def _apply_pipeline_widgets(
     settings.traffic_neighbourhood_radius_m = float(traffic_neighbourhood_radius_m)
 
 
-def _panel_run(settings: AppSettings, settings_file: Path, proc: Path) -> None:
-    """Primary scrape / pipeline actions using saved ingest settings."""
-    del proc
-    config = load_config()
-    limits = resolve_ingest_limits(settings, config)
-    flags = resolve_ingest_flags(settings, config)
-
-    pages = "∞" if limits.otodom_max_pages is None else str(limits.otodom_max_pages)
-    listings = (
-        "∞" if limits.otodom_max_listings is None else str(limits.otodom_max_listings)
-    )
-    rcn = "∞" if limits.rcn_max_rows is None else f"{limits.rcn_max_rows:,}"
-    st.caption(
-        f"Uses **saved** Sources caps · Otodom pages `{pages}` · "
-        f"listings `{listings}` · incremental "
-        f"`{'on' if limits.otodom_incremental else 'off'}` · RCN rows `{rcn}`. "
-        "Edit under **Sources**."
-    )
-
-    scrape_in_pipe = st.checkbox(
-        "Scrape Otodom inside pipeline",
-        value=bool(flags.scrape_otodom),
-        key="pipe_scrape_otodom",
-    )
-    force_refresh = st.checkbox(
-        "Force full recompute (ignore step cache)",
-        value=bool(settings.pipeline_force_refresh),
-        help=(
-            "Re-run enrich, train, score, and recommender even when inputs "
-            "are unchanged. Leave off for incremental pipelines."
-        ),
-        key="pipe_force_refresh",
-    )
-
-    r1, r2 = st.columns(2)
-    with r1:
-        if st.button("Run Otodom scrape", type="primary", key="run_otodom"):
-            if scrape_in_pipe != bool(settings.scrape_otodom_in_pipeline):
-                settings.scrape_otodom_in_pipeline = bool(scrape_in_pipe)
-                settings.pipeline_overrides_enabled = True
-                save_app_settings(settings_file, settings)
-            out_path = processed_dir() / "otodom_listings.parquet"
-            pages_arg = (
-                "None"
-                if limits.otodom_max_pages is None
-                else str(int(limits.otodom_max_pages))
-            )
-            listings_arg = (
-                "None"
-                if limits.otodom_max_listings is None
-                else str(int(limits.otodom_max_listings))
-            )
-            incr_arg = "True" if limits.otodom_incremental else "False"
-            proxy_flag = bool(settings.http_free_proxies_enabled)
-            cmd = [
-                sys.executable,
-                "-c",
-                (
-                    "from pathlib import Path; "
-                    "from happy_housing.logging_config import configure_logging; "
-                    "from happy_housing.ingest.proxy_pool import "
-                    "configure_http_proxies; "
-                    "from happy_housing.ingest.otodom import scrape_otodom_warsaw; "
-                    "configure_logging(); "
-                    f"configure_http_proxies(enabled={proxy_flag!r}); "
-                    f"scrape_otodom_warsaw(Path({str(out_path)!r}), "
-                    f"max_pages={pages_arg}, max_listings={listings_arg}, "
-                    f"incremental={incr_arg})"
-                ),
-            ]
-            logger.info(
-                "Admin starting Otodom scrape → %s (max_pages=%s max_listings=%s "
-                "incremental=%s)",
-                out_path,
-                pages_arg,
-                listings_arg,
-                incr_arg,
-            )
-            with st.status(
-                "Scraping Otodom (may take hours)…",
-                expanded=True,
-            ) as status:
-                st.write(
-                    f"max_pages={pages_arg} · max_listings={listings_arg} · "
-                    f"incremental={incr_arg}"
-                )
-                try:
-                    code, log = _run_command(cmd, timeout_s=24 * 3600)
-                except subprocess.TimeoutExpired:
-                    logger.error("Otodom scrape timed out")
-                    status.update(label="Otodom scrape timed out", state="error")
-                    st.error("Scrape timed out.")
-                else:
-                    st.code(log[-8000:] or "(no output)")
-                    if code == 0:
-                        clear_data_caches()
-                        logger.info("Otodom scrape finished → %s", out_path)
-                        status.update(label="Otodom scrape complete", state="complete")
-                        st.success(f"Scrape finished → {out_path}")
-                    else:
-                        logger.error("Otodom scrape failed (exit %s)", code)
-                        status.update(label="Otodom scrape failed", state="error")
-                        st.error(f"Scrape failed (exit {code})")
-    with r2:
-        if st.button(
-            "Run pipeline (enrich + train + score + recommend)",
-            type="primary",
-            key="run_pipe",
-        ):
-            settings.scrape_otodom_in_pipeline = bool(scrape_in_pipe)
-            settings.pipeline_force_refresh = bool(force_refresh)
-            settings.pipeline_overrides_enabled = True
-            save_app_settings(settings_file, settings)
-            cmd = [
-                sys.executable,
-                "-c",
-                "from happy_housing.pipeline import run_pipeline; run_pipeline()",
-            ]
-            logger.info(
-                "Admin starting pipeline (overrides saved; resolve via AppSettings)"
-            )
-            with st.status(
-                "Running pipeline (may take hours)…",
-                expanded=True,
-            ) as status:
-                st.write(
-                    f"scrape_otodom={bool(scrape_in_pipe)} · "
-                    f"force_refresh={bool(force_refresh)}"
-                )
-                try:
-                    code, log = _run_command(cmd, timeout_s=24 * 3600)
-                except subprocess.TimeoutExpired:
-                    logger.error("Pipeline timed out")
-                    status.update(label="Pipeline timed out", state="error")
-                    st.error("Pipeline timed out.")
-                else:
-                    st.code(log[-12000:] or "(no output)")
-                    if code == 0:
-                        clear_data_caches()
-                        logger.info("Pipeline finished successfully")
-                        status.update(label="Pipeline complete", state="complete")
-                        st.success("Pipeline finished — Home metrics refreshed.")
-                    else:
-                        logger.error("Pipeline failed (exit %s)", code)
-                        status.update(label="Pipeline failed", state="error")
-                        st.error(f"Pipeline failed (exit {code})")
-
-
 def _panel_sources(settings: AppSettings, settings_file: Path, proc: Path) -> None:
     """Ingest caps, URLs, OSM flags — save overrides only."""
     config = load_config()
@@ -923,6 +959,72 @@ def _panel_sources(settings: AppSettings, settings_file: Path, proc: Path) -> No
         st.success("Pipeline settings saved (overrides YAML ingest).")
 
 
+def _panel_explore(settings: AppSettings, settings_file: Path, proc: Path) -> None:
+    """Explore Map defaults: hour, basemap, pin colour scale, point caps."""
+    del proc
+    st.caption(
+        "Defaults for Explore Map when session widgets are empty. "
+        "Point caps keep pydeck payloads under Streamlit message limits."
+    )
+    hour = st.slider(
+        "Default time of day",
+        min_value=0,
+        max_value=23,
+        value=int(settings.explore_default_hour),
+        format="%02d:00",
+        key="settings_explore_default_hour",
+    )
+    basemap = (
+        st.segmented_control(
+            "Default basemap",
+            options=["Streets", "Satellite"],
+            default=(
+                "Satellite"
+                if settings.explore_default_basemap == "Satellite"
+                else "Streets"
+            ),
+            key="settings_explore_default_basemap",
+        )
+        or "Streets"
+    )
+    delta_scale = st.number_input(
+        "Listing pin Δ colour scale (zł/m²)",
+        min_value=100.0,
+        max_value=10_000.0,
+        value=float(settings.map_delta_color_scale_zl),
+        step=50.0,
+        help="Tanh soft-cap for green→amber→red offer pin colours.",
+        key="settings_map_delta_scale",
+    )
+    g1, g2 = st.columns(2)
+    max_gunb = g1.number_input(
+        "Max GUNB pins",
+        min_value=100,
+        max_value=50_000,
+        value=int(settings.map_max_gunb_points),
+        step=100,
+        key="settings_map_max_gunb",
+    )
+    max_shop = g2.number_input(
+        "Max shop pins",
+        min_value=100,
+        max_value=50_000,
+        value=int(settings.map_max_shop_points),
+        step=100,
+        key="settings_map_max_shop",
+    )
+    if st.button("Save Explore settings", type="primary", key="save_explore_settings"):
+        settings.explore_default_hour = int(hour)
+        settings.explore_default_basemap = (
+            "Satellite" if str(basemap) == "Satellite" else "Streets"
+        )
+        settings.map_delta_color_scale_zl = float(delta_scale)
+        settings.map_max_gunb_points = int(max_gunb)
+        settings.map_max_shop_points = int(max_shop)
+        save_app_settings(settings_file, settings)
+        st.success("Explore map settings saved.")
+
+
 def _panel_model(settings: AppSettings, settings_file: Path, proc: Path) -> None:
     """Price-model HPO metric, validation split, neighborhood comps."""
     del proc
@@ -939,7 +1041,7 @@ def _panel_model(settings: AppSettings, settings_file: Path, proc: Path) -> None
     st.caption(
         f"Fair-price LightGBM · **{n_core}** core features{nbhd_note}{eng_note}. "
         "HPO on validation; test held out. Target ≤1% MAPE. "
-        "Retrain via Admin → Run after feature or data changes. "
+        "Retrain via Admin → Ops after feature or data changes. "
         "Scored deltas use out-of-fold predictions for train labels."
     )
     metric = st.selectbox(
@@ -1008,6 +1110,12 @@ def _panel_model(settings: AppSettings, settings_file: Path, proc: Path) -> None
         value=int(settings.photo_cv_max_photos),
         key="settings_photo_cv_max",
     )
+    photo_model = st.text_input(
+        "Photo CV model id (Hugging Face / CLIP)",
+        value=str(settings.photo_cv_model_id),
+        help="Used when photo CV is enabled during pipeline enrich.",
+        key="settings_photo_cv_model_id",
+    )
     train_asks_only = st.checkbox(
         "Train on Otodom/fixture asks only (RCN = comps, not labels)",
         value=bool(settings.train_otodom_labels_only),
@@ -1048,6 +1156,9 @@ def _panel_model(settings: AppSettings, settings_file: Path, proc: Path) -> None
         settings.model_district_calibration = bool(district_cal)
         settings.photo_cv_enabled = bool(photo_cv)
         settings.photo_cv_max_photos = int(photo_max)
+        settings.photo_cv_model_id = (
+            str(photo_model).strip() or "openai/clip-vit-base-patch32"
+        )
         save_app_settings(settings_file, settings)
         st.success(
             f"Model settings saved · optimize {settings.model_opt_metric} "
@@ -1129,10 +1240,45 @@ def _panel_recommender(settings: AppSettings, settings_file: Path, proc: Path) -
         value=bool(settings.recommender_otodom_pool_default),
         key="settings_rec_otodom_pool",
     )
+    s1, s2 = st.columns(2)
+    delta_scale = s1.number_input(
+        "Δ soft-cap (zł/m²)",
+        min_value=100.0,
+        max_value=20_000.0,
+        value=float(settings.recommender_delta_scale_zl),
+        step=100.0,
+        key="settings_rec_delta_scale",
+        help="Bargain / overprice score terms saturate beyond this Δ.",
+    )
+    dist_cap = s2.number_input(
+        "Amenity distance soft-cap (m)",
+        min_value=100.0,
+        max_value=20_000.0,
+        value=float(settings.recommender_dist_cap_m),
+        step=100.0,
+        key="settings_rec_dist_cap",
+    )
+    p1, p2 = st.columns(2)
+    opened_pen = p1.number_input(
+        "Opened demotion weight",
+        min_value=0.0,
+        max_value=20.0,
+        value=float(settings.recommender_opened_penalty),
+        step=0.1,
+        key="settings_rec_opened_pen",
+    )
+    skipped_pen = p2.number_input(
+        "Skipped demotion weight",
+        min_value=0.0,
+        max_value=20.0,
+        value=float(settings.recommender_skipped_penalty),
+        step=0.1,
+        key="settings_rec_skipped_pen",
+    )
     st.markdown("#### Amenity polarity & weight")
     st.caption(
         "Positive = prefer offers near this type; negative = prefer far. "
-        "Magnitude -1..+1. Distance soft-cap 2 km."
+        f"Magnitude -1..+1. Distance soft-cap {float(dist_cap):,.0f} m."
     )
     weights = coerce_amenity_weights(settings.recommender_amenity_weights)
     weight_rows = [
@@ -1180,6 +1326,10 @@ def _panel_recommender(settings: AppSettings, settings_file: Path, proc: Path) -
             settings.recommender_w_transit = float(w_transit)
             settings.recommender_w_overprice = float(w_overprice)
             settings.recommender_otodom_pool_default = bool(otodom_pool)
+            settings.recommender_delta_scale_zl = float(delta_scale)
+            settings.recommender_dist_cap_m = float(dist_cap)
+            settings.recommender_opened_penalty = float(opened_pen)
+            settings.recommender_skipped_penalty = float(skipped_pen)
             save_app_settings(settings_file, settings)
             st.success("Recommender settings saved.")
     with r2:
@@ -1192,6 +1342,10 @@ def _panel_recommender(settings: AppSettings, settings_file: Path, proc: Path) -
             settings.recommender_w_transit = float(w_transit)
             settings.recommender_w_overprice = float(w_overprice)
             settings.recommender_otodom_pool_default = bool(otodom_pool)
+            settings.recommender_delta_scale_zl = float(delta_scale)
+            settings.recommender_dist_cap_m = float(dist_cap)
+            settings.recommender_opened_penalty = float(opened_pen)
+            settings.recommender_skipped_penalty = float(skipped_pen)
             save_app_settings(settings_file, settings)
             logger.info("Admin retrain recommender clicked (top_n=%s)", int(top_n))
             try:
@@ -1210,15 +1364,10 @@ def _panel_recommender(settings: AppSettings, settings_file: Path, proc: Path) -
                             frame,
                             processed_dir=proc,
                             top_n=int(top_n),
-                            demotion_alpha=float(alpha),
                             prefs=prefs,
                             amenity_weights=new_weights,
-                            w_bargain=float(w_bargain),
-                            w_commute=float(w_commute),
-                            w_transit=float(w_transit),
-                            w_overprice=float(w_overprice),
-                            otodom_pool_default=bool(otodom_pool),
                             commute_mode=settings.commute_display_mode,
+                            **recommender_kwargs_from_settings(settings),
                         )
                         status.update(
                             label="Recommendation model retrained",
@@ -1860,14 +2009,14 @@ PanelFn = Callable[[AppSettings, Path, Path], None]
 def panel_for_section(section: str) -> PanelFn:
     """Map Admin section label to its panel renderer."""
     match section:
-        case "Overview":
-            return _panel_overview
+        case "Ops":
+            return _panel_ops
         case "Commute":
             return _panel_commute
-        case "Run":
-            return _panel_run
         case "Sources":
             return _panel_sources
+        case "Explore":
+            return _panel_explore
         case "Price model":
             return _panel_model
         case "Recommendations":
@@ -1889,7 +2038,7 @@ def panel_for_section(section: str) -> PanelFn:
 
 
 def render_admin() -> None:
-    """Render Admin with left section nav (one short panel at a time)."""
+    """Render Admin with top section pills (one short panel at a time)."""
     logger.info("Rendering Admin")
     st.caption("Pick a section — one panel at a time.")
     pop_admin_flash()
@@ -1898,16 +2047,15 @@ def render_admin() -> None:
     settings_file = settings_path(proc)
     settings = load_app_settings(settings_file)
 
-    nav, body = st.columns([1, 3], gap="large")
-    with nav:
-        st.markdown("**Section**")
-        section = st.radio(
-            "Admin section",
-            options=list(ADMIN_SECTIONS),
-            key="admin_section",
-            label_visibility="collapsed",
-        )
-    with body:
-        logger.debug("Admin section=%s", section)
-        st.subheader(str(section))
-        panel_for_section(str(section))(settings, settings_file, proc)
+    section = st.pills(
+        "Admin section",
+        options=list(ADMIN_SECTIONS),
+        default=ADMIN_SECTIONS[0],
+        key="admin_section",
+        label_visibility="collapsed",
+    )
+    if section is None:
+        section = ADMIN_SECTIONS[0]
+    logger.debug("Admin section=%s", section)
+    st.subheader(str(section))
+    panel_for_section(str(section))(settings, settings_file, proc)
