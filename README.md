@@ -119,6 +119,9 @@ Principles: **free/open sources only**, **spatial vectorization**, **local compu
 Deep technical write-ups (HPO space, prompts, app surfaces, speed):
 [docs/modeling/](docs/modeling/README.md).
 
+Data sources (why / fields / incremental / completeness audit):
+[docs/data-sources/](docs/data-sources/README.md).
+
 Roadmap and technical phases: [docs/plan.md](docs/plan.md).
 
 ## Status
@@ -158,6 +161,7 @@ config = load_experiment_config(Path("configs/experiment.yaml"))
 | `data/fixtures/` | Small committed samples (raw dumps stay local / gitignored) |
 | `docs/plan.md` | Phased plan |
 | `docs/modeling/` | Fair-price, recommender, LMS agents, photo CV (technical) |
+| `docs/data-sources/` | Ingest sources, fields, increments, completeness |
 | `docs/screenshots/` | README UI captures |
 | `scripts/capture_readme_screenshots.py` | Refresh screenshots (app running) |
 | `tests/` | Pytest |

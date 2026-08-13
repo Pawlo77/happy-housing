@@ -72,6 +72,7 @@ Optimize: **$0 APIs**, **local CPU/RAM**, **max open data**, **fast filter/map/t
 **Homepage/URLs:** `https://github.com/Pawlo77/happy-housing`
 
 Modeling reference (post-Phase docs): [docs/modeling/README.md](modeling/README.md).
+Data sources + completeness audit: [docs/data-sources/README.md](data-sources/README.md).
 
 ---
 
