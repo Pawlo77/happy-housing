@@ -1,7 +1,5 @@
 """Tests for RCN neighborhood spatial features."""
 
-from __future__ import annotations
-
 import pandas as pd
 
 from happy_housing.models.neighborhood import (

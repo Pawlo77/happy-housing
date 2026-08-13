@@ -1,7 +1,5 @@
 """Ingest limit helpers — ``None`` means download everything available."""
 
-from __future__ import annotations
-
 
 def resolve_ingest_cap(value: int | None) -> int | None:
     """Normalize a config cap; ``None`` / non-positive → unlimited."""

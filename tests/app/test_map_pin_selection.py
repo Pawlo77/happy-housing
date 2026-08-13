@@ -1,7 +1,5 @@
 """Tests for Explore map pin selection helpers (fast fragment reruns)."""
 
-from __future__ import annotations
-
 from unittest.mock import MagicMock
 
 from happy_housing.app.explore_nav import (

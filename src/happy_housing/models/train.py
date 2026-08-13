@@ -1,7 +1,5 @@
 """LightGBM price model training, HPO, SHAP, and MLflow logging."""
 
-from __future__ import annotations
-
 import logging
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -535,12 +533,12 @@ def _predict_raw(
     return np.asarray(model.predict(work), dtype=float)
 
 
-def _to_train_target(y: pd.Series | np.ndarray, *, log_target: bool) -> np.ndarray:
+def _to_train_target(y: pd.Series | np.ndarray, log_target: bool) -> np.ndarray:
     arr = np.asarray(y, dtype=float)
     return np.log1p(np.clip(arr, 0.0, None)) if log_target else arr
 
 
-def _from_model_pred(pred: np.ndarray, *, log_target: bool) -> np.ndarray:
+def _from_model_pred(pred: np.ndarray, log_target: bool) -> np.ndarray:
     arr = np.asarray(pred, dtype=float)
     return np.expm1(arr) if log_target else arr
 
@@ -958,7 +956,7 @@ def _safe_float(value: object, default: float = 0.0) -> float:
     try:
         if value is None or pd.isna(value):
             return default
-        number = float(value)  # type: ignore[arg-type]
+        number = float(value)  # type: ignore[arg-type]  # pandas/object scalar
     except (TypeError, ValueError):
         return default
     if number != number:

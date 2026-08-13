@@ -1,7 +1,5 @@
 """Commute-time features via local OSRM / OTP, with distance fallback."""
 
-from __future__ import annotations
-
 import logging
 from collections.abc import Iterable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed

@@ -1,7 +1,5 @@
 """Tests for Home Data-sources inventory (counts + fetch times)."""
 
-from __future__ import annotations
-
 import json
 from pathlib import Path
 

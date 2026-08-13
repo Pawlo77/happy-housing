@@ -1,7 +1,5 @@
 """Tests for Explore Offer display helpers."""
 
-from __future__ import annotations
-
 import pandas as pd
 
 from happy_housing.app.offer_display import (

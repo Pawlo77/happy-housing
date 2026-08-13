@@ -1,7 +1,5 @@
 """Tests for shared methodology docs."""
 
-from __future__ import annotations
-
 from happy_housing.app.methodology_docs import (
     chat_methodology_blurb,
     format_methodology_note,

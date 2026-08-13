@@ -1,7 +1,5 @@
 """Tests for city map object key dedupe (no checkbox overlaps)."""
 
-from __future__ import annotations
-
 from happy_housing.gis.amenity_catalog import (
     CITY_MAP_OBJECT_EXCLUDE_KEYS,
     amenity_keys,

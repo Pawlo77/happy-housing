@@ -1,7 +1,5 @@
 """Tests for DuckDB chat conversation persistence."""
 
-from __future__ import annotations
-
 from pathlib import Path
 
 from happy_housing.app.chat_store import (

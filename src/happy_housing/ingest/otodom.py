@@ -1,7 +1,5 @@
 """Otodom.pl listing ingest via public HTML ``__NEXT_DATA__`` payloads."""
 
-from __future__ import annotations
-
 import json
 import logging
 import re
@@ -378,7 +376,7 @@ def otodom_session() -> requests.Session:
     return _session()
 
 
-def _retry_sleep_s(attempt: int, *, status_code: int | None = None) -> float:
+def _retry_sleep_s(attempt: int, status_code: int | None = None) -> float:
     """Backoff delay; 403/429 get a longer cool-down."""
     return retry_sleep_s(attempt, status_code=status_code)
 

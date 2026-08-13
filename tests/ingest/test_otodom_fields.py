@@ -1,7 +1,5 @@
 """Unit tests for Otodom full-field detail / search normalization."""
 
-from __future__ import annotations
-
 import json
 from typing import Any
 

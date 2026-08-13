@@ -1,7 +1,5 @@
 """Business-oriented market analytics helpers for the Stats page."""
 
-from __future__ import annotations
-
 import unicodedata
 
 import numpy as np
@@ -684,7 +682,6 @@ _NOISE_SOURCE_COLS: tuple[tuple[str, str], ...] = (
 
 def noise_source_premiums(
     frame: pd.DataFrame,
-    *,
     threshold_db: float = 55.0,
 ) -> pd.DataFrame:
     """Median zł/m² premium when each noise source is ≥ ``threshold_db``."""

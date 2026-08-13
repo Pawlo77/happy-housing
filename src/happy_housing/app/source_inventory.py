@@ -1,7 +1,5 @@
 """Inventory helpers for Home Data-sources cards (counts + mtimes)."""
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path

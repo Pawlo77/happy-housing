@@ -1,7 +1,5 @@
 """Mtime-keyed I/O helpers; Streamlit-cached only inside a running app."""
 
-from __future__ import annotations
-
 import json
 import logging
 from collections.abc import Callable
@@ -14,6 +12,7 @@ if TYPE_CHECKING:
     import geopandas as gpd
 
 F = TypeVar("F", bound=Callable[..., Any])
+"""Callable type preserved by cache decorator."""
 
 
 def _cache_data(**_kwargs: Any) -> Callable[[F], F]:
@@ -34,7 +33,7 @@ def _cache_data(**_kwargs: Any) -> Callable[[F], F]:
         if get_script_run_ctx(suppress_warning=True) is None:
             return func
         cached = st.cache_data(show_spinner=False)(func)
-        return cached  # type: ignore[no-any-return]
+        return cached  # type: ignore[no-any-return]  # Streamlit wrapper is untyped
 
     return decorator
 
@@ -62,7 +61,7 @@ def read_json(path: str, mtime: float) -> Any:
 
 
 @_cache_data()
-def read_geojson_gdf(path: str, mtime: float) -> gpd.GeoDataFrame:
+def read_geojson_gdf(path: str, mtime: float) -> "gpd.GeoDataFrame":
     """Cached GeoJSON / GeoPandas read keyed by path + mtime."""
     del mtime
     import geopandas as gpd

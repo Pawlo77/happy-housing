@@ -1,7 +1,5 @@
 """Promote / normalize listing amenity columns for filters (no LLM)."""
 
-from __future__ import annotations
-
 import json
 import logging
 

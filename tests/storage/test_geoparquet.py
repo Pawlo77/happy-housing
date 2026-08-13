@@ -1,7 +1,5 @@
 """Tests for Hilbert locality keys and GeoParquet writes."""
 
-from __future__ import annotations
-
 from pathlib import Path
 
 import geopandas as gpd

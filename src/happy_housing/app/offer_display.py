@@ -1,7 +1,5 @@
 """Pure display helpers for the Explore Offer subtabs."""
 
-from __future__ import annotations
-
 import json
 import re
 from html.parser import HTMLParser
@@ -186,7 +184,7 @@ def round_meters(value: object) -> int | None:
     if value is None:
         return None
     try:
-        number = float(value)  # type: ignore[arg-type]
+        number = float(value)  # type: ignore[arg-type]  # pandas/object scalar
     except (TypeError, ValueError):
         return None
     if number != number:  # NaN

@@ -1,7 +1,5 @@
 """Tests for NL → UserPreferences JSON parse (no live LM Studio)."""
 
-from __future__ import annotations
-
 import pytest
 
 from happy_housing.app.pref_llm import (

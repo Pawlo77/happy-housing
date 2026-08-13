@@ -1,7 +1,5 @@
 """Sidebar filter state and pure filter application for Explore."""
 
-from __future__ import annotations
-
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, fields
 from datetime import date
@@ -134,7 +132,7 @@ def _opt_float(value: object) -> float | None:
     if value is None or value == "":
         return None
     try:
-        number = float(value)  # type: ignore[arg-type]
+        number = float(value)  # type: ignore[arg-type]  # pandas/object scalar
     except (TypeError, ValueError):
         return None
     if number != number:
@@ -146,14 +144,13 @@ def _opt_int(value: object) -> int | None:
     if value is None or value == "":
         return None
     try:
-        return int(float(value))  # type: ignore[arg-type]
+        return int(float(value))  # type: ignore[arg-type]  # pandas/object scalar
     except (TypeError, ValueError):
         return None
 
 
 def offer_age_months(
     frame: pd.DataFrame,
-    *,
     as_of: date | None = None,
 ) -> pd.Series:
     """Whole months since listing date (``listed_at``, else ``listed_month``)."""

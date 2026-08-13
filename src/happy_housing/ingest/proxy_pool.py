@@ -5,8 +5,6 @@ Proxies are only engaged after a blocking response (403/407/429) or when
 the active proxy itself fails; first attempt stays direct.
 """
 
-from __future__ import annotations
-
 import logging
 import threading
 from collections import deque
@@ -32,7 +30,7 @@ _PROXYSCRAPE_URL: Final[str] = (
 
 _lock = threading.RLock()
 _enabled: bool = True
-_pool: FreeProxyPool | None = None
+_pool: "FreeProxyPool | None" = None
 
 
 def block_statuses() -> frozenset[int]:
@@ -74,7 +72,7 @@ def fetch_proxyscrape_proxies(*, limit: int = 40) -> list[str]:
 def fetch_free_proxy_lib_proxies(*, limit: int = 8) -> list[str]:
     """Pull working proxies via the ``free-proxy`` (``fp``) library."""
     try:
-        from fp.fp import FreeProxy  # type: ignore[import-not-found]
+        from fp.fp import FreeProxy  # type: ignore[import-not-found]  # no stubs
     except ImportError:
         logger.debug("free-proxy package not installed; skip fp fetcher")
         return []

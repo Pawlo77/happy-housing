@@ -1,7 +1,5 @@
 """Persisted Admin / app behaviour settings (not experiment YAML)."""
 
-from __future__ import annotations
-
 import json
 import logging
 from dataclasses import asdict, dataclass
@@ -259,7 +257,7 @@ def _opt_positive_float(value: object) -> float | None:
     if value is None or value == "":
         return None
     try:
-        number = float(value)  # type: ignore[arg-type]
+        number = float(value)  # type: ignore[arg-type]  # pandas/object scalar
     except (TypeError, ValueError):
         return None
     if number != number or number <= 0:
@@ -272,7 +270,7 @@ def _opt_positive_int(value: object) -> int | None:
     if value is None or value == "":
         return None
     try:
-        number = int(float(value))  # type: ignore[arg-type]
+        number = int(float(value))  # type: ignore[arg-type]  # pandas/object scalar
     except (TypeError, ValueError):
         return None
     if number <= 0:
@@ -831,7 +829,7 @@ def _opt_lon_lat(value: object) -> float | None:
     if value is None or value == "":
         return None
     try:
-        number = float(value)  # type: ignore[arg-type]
+        number = float(value)  # type: ignore[arg-type]  # pandas/object scalar
     except (TypeError, ValueError):
         return None
     if number != number:

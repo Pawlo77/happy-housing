@@ -1,7 +1,5 @@
 """Tests for OSM shop subcategory filters on the Explore map."""
 
-from __future__ import annotations
-
 import pandas as pd
 
 from happy_housing.app.map_layers import (

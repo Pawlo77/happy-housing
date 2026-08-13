@@ -1,7 +1,5 @@
 """Zone-polygon proximity features for the price model."""
 
-from __future__ import annotations
-
 from pathlib import Path
 
 import geopandas as gpd

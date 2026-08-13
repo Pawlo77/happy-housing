@@ -4,8 +4,6 @@ Streamlit row selection does not work with Pandas ``Styler``, so visibility
 comes from markers + ``column_config`` (progress / signed numbers), not CSS.
 """
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 
 import pandas as pd

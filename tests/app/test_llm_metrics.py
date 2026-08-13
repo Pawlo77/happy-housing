@@ -1,7 +1,5 @@
 """Tests for LM Studio call metrics store and purpose summaries."""
 
-from __future__ import annotations
-
 from pathlib import Path
 
 import pytest

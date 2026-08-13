@@ -1,7 +1,5 @@
 """Streamlit layout density helpers (minimal padding only)."""
 
-from __future__ import annotations
-
 import streamlit as st
 
 # Streamlit reserves a large top pad under the header / top nav; TOML cannot

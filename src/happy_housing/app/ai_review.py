@@ -1,7 +1,5 @@
 """Persist and generate LM Studio AI reviews for Explore offers."""
 
-from __future__ import annotations
-
 import hashlib
 import json
 import logging
@@ -356,7 +354,7 @@ def save_review(path: Path, review: OfferAiReview) -> None:
     logger.info("Saved AI review for %s (%s)", review.listing_id, review.model)
 
 
-def _fmt_value(value: object, *, max_chars: int) -> str | None:
+def _fmt_value(value: object, max_chars: int) -> str | None:
     """Format a scalar/series cell for the prompt; skip empties."""
     if value is None:
         return None

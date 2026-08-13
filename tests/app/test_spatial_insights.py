@@ -1,7 +1,5 @@
 """Tests for Explore Spatial metric heatmaps and district rollups."""
 
-from __future__ import annotations
-
 import pandas as pd
 
 from happy_housing.app.spatial_insights import (

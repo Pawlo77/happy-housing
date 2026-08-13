@@ -1,7 +1,5 @@
 """GUS Panorama dzielnic Warszawy — police crime rates by district."""
 
-from __future__ import annotations
-
 import json
 import logging
 import re
@@ -256,7 +254,6 @@ def extract_panorama_crime_archive(archive_7z: Path, extract_dir: Path) -> pd.Da
 
 def load_crime_by_district(
     output_parquet: Path,
-    *,
     fixture_path: Path | None = None,
 ) -> pd.DataFrame:
     """Load crime parquet, or materialize from a JSON fixture when missing."""

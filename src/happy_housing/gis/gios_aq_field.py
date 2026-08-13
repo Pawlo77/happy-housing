@@ -6,8 +6,6 @@ grids from current station measurements, sample them onto listings, and paint
 Explore BitmapLayer overlays the same way as UM noise.
 """
 
-from __future__ import annotations
-
 import base64
 import json
 import logging
@@ -377,7 +375,7 @@ def _load_cached(
             ymax=ymax,
             width=width,
             height=height,
-            bbox_wgs84=bbox,  # type: ignore[arg-type]
+            bbox_wgs84=bbox,  # type: ignore[arg-type]  # Tuple length validated
         )
     return out
 
@@ -481,7 +479,6 @@ def _aqi_grid_to_png(grid: np.ndarray) -> bytes:
 
 def _concentration_grid_to_png(
     grid: np.ndarray,
-    *,
     vmax: float,
 ) -> bytes:
     """Paint continuous green→yellow→red concentration field."""

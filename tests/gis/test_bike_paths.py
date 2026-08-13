@@ -1,7 +1,5 @@
 """Tests for OSM bike-path fetch, nearest distance, and neighbourhood coverage."""
 
-from __future__ import annotations
-
 from pathlib import Path
 
 import geopandas as gpd

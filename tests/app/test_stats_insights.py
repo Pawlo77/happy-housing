@@ -1,7 +1,5 @@
 """Tests for unconventional Stats-page market insights."""
 
-from __future__ import annotations
-
 import pandas as pd
 
 from happy_housing.app.stats_insights import (

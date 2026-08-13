@@ -1,7 +1,5 @@
 """Tests for GIOŚ fixture loading and GTFS local-zip export."""
 
-from __future__ import annotations
-
 from pathlib import Path
 
 from happy_housing.ingest import (

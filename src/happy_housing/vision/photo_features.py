@@ -1,7 +1,5 @@
 """Pretrained CLIP photo features for listings (optional vision extra)."""
 
-from __future__ import annotations
-
 import hashlib
 import json
 import logging

@@ -1,7 +1,5 @@
 """Tests for Assistant tool helpers (no LM Studio)."""
 
-from __future__ import annotations
-
 from pathlib import Path
 
 import pandas as pd

@@ -1,7 +1,5 @@
 """Human-readable descriptions for model feature names (chart hover)."""
 
-from __future__ import annotations
-
 import pandas as pd
 
 from happy_housing.gis.amenity_catalog import amenity_type

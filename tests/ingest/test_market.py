@@ -1,7 +1,5 @@
 """Tests for market_primary derivation (Otodom market + RCN rodzaj_rynku)."""
 
-from __future__ import annotations
-
 from pathlib import Path
 
 import pandas as pd

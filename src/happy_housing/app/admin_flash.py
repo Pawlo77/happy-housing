@@ -1,7 +1,5 @@
 """Session-persisted Admin banners (survive ``st.rerun`` after long jobs)."""
 
-from __future__ import annotations
-
 import logging
 from typing import Literal
 

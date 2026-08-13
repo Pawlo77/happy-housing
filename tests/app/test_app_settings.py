@@ -1,7 +1,5 @@
 """Tests for persisted Admin app settings."""
 
-from __future__ import annotations
-
 from pathlib import Path
 
 from happy_housing.app.app_settings import (

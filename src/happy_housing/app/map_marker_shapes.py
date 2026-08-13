@@ -4,8 +4,6 @@ ScatterplotLayer is circles-only. IconLayer + inline SVG keeps glyphs offline
 and selection/hover-friendly without custom page CSS.
 """
 
-from __future__ import annotations
-
 from typing import Any
 from urllib.parse import quote
 

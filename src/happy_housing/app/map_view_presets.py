@@ -1,7 +1,5 @@
 """Named Explore map-view presets (layers + hour + basemap)."""
 
-from __future__ import annotations
-
 import json
 import logging
 from collections.abc import Mapping, MutableMapping
@@ -269,7 +267,6 @@ def apply_map_view_preset_to_session(
 
 def snapshot_map_view_preset_from_session(
     session: Mapping[str, Any],
-    *,
     name: str = "",
 ) -> MapViewPreset:
     """Build a preset from Map-layers widget session keys."""

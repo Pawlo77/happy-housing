@@ -5,8 +5,6 @@ Samples city-wide GetMap rasters using the official GIOŚ RGB legend
 industry Lden + Lnight bands plus energy-sum totals.
 """
 
-from __future__ import annotations
-
 import base64
 import json
 import logging
@@ -215,7 +213,7 @@ def color_to_db(rgba: tuple[int, ...] | list[int]) -> float:
 
 
 def db_to_legend_rgba(
-    db: float, *, alpha: int = _OVERLAY_ALPHA
+    db: float, alpha: int = _OVERLAY_ALPHA
 ) -> tuple[int, int, int, int]:
     """Map a dB level to GIOŚ legend RGBA; quiet / missing → transparent."""
     if not np.isfinite(db) or float(db) < 45.0:
@@ -565,7 +563,7 @@ def _png_bytes_to_data_uri(payload: bytes) -> str:
     return "data:image/png;base64," + base64.b64encode(payload).decode("ascii")
 
 
-def _apply_overlay_alpha(png_path: Path, *, alpha: int = _OVERLAY_ALPHA) -> bytes:
+def _apply_overlay_alpha(png_path: Path, alpha: int = _OVERLAY_ALPHA) -> bytes:
     """Re-encode a WMS PNG with uniform alpha on opaque legend pixels."""
     image = Image.open(png_path).convert("RGBA")
     pixels = np.asarray(image, dtype=np.uint8).copy()
@@ -577,7 +575,7 @@ def _apply_overlay_alpha(png_path: Path, *, alpha: int = _OVERLAY_ALPHA) -> byte
     return buf.getvalue()
 
 
-def _db_grid_to_png_bytes(grid: np.ndarray, *, alpha: int = _OVERLAY_ALPHA) -> bytes:
+def _db_grid_to_png_bytes(grid: np.ndarray, alpha: int = _OVERLAY_ALPHA) -> bytes:
     """Paint a dB grid with the official legend colours → PNG bytes."""
     values = np.asarray(grid, dtype=float)
     h, w = values.shape

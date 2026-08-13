@@ -1,7 +1,5 @@
 """Shared data loading helpers for Streamlit pages."""
 
-from __future__ import annotations
-
 import json
 import logging
 from pathlib import Path
@@ -33,7 +31,7 @@ def config_path() -> Path:
     return Path("configs/experiment.yaml")
 
 
-@st.cache_data(show_spinner=False)  # type: ignore[misc]
+@st.cache_data(show_spinner=False)  # type: ignore[misc]  # Streamlit decorator stub
 def _load_config_cached(path: str, mtime: float) -> ExperimentConfig:
     """Cached experiment config keyed by YAML path + mtime."""
     del mtime
@@ -43,7 +41,7 @@ def _load_config_cached(path: str, mtime: float) -> ExperimentConfig:
 def load_config() -> ExperimentConfig:
     """Load experiment config (mtime-keyed Streamlit cache)."""
     path = config_path()
-    return _load_config_cached(  # type: ignore[no-any-return]
+    return _load_config_cached(  # type: ignore[no-any-return]  # Cache wrapper is untyped
         str(path.resolve()), file_mtime(path)
     )
 
@@ -86,7 +84,7 @@ def _with_listed_month(frame: pd.DataFrame) -> pd.DataFrame:
     return frame
 
 
-@st.cache_resource(show_spinner=False)  # type: ignore[misc]
+@st.cache_resource(show_spinner=False)  # type: ignore[misc]  # Streamlit decorator stub
 def _read_scored_resource(
     path: str, mtime: float, otodom_path: str, otodom_mtime: float
 ) -> pd.DataFrame:
@@ -128,10 +126,10 @@ def load_metadata() -> RunMetadata | None:
     return load_run_metadata(metadata_path())
 
 
-@st.cache_data(show_spinner=False)  # type: ignore[misc]
+@st.cache_data(show_spinner=False)  # type: ignore[misc]  # Streamlit decorator stub
 def _read_amenities(
     cache_path: str, fixture_path: str, mtime: float
-) -> gpd.GeoDataFrame:
+) -> "gpd.GeoDataFrame":
     """Cached amenity load keyed by resolved paths + newest mtime."""
     del mtime
     import geopandas as gpd  # deferred: avoid cold-start tax on load_scored
@@ -150,7 +148,7 @@ def _read_amenities(
     return gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
 
 
-def load_amenities() -> gpd.GeoDataFrame:
+def load_amenities() -> "gpd.GeoDataFrame":
     """Load OSM amenity points from cache or fixture."""
     config = load_config()
     cache = config.data.cache_path() / "osm_amenities.geojson"
@@ -159,7 +157,7 @@ def load_amenities() -> gpd.GeoDataFrame:
     return _read_amenities(str(cache), str(fixture), max(mtimes, default=0.0))
 
 
-def load_parks() -> gpd.GeoDataFrame:
+def load_parks() -> "gpd.GeoDataFrame":
     """Load UM + OSM park polygons from cache or fixture."""
     config = load_config()
     cache = config.data.cache_path() / "warsaw_parks.geojson"
@@ -170,7 +168,7 @@ def load_parks() -> gpd.GeoDataFrame:
     return gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
 
 
-def load_bike_paths() -> gpd.GeoDataFrame:
+def load_bike_paths() -> "gpd.GeoDataFrame":
     """Load OSM bicycle infrastructure lines from cache or fixture."""
     config = load_config()
     cache = config.data.cache_path() / "bike_paths.geojson"
@@ -181,7 +179,7 @@ def load_bike_paths() -> gpd.GeoDataFrame:
     return gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
 
 
-def load_city_pois() -> gpd.GeoDataFrame:
+def load_city_pois() -> "gpd.GeoDataFrame":
     """Load UM sports + civic + OSM fitness city POIs from cache or fixture."""
     config = load_config()
     cache = config.data.cache_path() / "warsaw_city_pois.geojson"
@@ -192,7 +190,7 @@ def load_city_pois() -> gpd.GeoDataFrame:
     return gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
 
 
-def _load_zone_fixture(filename: str) -> gpd.GeoDataFrame:
+def _load_zone_fixture(filename: str) -> "gpd.GeoDataFrame":
     """Load a zone-overlay GeoJSON fixture, or an empty frame."""
     path = load_config().data.fixtures_path() / filename
     if not path.exists():
@@ -200,32 +198,32 @@ def _load_zone_fixture(filename: str) -> gpd.GeoDataFrame:
     return read_geojson_gdf(str(path), path.stat().st_mtime)
 
 
-def load_city_boundary() -> gpd.GeoDataFrame:
+def load_city_boundary() -> "gpd.GeoDataFrame":
     """Warsaw administrative boundary polygon."""
     return _load_zone_fixture("warsaw_boundary.geojson")
 
 
-def load_district_boundaries() -> gpd.GeoDataFrame:
+def load_district_boundaries() -> "gpd.GeoDataFrame":
     """Warsaw dzielnica (district) administrative polygons."""
     return _load_zone_fixture("warsaw_districts.geojson")
 
 
-def load_military_areas() -> gpd.GeoDataFrame:
+def load_military_areas() -> "gpd.GeoDataFrame":
     """OSM landuse=military polygons for the map."""
     return _load_zone_fixture("military_areas.geojson")
 
 
-def load_rail_areas() -> gpd.GeoDataFrame:
+def load_rail_areas() -> "gpd.GeoDataFrame":
     """OSM landuse=railway polygons for the map."""
     return _load_zone_fixture("rail_areas.geojson")
 
 
-def load_airport_areas() -> gpd.GeoDataFrame:
+def load_airport_areas() -> "gpd.GeoDataFrame":
     """OSM aeroway=aerodrome footprints for the map."""
     return _load_zone_fixture("airport_areas.geojson")
 
 
-@st.cache_resource(show_spinner=False)  # type: ignore[misc]
+@st.cache_resource(show_spinner=False)  # type: ignore[misc]  # Streamlit decorator stub
 def _load_warsaw_noise_overlay(
     cache_root: str, mtime: float, overlay_key: str
 ) -> dict[str, object] | None:
@@ -259,7 +257,7 @@ def _load_warsaw_noise_overlay(
     }
 
 
-def load_warsaw_noise_overlay(overlay_key: str) -> NoiseMapOverlay | None:
+def load_warsaw_noise_overlay(overlay_key: str) -> "NoiseMapOverlay | None":
     """Load a continuous Warsaw UM noise overlay for the selected key."""
     if not overlay_key or overlay_key == "off":
         return None
@@ -297,7 +295,7 @@ def load_warsaw_noise_heatmap(overlay_key: str) -> pd.DataFrame:
     return pd.DataFrame(columns=["lon", "lat", "db", "weight"])
 
 
-@st.cache_resource(show_spinner=False)  # type: ignore[misc]
+@st.cache_resource(show_spinner=False)  # type: ignore[misc]  # Streamlit decorator stub
 def _load_gios_aq_overlay(
     cache_root: str, mtime: float, overlay_key: str
 ) -> dict[str, object] | None:
@@ -336,7 +334,7 @@ def _load_gios_aq_overlay(
     }
 
 
-def load_gios_aq_overlay(overlay_key: str) -> AqMapOverlay | None:
+def load_gios_aq_overlay(overlay_key: str) -> "AqMapOverlay | None":
     """Load a continuous GIOŚ IDW air-quality overlay for the selected key."""
     if not overlay_key or overlay_key == "off":
         return None
@@ -368,10 +366,10 @@ def load_gios_aq_overlay(overlay_key: str) -> AqMapOverlay | None:
     )
 
 
-@st.cache_resource(show_spinner=False)  # type: ignore[misc]
+@st.cache_resource(show_spinner=False)  # type: ignore[misc]  # Streamlit decorator stub
 def _shap_bundle(
     model_file: str, mtime: float
-) -> tuple[lgb.Booster, shap.TreeExplainer]:
+) -> "tuple[lgb.Booster, shap.TreeExplainer]":
     """Cached LightGBM booster + SHAP TreeExplainer keyed by path + mtime."""
     del mtime
     import lightgbm as lgb  # deferred: avoid cold-start tax on load_scored
@@ -381,13 +379,13 @@ def _shap_bundle(
     return booster, shap.TreeExplainer(booster)
 
 
-def load_shap_bundle() -> tuple[lgb.Booster, shap.TreeExplainer] | None:
+def load_shap_bundle() -> "tuple[lgb.Booster, shap.TreeExplainer] | None":
     """Return ``(booster, explainer)`` when the model file exists."""
     path = model_path()
     if not path.exists():
         return None
     # Cached fn typed Any under streamlit stubs.
-    return _shap_bundle(str(path), path.stat().st_mtime)  # type: ignore[no-any-return]
+    return _shap_bundle(str(path), path.stat().st_mtime)  # type: ignore[no-any-return]  # Cache wrapper is untyped
 
 
 def clear_data_caches() -> None:
@@ -396,21 +394,21 @@ def clear_data_caches() -> None:
     logger.info("Cleared Streamlit app data caches")
 
 
-@st.cache_data(show_spinner=False)  # type: ignore[misc]
+@st.cache_data(show_spinner=False)  # type: ignore[misc]  # Streamlit decorator stub
 def _read_parquet_frame(path: str, mtime: float) -> pd.DataFrame:
     """Cached parquet load keyed by path + mtime."""
     del mtime
     return pd.read_parquet(path)
 
 
-@st.cache_data(show_spinner=False)  # type: ignore[misc]
+@st.cache_data(show_spinner=False)  # type: ignore[misc]  # Streamlit decorator stub
 def _read_json_points(path: str, mtime: float) -> pd.DataFrame:
     """Cached JSON point table (shops / traffic sample)."""
     del mtime
     return pd.read_json(path)
 
 
-@st.cache_data(show_spinner=False)  # type: ignore[misc]
+@st.cache_data(show_spinner=False)  # type: ignore[misc]  # Streamlit decorator stub
 def _shops_from_geojson(path: str, mtime: float) -> pd.DataFrame:
     """Cached shop points extracted from an OSM shops GeoJSON."""
     del mtime

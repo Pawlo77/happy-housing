@@ -1,7 +1,5 @@
 """Google-encoded polyline decode (OTP ``legGeometry.points``)."""
 
-from __future__ import annotations
-
 
 def decode_google_polyline(encoded: str | None) -> list[list[float]]:
     """Decode a Google polyline into ``[[lon, lat], …]`` for pydeck PathLayer.

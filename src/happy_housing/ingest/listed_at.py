@@ -1,7 +1,5 @@
 """Parse and normalize Otodom / listing ``listed_at`` timestamps."""
 
-from __future__ import annotations
-
 from datetime import UTC, datetime
 from typing import Any
 

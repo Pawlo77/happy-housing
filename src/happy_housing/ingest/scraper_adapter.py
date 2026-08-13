@@ -1,7 +1,5 @@
 """Optional listing-scraper adapter seam (paid scrapers stay out of core)."""
 
-from __future__ import annotations
-
 import logging
 from collections.abc import Callable
 from pathlib import Path

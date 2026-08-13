@@ -1,7 +1,5 @@
 """Tests for pipeline step fingerprints and skip decisions."""
 
-from __future__ import annotations
-
 from pathlib import Path
 
 from happy_housing.pipeline_cache import (

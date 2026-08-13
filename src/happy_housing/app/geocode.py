@@ -1,7 +1,5 @@
 """OSM Nominatim place search for Admin commute-target picker."""
 
-from __future__ import annotations
-
 import logging
 import time
 from dataclasses import dataclass
@@ -30,7 +28,7 @@ _last_request_monotonic: float = 0.0
 """Monotonic timestamp of the last Nominatim HTTP call."""
 
 
-def live_search_ready(query: str, *, min_chars: int = MIN_LIVE_QUERY_CHARS) -> bool:
+def live_search_ready(query: str, min_chars: int = MIN_LIVE_QUERY_CHARS) -> bool:
     """True when ``query`` is long enough for a live place search."""
     return len(str(query or "").strip()) >= int(min_chars)
 
@@ -89,7 +87,7 @@ def resolve_place_pick(
     idx = options.index(pick)
     if idx < 0 or idx >= len(hits):
         return None
-    return hits[idx]  # type: ignore[return-value]
+    return hits[idx]  # type: ignore[return-value]  # Geocoder hit shape validated
 
 
 def search_places(

@@ -1,7 +1,5 @@
 """Pure helpers for Explore map layer payloads and visibility flags."""
 
-from __future__ import annotations
-
 from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass, fields
 from typing import Self
@@ -84,7 +82,6 @@ _TRANSIT_SHOW_FIELDS: tuple[str, ...] = (
 
 def listing_delta_rgba(
     delta_zl_m2: float,
-    *,
     scale_zl: float = _DELTA_COLOR_SCALE_ZL,
 ) -> tuple[int, int, int, int]:
     """Map listing-model delta zl/m2 to continuous RGBA (green → amber → red)."""
@@ -102,7 +99,6 @@ def listing_delta_rgba(
 
 def listing_delta_rgba_columns(
     delta: pd.Series,
-    *,
     scale_zl: float = _DELTA_COLOR_SCALE_ZL,
 ) -> pd.DataFrame:
     """Vectorized RGBA columns for offer ScatterplotLayer fills."""
@@ -244,7 +240,7 @@ class LayerFlags:
         for bool_key in _LAYER_BOOL_FIELDS:
             if bool_key in data:
                 data[bool_key] = bool(data[bool_key])
-        return cls(**data)  # type: ignore[arg-type]
+        return cls(**data)  # type: ignore[arg-type]  # Dataclass fields validated above
 
 
 def explore_datasets_needed(
@@ -519,7 +515,6 @@ def shop_category_for_tag(tag: object) -> str:
 
 def filter_shops_by_categories(
     frame: pd.DataFrame,
-    *,
     categories: set[str] | frozenset[str],
 ) -> pd.DataFrame:
     """Keep shop rows whose ``shop`` tag maps into ``categories``."""
@@ -584,7 +579,6 @@ def limit_map_points(
 
 def prepare_gunb_for_map(
     frame: pd.DataFrame,
-    *,
     max_points: int = MAX_GUNB_MAP_POINTS,
 ) -> pd.DataFrame:
     """Warsaw-preferring, capped, tooltip-only GUNB points for the map."""
@@ -788,7 +782,6 @@ def prepare_city_pois_for_map(
 
 def prepare_shops_for_map(
     frame: pd.DataFrame,
-    *,
     max_points: int = MAX_SHOP_MAP_POINTS,
 ) -> pd.DataFrame:
     """Shop POIs with category + OSM tag in the hover detail."""
@@ -880,7 +873,6 @@ def coerce_path_coordinates(path: object) -> list[list[float]]:
 
 def prepare_transit_paths(
     frame: pd.DataFrame,
-    *,
     modes: set[str] | frozenset[str] | None = None,
 ) -> pd.DataFrame:
     """Filter route polylines to enabled modes for PathLayer."""
@@ -917,7 +909,6 @@ def prepare_transit_paths(
 
 def prepare_transit_stops_network(
     stops: pd.DataFrame,
-    *,
     max_stops: int = MAX_TRANSIT_STOP_MAP_POINTS,
 ) -> pd.DataFrame:
     """Slim stop markers for the transit-network overlay.
@@ -942,7 +933,7 @@ def prepare_transit_stops_network(
     return slim_map_frame(work)
 
 
-def traffic_weights_for_hour(sample: pd.DataFrame, *, hour: int) -> pd.DataFrame:
+def traffic_weights_for_hour(sample: pd.DataFrame, hour: int) -> pd.DataFrame:
     """Scale road-sample base weights by the diurnal traffic curve.
 
     Returns only ``lon`` / ``lat`` / ``weight`` — HeatmapLayer is non-pickable,

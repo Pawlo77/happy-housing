@@ -1,7 +1,5 @@
 """Home hero metric formatting (pure; Streamlit widgets render the UI)."""
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 
 

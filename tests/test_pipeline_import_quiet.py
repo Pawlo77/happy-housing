@@ -1,7 +1,5 @@
 """CLI imports must not emit Streamlit cache runtime warnings."""
 
-from __future__ import annotations
-
 import os
 import subprocess
 import sys

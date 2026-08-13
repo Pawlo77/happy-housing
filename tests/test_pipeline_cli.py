@@ -1,7 +1,5 @@
 """Tests for pipeline CLI force flag parsing."""
 
-from __future__ import annotations
-
 from happy_housing.pipeline import parse_pipeline_cli_args
 
 

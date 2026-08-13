@@ -1,7 +1,5 @@
 """Spatial market metrics for Explore Spatial heatmaps and district charts."""
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 
 import numpy as np

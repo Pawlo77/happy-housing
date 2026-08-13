@@ -1,7 +1,5 @@
 """Tests for Explore/Stats hover help coverage."""
 
-from __future__ import annotations
-
 from happy_housing.app.map_layers import MAX_GUNB_MAP_POINTS, LayerFlags
 from happy_housing.app.spatial_insights import SPATIAL_METRICS
 from happy_housing.app.ui_help import (

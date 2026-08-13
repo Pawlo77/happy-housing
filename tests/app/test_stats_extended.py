@@ -1,7 +1,5 @@
 """Tests for extended Stats inventory / affordability / livability helpers."""
 
-from __future__ import annotations
-
 import pandas as pd
 
 from happy_housing.app.stats_insights import (

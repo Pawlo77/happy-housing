@@ -1,7 +1,5 @@
 """Tests for property-attribute filter application."""
 
-from __future__ import annotations
-
 import pandas as pd
 
 from happy_housing.app.filters import FilterState, apply_filters

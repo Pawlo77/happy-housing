@@ -1,7 +1,5 @@
 """Board table text search and selection-safe display prep."""
 
-from __future__ import annotations
-
 import pandas as pd
 
 from happy_housing.app.board_table import (

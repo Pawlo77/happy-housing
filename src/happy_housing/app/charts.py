@@ -1,7 +1,5 @@
 """Shared Altair chart helpers — one visual language across the app."""
 
-from __future__ import annotations
-
 from typing import Any
 
 import altair as alt

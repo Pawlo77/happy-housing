@@ -4,8 +4,6 @@ Provides nearest bike-path distance and neighbourhood path coverage (metres of
 cycle infrastructure within a radius) for the price model and Explore map.
 """
 
-from __future__ import annotations
-
 import logging
 from pathlib import Path
 
@@ -160,7 +158,6 @@ def attach_bike_path_features(
 
 def _download_osm_bike_paths(
     bbox: tuple[float, float, float, float],
-    *,
     cache_dir: Path,
 ) -> gpd.GeoDataFrame:
     """Download bicycle infrastructure lines via OSMnx features API."""
@@ -240,7 +237,6 @@ def load_bike_path_sample(cache_dir: Path) -> pd.DataFrame:
 
 def prepare_bike_paths_for_map(
     paths: gpd.GeoDataFrame,
-    *,
     max_features: int = MAX_BIKE_PATH_MAP_FEATURES,
 ) -> pd.DataFrame:
     """Convert bike LineStrings to PathLayer ``path`` payloads."""

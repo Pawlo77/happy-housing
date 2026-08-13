@@ -1,7 +1,5 @@
 """Tests for Home hero display helpers."""
 
-from __future__ import annotations
-
 from happy_housing.app.home_hero import format_hero_stats
 
 

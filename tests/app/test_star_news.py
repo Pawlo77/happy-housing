@@ -1,7 +1,5 @@
 """Tests for starred-offer change news / snapshot sync."""
 
-from __future__ import annotations
-
 from pathlib import Path
 
 import pandas as pd

@@ -1,7 +1,5 @@
 """Model explainability helpers for the Stats → Model tab."""
 
-from __future__ import annotations
-
 import logging
 
 import lightgbm as lgb
@@ -148,7 +146,7 @@ def _cached_mean_abs_shap_table(
                 features[col] = (
                     features[col].astype(str).fillna("unknown").astype("category")
                 )
-        explanation = explainer(features)  # type: ignore[operator]
+        explanation = explainer(features)  # type: ignore[operator]  # SHAP union is callable
         values = np.asarray(explanation.values, dtype=float)
         names = list(features.columns)
         out = rank_mean_abs_shap(feature_names=names, shap_values=values, top_n=top_n)

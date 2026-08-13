@@ -1,7 +1,5 @@
 """Explore user preferences: structured palette + Map/Board hard filters."""
 
-from __future__ import annotations
-
 import json
 import logging
 from collections.abc import Mapping
@@ -210,7 +208,7 @@ def _opt_float(value: object) -> float | None:
     if value is None or value == "":
         return None
     try:
-        number = float(value)  # type: ignore[arg-type]
+        number = float(value)  # type: ignore[arg-type]  # pandas/object scalar
     except (TypeError, ValueError):
         return None
     if number != number:

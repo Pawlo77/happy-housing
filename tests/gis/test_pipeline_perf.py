@@ -1,7 +1,5 @@
 """Regression tests for pipeline enrich / HPO / OSRM performance helpers."""
 
-from __future__ import annotations
-
 from unittest.mock import MagicMock, patch
 
 import geopandas as gpd

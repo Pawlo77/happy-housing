@@ -1,7 +1,5 @@
 """Streamlit multipage entry: Home, Explore, Stats, Admin."""
 
-from __future__ import annotations
-
 import logging
 
 import streamlit as st

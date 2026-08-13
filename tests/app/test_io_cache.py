@@ -1,7 +1,5 @@
 """Tests for shared Streamlit mtime-keyed I/O caches."""
 
-from __future__ import annotations
-
 import json
 from pathlib import Path
 

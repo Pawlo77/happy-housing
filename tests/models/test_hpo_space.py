@@ -1,7 +1,5 @@
 """HPO search space includes expanded LightGBM knobs."""
 
-from __future__ import annotations
-
 from happy_housing.config import ModelConfig
 from happy_housing.models.train import _HPO_SPACE, _hpo_candidates
 

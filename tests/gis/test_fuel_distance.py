@@ -1,7 +1,5 @@
 """Regression: enrich attaches dist_fuel_m from OSM amenity=fuel."""
 
-from __future__ import annotations
-
 import geopandas as gpd
 import pandas as pd
 from shapely.geometry import Point

@@ -1,7 +1,5 @@
 """Compact LM Studio extraction of listing attrs from short description text."""
 
-from __future__ import annotations
-
 import hashlib
 import logging
 import re
@@ -150,7 +148,7 @@ def extract_system_prompt() -> str:
     )
 
 
-def build_extract_user_prompt(description: str, *, max_chars: int = 900) -> str:
+def build_extract_user_prompt(description: str, max_chars: int = 900) -> str:
     """Truncate description to keep LM Studio prompts fast."""
     text = re.sub(r"\s+", " ", str(description or "")).strip()
     if len(text) > max_chars:

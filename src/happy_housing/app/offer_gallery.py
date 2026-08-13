@@ -1,7 +1,5 @@
 """Offer photo carousel helpers (index wrap + session keys)."""
 
-from __future__ import annotations
-
 
 def photo_index_key(listing_id: object) -> str:
     """Session-state key for the active photo index of a listing."""

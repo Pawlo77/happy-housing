@@ -1,7 +1,5 @@
 """Tests for Admin Ops freshness helpers."""
 
-from __future__ import annotations
-
 from datetime import UTC, datetime
 from pathlib import Path
 

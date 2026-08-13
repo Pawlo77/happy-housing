@@ -1,7 +1,5 @@
 """Build simplified GTFS route polylines for Explore map PathLayers."""
 
-from __future__ import annotations
-
 import logging
 import zipfile
 from pathlib import Path
@@ -47,7 +45,6 @@ def route_type_to_mode(route_type: object) -> str:
 
 def simplify_shape_points(
     points: list[tuple[float, float]],
-    *,
     max_points: int = DEFAULT_MAX_POINTS_PER_SHAPE,
 ) -> list[list[float]]:
     """Keep first/last points and evenly sample the middle."""

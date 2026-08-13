@@ -5,8 +5,6 @@ the same ``listing_id`` are excluded so neighborhood aggregates do not leak
 the target. Otodom asks never match RCN ids, so their comps stay intact.
 """
 
-from __future__ import annotations
-
 import logging
 
 import numpy as np

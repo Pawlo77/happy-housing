@@ -1,7 +1,5 @@
 """Explore Assistant UI: popover + Chat tab with conversation load/continue."""
 
-from __future__ import annotations
-
 import logging
 from pathlib import Path
 
@@ -31,7 +29,7 @@ ACTIVE_CONV_KEY = "assistant_active_conversation_id"
 """Session key for the active Assistant conversation id."""
 
 
-@st.cache_data(show_spinner=False)  # type: ignore[misc]
+@st.cache_data(show_spinner=False)  # type: ignore[misc]  # Streamlit decorator stub
 def _list_conversations_cached(path: str, mtime: float) -> list[ChatConversation]:
     """Mtime-keyed conversation list (skip DuckDB on every Explore rerun)."""
     del mtime
@@ -40,7 +38,7 @@ def _list_conversations_cached(path: str, mtime: float) -> list[ChatConversation
 
 def _conversations_for(db: Path) -> list[ChatConversation]:
     """Load Assistant conversations with Streamlit cache when possible."""
-    return _list_conversations_cached(  # type: ignore[no-any-return]
+    return _list_conversations_cached(  # type: ignore[no-any-return]  # Cache wrapper is untyped
         str(db.resolve()),
         file_mtime(db),
     )
@@ -119,7 +117,7 @@ def _handle_prompt(
         open_explore_offer(result.open_listing_id)
 
 
-@st.fragment  # type: ignore[misc]
+@st.fragment  # type: ignore[misc]  # Streamlit decorator stub
 def render_assistant_popover(
     *,
     scored: pd.DataFrame,

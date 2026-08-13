@@ -1,7 +1,5 @@
 """Tests for OSM diurnal traffic-proxy road sampling."""
 
-from __future__ import annotations
-
 from pathlib import Path
 
 import geopandas as gpd

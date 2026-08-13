@@ -1,7 +1,5 @@
 """Tests for unlimited (None-cap) Otodom / RCN ingest helpers."""
 
-from __future__ import annotations
-
 from happy_housing.ingest.limits import reached_cap, resolve_ingest_cap
 
 

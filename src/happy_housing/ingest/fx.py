@@ -1,7 +1,5 @@
 """NBP FX rates: convert non-PLN listing prices to PLN."""
 
-from __future__ import annotations
-
 import json
 import logging
 from datetime import UTC, date, datetime
@@ -324,7 +322,7 @@ def format_original_price(amount: object, currency: object) -> str | None:
     if amount is None or (isinstance(amount, float) and amount != amount):
         return None
     try:
-        number = float(amount)  # type: ignore[arg-type]
+        number = float(amount)  # type: ignore[arg-type]  # pandas/object scalar
     except (TypeError, ValueError):
         return None
     code = str(currency or "PLN").strip().upper() or "PLN"

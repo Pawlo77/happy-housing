@@ -1,7 +1,5 @@
 """Fast Euclidean BallTree helpers for neighbourhood GIS aggregates."""
 
-from __future__ import annotations
-
 import numpy as np
 from sklearn.neighbors import BallTree
 

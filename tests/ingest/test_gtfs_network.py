@@ -1,7 +1,5 @@
 """Tests for GTFS route-shape network export (lines by mode)."""
 
-from __future__ import annotations
-
 import zipfile
 from pathlib import Path
 

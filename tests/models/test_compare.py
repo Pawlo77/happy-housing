@@ -1,7 +1,5 @@
 """Tests for optional CatBoost compare helper."""
 
-from __future__ import annotations
-
 from happy_housing.models.compare import catboost_available, metrics_payload
 
 

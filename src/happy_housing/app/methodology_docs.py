@@ -1,7 +1,5 @@
 """Shared methodology markdown + mermaid for Home Model and Assistant."""
 
-from __future__ import annotations
-
 from happy_housing.app.commute_target import DEFAULT_COMMUTE_LABEL
 
 PRICE_PIPELINE_MERMAID: str = """```mermaid

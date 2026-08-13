@@ -1,7 +1,5 @@
 """Amenity catalog + city-POI recommend / map helpers."""
 
-from __future__ import annotations
-
 from pathlib import Path
 
 import geopandas as gpd

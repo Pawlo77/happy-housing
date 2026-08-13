@@ -1,7 +1,5 @@
 """Free-proxy rotation on HTTP 403 for shared ingest client."""
 
-from __future__ import annotations
-
 from typing import Any
 from unittest.mock import MagicMock
 

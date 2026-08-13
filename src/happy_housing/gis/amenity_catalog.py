@@ -4,8 +4,6 @@ Sports types follow `mapa.um.warszawa.pl/obiekty-sportowe/` (OSRID groups).
 Civic types come from UM WFS; EV charging is OSM-only (not on the city portal).
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 
 

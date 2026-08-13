@@ -1,7 +1,5 @@
 """Hard fail when model feature columns are absent (no silent invent)."""
 
-from __future__ import annotations
-
 import pandas as pd
 import pytest
 

@@ -1,7 +1,5 @@
 """Tests for continuous traffic / transit intensity BitmapLayer overlays."""
 
-from __future__ import annotations
-
 import pandas as pd
 
 from happy_housing.gis.intensity_field import (

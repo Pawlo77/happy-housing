@@ -1,7 +1,5 @@
 """Tests: nearest GIOŚ station attaches AQ values, not only distance."""
 
-from __future__ import annotations
-
 import geopandas as gpd
 import pandas as pd
 

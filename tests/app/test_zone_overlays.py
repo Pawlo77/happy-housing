@@ -1,7 +1,5 @@
 """Tests for city / military / rail / airport map overlays."""
 
-from __future__ import annotations
-
 from pathlib import Path
 
 import geopandas as gpd

@@ -1,7 +1,5 @@
 """Tool implementations for the Explore LMS Assistant."""
 
-from __future__ import annotations
-
 import contextlib
 import json
 import logging
@@ -308,7 +306,7 @@ def open_offer(ctx: ChatToolContext, listing_id: str) -> dict[str, Any]:
     return {"ok": True, "listing_id": lid, "offer": slim}
 
 
-def web_search_area(query: str, *, limit: int = 5) -> list[dict[str, str]]:
+def web_search_area(query: str, limit: int = 5) -> list[dict[str, str]]:
     """Search the web (DuckDuckGo HTML) for area opinions / news."""
     needle = str(query or "").strip()
     if not needle:

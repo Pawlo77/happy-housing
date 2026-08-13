@@ -1,7 +1,5 @@
 """Lazy Explore map-dataset selection (skip heavy loads when unused)."""
 
-from __future__ import annotations
-
 from happy_housing.app.map_layers import LayerFlags, explore_datasets_needed
 
 

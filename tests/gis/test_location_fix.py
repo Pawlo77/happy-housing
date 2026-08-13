@@ -1,7 +1,5 @@
 """Tests for snapping misplaced listing pins onto OSM buildings."""
 
-from __future__ import annotations
-
 from pathlib import Path
 
 import geopandas as gpd

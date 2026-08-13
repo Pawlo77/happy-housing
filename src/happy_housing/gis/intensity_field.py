@@ -7,8 +7,6 @@ with the diurnal curve on an absolute colour scale; transit uses hour-specific
 GTFS departure weights.
 """
 
-from __future__ import annotations
-
 import base64
 from dataclasses import dataclass
 from io import BytesIO
@@ -120,7 +118,7 @@ def weighted_points_density_grid(
     return _box_blur(grid, blur_passes)
 
 
-def intensity_grid_to_png(grid: np.ndarray, *, vmax: float) -> bytes:
+def intensity_grid_to_png(grid: np.ndarray, vmax: float) -> bytes:
     """Paint continuous cool→warm intensity field (transparent when empty)."""
     values = np.asarray(grid, dtype=float)
     h, w = values.shape

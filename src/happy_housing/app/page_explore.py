@@ -1,7 +1,5 @@
 """Explore page: sidebar filters + Map / Offer / Board / News / Prefs tabs."""
 
-from __future__ import annotations
-
 import logging
 from pathlib import Path
 from typing import Any
@@ -468,8 +466,8 @@ def _cached_build_explore_layers(
             rail_areas=rail_areas,
             airport=airport,
             city_pois=city_pois,
-            noise_overlay=noise_overlay_data,  # type: ignore[arg-type]
-            aq_overlay=aq_overlay_data,  # type: ignore[arg-type]
+            noise_overlay=noise_overlay_data,  # type: ignore[arg-type]  # Narrowed payload
+            aq_overlay=aq_overlay_data,  # type: ignore[arg-type]  # Narrowed payload
             commute_lon=commute_lon,
             commute_lat=commute_lat,
             hour=hour,
@@ -1278,7 +1276,7 @@ def _render_explore_sidebar(
     return state, starred_only, flags, hour, basemap
 
 
-@st.cache_data(ttl=300, show_spinner=False)  # type: ignore[misc]
+@st.cache_data(ttl=300, show_spinner=False)  # type: ignore[misc]  # Streamlit decorator stub
 def _cached_explore_place_search(
     query: str,
 ) -> tuple[dict[str, float | str | int], ...]:
@@ -1296,7 +1294,7 @@ def _cached_explore_place_search(
     )
 
 
-@st.cache_data(ttl=120, show_spinner="Routing commute…")  # type: ignore[misc]
+@st.cache_data(ttl=120, show_spinner="Routing commute…")  # type: ignore[misc]  # Streamlit decorator stub
 def _cached_offer_commute_route(
     origin_lon: float,
     origin_lat: float,
@@ -1420,7 +1418,7 @@ def _render_explore_address_search() -> MapAddressFocus | None:
     return focus
 
 
-@st.fragment  # type: ignore[misc]
+@st.fragment  # type: ignore[misc]  # Streamlit decorator stub
 def _tab_map(
     filtered: pd.DataFrame,
     *,
@@ -1731,7 +1729,7 @@ def _tab_spatial(
     st.markdown(SPATIAL_METRIC_HELP.get(metric_key, metric.blurb))
 
 
-@st.cache_data(show_spinner=False)  # type: ignore[misc]
+@st.cache_data(show_spinner=False)  # type: ignore[misc]  # Streamlit decorator stub
 def _fetch_otodom_offer_media(slug: str) -> dict[str, object]:
     """Cached Otodom detail media (description + photos + floor plans)."""
     detail = fetch_listing_detail(otodom_session(), slug.strip())
@@ -1798,7 +1796,7 @@ def _offer_photo_dialog(listing_id: str, photos: list[str]) -> None:
     def _on_dismiss() -> None:
         st.session_state[open_key] = False
 
-    @st.dialog("Photos", width="large", on_dismiss=_on_dismiss)  # type: ignore[misc]
+    @st.dialog("Photos", width="large", on_dismiss=_on_dismiss)  # type: ignore[misc]  # Streamlit decorator stub
     def _dialog() -> None:
         idx_key = photo_index_key(listing_id)
         n = len(photos)
@@ -1840,7 +1838,7 @@ def _maybe_open_offer_photo_dialog(
         _offer_photo_dialog(listing_id, photos)
 
 
-@st.fragment  # type: ignore[misc]
+@st.fragment  # type: ignore[misc]  # Streamlit decorator stub
 def _render_offer_gallery(row: pd.Series) -> None:
     """Photo carousel + optional floor-plan images under the gallery.
 
@@ -2669,7 +2667,6 @@ def _tab_news(
 
 def _opt_num(
     value: float | int | None,
-    *,
     as_int: bool = False,
 ) -> float | int | None:
     if value is None:

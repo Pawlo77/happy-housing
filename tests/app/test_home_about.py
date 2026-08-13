@@ -1,7 +1,5 @@
 """Tests for Home About business copy."""
 
-from __future__ import annotations
-
 from happy_housing.app.home_about import ABOUT_SECTIONS, about_section_titles
 
 

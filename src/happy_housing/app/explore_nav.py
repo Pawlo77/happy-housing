@@ -1,7 +1,5 @@
 """Navigation helpers for Explore Map / Offer / Board."""
 
-from __future__ import annotations
-
 from typing import Any
 from urllib.parse import urlencode
 
@@ -171,7 +169,6 @@ def listing_id_from_map_selection(event: object | None) -> str | None:
 
 def resolve_map_pin_selection(
     event: object | None,
-    *,
     session: Any | None = None,
 ) -> str | None:
     """Persist map pin click in session; clear when selection is empty.

@@ -4,8 +4,6 @@ Explains what each control shows and how it relates to price attractiveness
 or living conditions. Wired via Streamlit ``help=`` (sidebar ``?`` tooltip).
 """
 
-from __future__ import annotations
-
 from happy_housing.app.map_layers import MAX_GUNB_MAP_POINTS
 
 # Map overlay toggles — keys match LayerFlags field names.

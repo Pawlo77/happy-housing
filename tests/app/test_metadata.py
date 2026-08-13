@@ -1,7 +1,5 @@
 """Tests for pipeline run metadata persistence."""
 
-from __future__ import annotations
-
 from pathlib import Path
 
 from happy_housing.app.metadata import (

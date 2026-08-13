@@ -1,7 +1,5 @@
 """Starred-offer snapshots and change news for the Explore News tab."""
 
-from __future__ import annotations
-
 import json
 import logging
 import uuid

@@ -1,7 +1,5 @@
 """Tests for continuous Warsaw noise BitmapLayer overlay."""
 
-from __future__ import annotations
-
 from pathlib import Path
 
 from PIL import Image

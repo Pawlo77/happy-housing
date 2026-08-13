@@ -1,7 +1,5 @@
 """pydeck map builders for Explore Map and Offer tabs."""
 
-from __future__ import annotations
-
 import hashlib
 import logging
 from collections.abc import Callable, Iterable, Mapping
@@ -337,7 +335,6 @@ _CITY_POI_RGBA: tuple[list[int], ...] = (
 
 def city_poi_layers(
     city_pois: gpd.GeoDataFrame | None,
-    *,
     object_types: tuple[str, ...] | frozenset[str] | set[str],
 ) -> list[pdk.Layer]:
     """UM sports, civic, and OSM commercial fitness emoji markers by key."""
@@ -575,7 +572,7 @@ def transit_intensity_layers(
     return [layer] if layer is not None else []
 
 
-@st.cache_resource(show_spinner=False)  # type: ignore[misc]
+@st.cache_resource(show_spinner=False)  # type: ignore[misc]  # Streamlit decorator stub
 def _cached_transit_intensity_overlay(
     hour: int,
     bbox: tuple[float, float, float, float],
@@ -633,7 +630,7 @@ def transit_network_layers(
     return layers
 
 
-def traffic_heatmap_layer(sample: pd.DataFrame, *, hour: int) -> pdk.Layer | None:
+def traffic_heatmap_layer(sample: pd.DataFrame, hour: int) -> pdk.Layer | None:
     """Continuous diurnal street-activity field (BitmapLayer, noise-style)."""
     config = load_config()
     bbox = config.bbox.as_tuple()
@@ -658,7 +655,7 @@ def traffic_heatmap_layer(sample: pd.DataFrame, *, hour: int) -> pdk.Layer | Non
     )
 
 
-@st.cache_resource(show_spinner=False)  # type: ignore[misc]
+@st.cache_resource(show_spinner=False)  # type: ignore[misc]  # Streamlit decorator stub
 def _cached_traffic_intensity_overlay(
     hour: int,
     bbox: tuple[float, float, float, float],
@@ -725,7 +722,6 @@ def warsaw_noise_heatmap_layer(points: pd.DataFrame) -> pdk.Layer | None:
 
 def warsaw_noise_bitmap_layer(
     overlay: NoiseMapOverlay | None,
-    *,
     opacity: float = 0.72,
 ) -> pdk.Layer | None:
     """Continuous UM strategic noise GetMap as a georeferenced BitmapLayer."""
@@ -746,7 +742,6 @@ def warsaw_noise_bitmap_layer(
 
 def air_quality_bitmap_layer(
     overlay: AqMapOverlay | None,
-    *,
     opacity: float = 0.65,
 ) -> pdk.Layer | None:
     """Continuous GIOŚ IDW air-quality field as a georeferenced BitmapLayer."""
@@ -810,7 +805,6 @@ def air_stations_layer(stations: pd.DataFrame) -> pdk.Layer | None:
 
 def gunb_layer(
     points: pd.DataFrame,
-    *,
     max_points: int = MAX_GUNB_MAP_POINTS,
 ) -> pdk.Layer | None:
     """GUNB construction / permit markers (star); capped for message size."""
@@ -1123,7 +1117,6 @@ def spatial_heatmap_layer(
 
 def spatial_hex_layer(
     points: pd.DataFrame,
-    *,
     layer_id: str = "spatial-hex",
 ) -> pdk.Layer | None:
     """Hexagon bins with elevation from weights (denser than heat alone)."""
@@ -1148,7 +1141,6 @@ def spatial_hex_layer(
 
 def spatial_marker_layer(
     points: pd.DataFrame,
-    *,
     layer_id: str = "spatial-markers",
 ) -> pdk.Layer | None:
     """Historical listing pins drawn above the Spatial continuous field."""
@@ -1170,7 +1162,7 @@ def spatial_marker_layer(
     )
 
 
-@st.cache_resource(show_spinner=False)  # type: ignore[misc]
+@st.cache_resource(show_spinner=False)  # type: ignore[misc]  # Streamlit decorator stub
 def _cached_spatial_intensity_overlay(
     metric_key: str,
     field_mode: str,

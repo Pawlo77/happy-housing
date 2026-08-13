@@ -1,7 +1,5 @@
 """Model feature columns include catalog amenity distances."""
 
-from __future__ import annotations
-
 from happy_housing.gis.amenity_catalog import (
     dist_column,
     model_distance_feature_columns,

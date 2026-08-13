@@ -1,7 +1,5 @@
 """Tests for Explore map styling helpers."""
 
-from __future__ import annotations
-
 import pandas as pd
 import pydeck as pdk
 

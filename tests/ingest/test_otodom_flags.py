@@ -1,7 +1,5 @@
 """Tests for Otodom amenity flag promotion (basement, parking, attic)."""
 
-from __future__ import annotations
-
 from happy_housing.ingest.otodom import (
     flags_from_extras_and_tags,
     flatten_otodom_ad,

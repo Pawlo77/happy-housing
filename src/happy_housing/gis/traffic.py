@@ -4,8 +4,6 @@ Builds a dense point sample along Warsaw driveable highways (not sparse
 corridor centroids), weighted by OSM ``highway`` class and scaled by hour.
 """
 
-from __future__ import annotations
-
 import json
 import logging
 from pathlib import Path
@@ -293,7 +291,6 @@ def _load_fixture_points(path: Path) -> pd.DataFrame:
 
 def _download_osm_drive_edges(
     bbox: tuple[float, float, float, float],
-    *,
     cache_dir: Path,
 ) -> gpd.GeoDataFrame:
     """Fetch driveable highway edges via OSMnx for ``bbox``."""

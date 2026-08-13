@@ -1,7 +1,5 @@
 """Tests for scored-listings listed_month derivation."""
 
-from __future__ import annotations
-
 import pandas as pd
 
 from happy_housing.app.data import _with_listed_month

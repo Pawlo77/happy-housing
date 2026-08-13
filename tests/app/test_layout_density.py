@@ -1,7 +1,5 @@
 """Tests for dense top-layout CSS helper."""
 
-from __future__ import annotations
-
 import re
 
 from happy_housing.app.layout_density import (

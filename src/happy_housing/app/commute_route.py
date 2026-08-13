@@ -1,7 +1,5 @@
 """Door-to-door commute route plans for the Explore Offer Map."""
 
-from __future__ import annotations
-
 import logging
 from dataclasses import dataclass, field
 from typing import Any
@@ -71,7 +69,6 @@ class CommuteRoutePlan:
 
 def parse_otp_itinerary(
     itinerary: dict[str, Any],
-    *,
     mode: str = "transit",
 ) -> CommuteRoutePlan | None:
     """Build a ``CommuteRoutePlan`` from one OTP itinerary dict."""

@@ -1,7 +1,5 @@
 """Tests for Offer media deferral helpers."""
 
-from __future__ import annotations
-
 import pandas as pd
 
 from happy_housing.app.page_explore import (

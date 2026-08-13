@@ -1,7 +1,5 @@
 """Tests for commute minutes with OSRM unavailable (distance proxy)."""
 
-from __future__ import annotations
-
 import pandas as pd
 
 from happy_housing.gis.routing import attach_commute_minutes

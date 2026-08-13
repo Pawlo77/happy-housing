@@ -1,7 +1,5 @@
 """Commute mode labels, columns, and display-mode helpers."""
 
-from __future__ import annotations
-
 from typing import Literal
 
 import numpy as np
@@ -52,7 +50,7 @@ def coerce_commute_display_mode(raw: object | None) -> CommuteDisplayMode:
         return COMMUTE_DISPLAY_DEFAULT
     key = str(raw).strip().casefold()
     if key in COMMUTE_MODE_COLUMN:
-        return key  # type: ignore[return-value]
+        return key  # type: ignore[return-value]  # Validated literal mode key
     aliases = {
         "public": "transit",
         "public_transport": "transit",
@@ -65,7 +63,7 @@ def coerce_commute_display_mode(raw: object | None) -> CommuteDisplayMode:
     }
     mapped = aliases.get(key)
     if mapped in COMMUTE_MODE_COLUMN:
-        return mapped  # type: ignore[return-value]
+        return mapped  # type: ignore[return-value]  # Mapping values are mode literals
     return COMMUTE_DISPLAY_DEFAULT
 
 

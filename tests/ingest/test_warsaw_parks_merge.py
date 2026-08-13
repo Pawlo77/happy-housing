@@ -1,7 +1,5 @@
 """Tests for UM + OSM park merge and WFS truncation detection."""
 
-from __future__ import annotations
-
 from pathlib import Path
 
 import geopandas as gpd

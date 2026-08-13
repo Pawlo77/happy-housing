@@ -1,7 +1,5 @@
 """Tests for named Explore map filter presets."""
 
-from __future__ import annotations
-
 from pathlib import Path
 
 from happy_housing.app.filter_presets import (

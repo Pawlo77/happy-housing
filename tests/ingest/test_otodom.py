@@ -1,7 +1,5 @@
 """Unit tests for Otodom HTML/__NEXT_DATA__ parsers (no live network)."""
 
-from __future__ import annotations
-
 import json
 from typing import Any
 

@@ -12,8 +12,6 @@ typeNames. Strategic noise maps are WMS-only — aircraft Lden still comes from
 EEA END fixtures elsewhere.
 """
 
-from __future__ import annotations
-
 import io
 import json
 import logging
@@ -152,7 +150,7 @@ def _ensure_name_column(frame: gpd.GeoDataFrame, default: str) -> gpd.GeoDataFra
     return out
 
 
-def _load_fixture_geojson(path: Path, *, default_name: str) -> gpd.GeoDataFrame:
+def _load_fixture_geojson(path: Path, default_name: str) -> gpd.GeoDataFrame:
     """Read offline GeoJSON into EPSG:4326 with a ``name`` column."""
     frame = gpd.read_file(path)
     if frame.crs is None:
@@ -198,7 +196,6 @@ def discover_education_type_names(
 
 def wfs_page_looks_truncated(
     feature_count: int,
-    *,
     max_features: int = WFS_MAX_FEATURES,
 ) -> bool:
     """True when a GetFeature page hit the configured ``maxFeatures`` ceiling."""
@@ -777,7 +774,7 @@ def _city_pois_cache_is_current(cache_path: Path) -> bool:
     return int(meta.get("schema_version", -1)) == CITY_POIS_SCHEMA_VERSION
 
 
-def _write_city_pois_meta(cache_path: Path, *, row_count: int) -> None:
+def _write_city_pois_meta(cache_path: Path, row_count: int) -> None:
     """Persist schema version for the combined city-POI cache."""
     payload = {
         "schema_version": CITY_POIS_SCHEMA_VERSION,

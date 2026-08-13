@@ -1,7 +1,5 @@
 """Regression metrics and HPO objective helpers for fair-price modeling."""
 
-from __future__ import annotations
-
 from typing import Literal
 
 import numpy as np
@@ -27,10 +25,10 @@ def coerce_opt_metric(value: object, fallback: str = _DEFAULT_METRIC) -> OptMetr
     """Normalize a persisted / UI metric name."""
     name = str(value or fallback).strip().lower()
     if name in OPT_METRICS:
-        return name  # type: ignore[return-value]
+        return name  # type: ignore[return-value]  # Membership narrows to metric literal
     fb = str(fallback).strip().lower()
     if fb in OPT_METRICS:
-        return fb  # type: ignore[return-value]
+        return fb  # type: ignore[return-value]  # Membership narrows to metric literal
     return _DEFAULT_METRIC
 
 

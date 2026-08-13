@@ -1,7 +1,5 @@
 """Stats page: filterable market analytics, livability, and model XAI."""
 
-from __future__ import annotations
-
 import logging
 
 import numpy as np

@@ -1,7 +1,5 @@
 """Tests for Admin Pipeline ingest resolve (app_settings vs YAML)."""
 
-from __future__ import annotations
-
 from happy_housing.app.app_settings import AppSettings
 from happy_housing.app.pipeline_ingest import (
     resolve_ingest_flags,

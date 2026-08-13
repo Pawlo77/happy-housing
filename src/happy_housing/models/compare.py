@@ -1,7 +1,5 @@
 """Optional CatBoost hold-out compare against LightGBM metrics."""
 
-from __future__ import annotations
-
 import logging
 from typing import Any
 

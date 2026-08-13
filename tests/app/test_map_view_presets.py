@@ -1,7 +1,5 @@
 """Tests for named Explore map-view (layer) presets."""
 
-from __future__ import annotations
-
 from pathlib import Path
 
 from happy_housing.app.map_layers import LayerFlags

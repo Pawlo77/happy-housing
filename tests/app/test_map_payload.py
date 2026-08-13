@@ -1,7 +1,5 @@
 """Tests for slim / capped map payloads (Streamlit message size)."""
 
-from __future__ import annotations
-
 import json
 
 import pandas as pd

@@ -1,7 +1,5 @@
 """Tests for pipeline tqdm helper."""
 
-from __future__ import annotations
-
 from happy_housing.pipeline_progress import tqdm_disabled
 
 

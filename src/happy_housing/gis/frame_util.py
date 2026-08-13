@@ -1,7 +1,5 @@
 """DataFrame / GeoDataFrame column-join helpers for GIS enrich."""
 
-from __future__ import annotations
-
 from collections.abc import Mapping
 from typing import Any
 

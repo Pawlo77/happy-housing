@@ -1,7 +1,5 @@
 """Tests for map marker emojis (readable POI icons)."""
 
-from __future__ import annotations
-
 import json
 from urllib.parse import unquote
 

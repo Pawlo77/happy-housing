@@ -1,7 +1,5 @@
 """Tests for offer photo carousel index helpers."""
 
-from __future__ import annotations
-
 from happy_housing.app.offer_gallery import (
     clamp_photo_index,
     photo_fullscreen_key,

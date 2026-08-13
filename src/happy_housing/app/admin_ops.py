@@ -1,7 +1,5 @@
 """Ops freshness table helpers for Admin."""
 
-from __future__ import annotations
-
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -17,7 +15,7 @@ from happy_housing.app.source_inventory import (
 from happy_housing.pipeline_cache import pipeline_steps_path
 
 
-def age_hours_label(fetched_label: str, *, now: datetime | None = None) -> str:
+def age_hours_label(fetched_label: str, now: datetime | None = None) -> str:
     """Human age from ``format_fetched_at`` UTC stamp, or em dash."""
     text = str(fetched_label or "").strip()
     if not text or text == "—":

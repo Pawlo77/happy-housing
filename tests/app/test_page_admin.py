@@ -1,7 +1,5 @@
 """Tests for Admin section navigation helpers."""
 
-from __future__ import annotations
-
 import pytest
 
 from happy_housing.app.page_admin import ADMIN_SECTIONS, panel_for_section

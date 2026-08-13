@@ -1,7 +1,5 @@
 """Tests for RCN GML streaming parser with synthetic PL-1992 coords."""
 
-from __future__ import annotations
-
 import io
 import zipfile
 from pathlib import Path

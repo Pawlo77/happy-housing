@@ -1,7 +1,5 @@
 """Column projections that keep Explore / Stats / Home off fat scored frames."""
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 
 import pandas as pd

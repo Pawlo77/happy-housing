@@ -1,7 +1,5 @@
 """Otodom description hints for street-facing vs quiet / courtyard side."""
 
-from __future__ import annotations
-
 import re
 
 import pandas as pd

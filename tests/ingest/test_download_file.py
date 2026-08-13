@@ -1,7 +1,5 @@
 """Tests for archive download reuse and URL-change refresh."""
 
-from __future__ import annotations
-
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock

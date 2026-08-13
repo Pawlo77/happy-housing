@@ -1,7 +1,5 @@
 """Resolve Pipeline ingest limits / URLs / flags from Admin vs YAML."""
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 
 from happy_housing.app.app_settings import AppSettings

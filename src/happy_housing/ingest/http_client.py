@@ -1,7 +1,5 @@
 """Shared resilient HTTP GET with optional free-proxy rotation on blocks."""
 
-from __future__ import annotations
-
 import logging
 import time
 from typing import Final
@@ -40,7 +38,7 @@ def is_retryable_http_error(exc: BaseException) -> bool:
     return isinstance(exc, requests.RequestException)
 
 
-def retry_sleep_s(attempt: int, *, status_code: int | None = None) -> float:
+def retry_sleep_s(attempt: int, status_code: int | None = None) -> float:
     """Backoff delay; block statuses get a longer cool-down."""
     base = min(2.0 * attempt, 20.0)
     if status_code in block_statuses():

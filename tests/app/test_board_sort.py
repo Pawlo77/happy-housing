@@ -1,7 +1,5 @@
 """Tests for Explore Board recommendation enrichment and sorting."""
 
-from __future__ import annotations
-
 import pandas as pd
 
 from happy_housing.app.board_sort import (

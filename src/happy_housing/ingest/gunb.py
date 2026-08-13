@@ -1,7 +1,5 @@
 """GUNB building-permit features from public bulk zip + GUGiK WFS."""
 
-from __future__ import annotations
-
 import logging
 import re
 import zipfile

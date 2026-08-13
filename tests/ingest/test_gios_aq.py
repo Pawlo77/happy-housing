@@ -1,7 +1,5 @@
 """Tests for GIOŚ air-quality index / pollutant parsing and station enrich."""
 
-from __future__ import annotations
-
 from pathlib import Path
 from unittest.mock import patch
 

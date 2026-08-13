@@ -1,7 +1,5 @@
 """Tests for Otodom street-facing / quiet-side description hints."""
 
-from __future__ import annotations
-
 import pandas as pd
 
 from happy_housing.gis.street_frontage import (

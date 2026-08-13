@@ -6,8 +6,6 @@ residential building (centroid) outside park polygons so Explore pins sit on
 buildings rather than roads or greens.
 """
 
-from __future__ import annotations
-
 import logging
 from pathlib import Path
 

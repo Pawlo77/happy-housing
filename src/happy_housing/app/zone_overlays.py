@@ -1,7 +1,5 @@
 """City / district / military / rail / airport polygon overlays for Explore maps."""
 
-from __future__ import annotations
-
 from typing import Any
 
 import geopandas as gpd

@@ -1,7 +1,5 @@
 """OSRM hard-require vs distance-proxy fallback."""
 
-from __future__ import annotations
-
 import pandas as pd
 import pytest
 

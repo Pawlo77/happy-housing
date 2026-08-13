@@ -1,7 +1,5 @@
 """GIOŚ API v1 air-quality index and pollutant readings for stations."""
 
-from __future__ import annotations
-
 import json
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed

@@ -1,7 +1,5 @@
 """Derive ``market_primary`` from Otodom / RCN market fields."""
 
-from __future__ import annotations
-
 from pathlib import Path
 from typing import Any
 
@@ -58,7 +56,6 @@ def ensure_market_primary(frame: pd.DataFrame) -> pd.DataFrame:
 
 def backfill_market_primary(
     frame: pd.DataFrame,
-    *,
     otodom_path: Path | None = None,
 ) -> pd.DataFrame:
     """Ensure flag, then fill gaps from Otodom parquet by ``listing_id``."""

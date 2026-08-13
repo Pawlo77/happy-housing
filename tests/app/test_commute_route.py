@@ -1,7 +1,5 @@
 """Tests for door-to-door commute route plans (OTP legs + OSRM geometry)."""
 
-from __future__ import annotations
-
 from unittest.mock import MagicMock, patch
 
 from happy_housing.app.commute_route import (

@@ -1,7 +1,5 @@
 """Tests for multi-mode commute helpers (car / transit / bike / walk)."""
 
-from __future__ import annotations
-
 import pandas as pd
 
 from happy_housing.app.commute_modes import (

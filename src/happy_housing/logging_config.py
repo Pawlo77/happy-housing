@@ -4,8 +4,6 @@ Library modules use ``logging.getLogger(__name__)`` only — no handlers.
 Call ``configure_logging`` once from CLI / Streamlit / pipeline mains.
 """
 
-from __future__ import annotations
-
 import logging
 import os
 import sys

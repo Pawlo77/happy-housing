@@ -1,7 +1,5 @@
 """Tests for GIS enrichment on fixture listings."""
 
-from __future__ import annotations
-
 import warnings
 from pathlib import Path
 

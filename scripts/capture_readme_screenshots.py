@@ -4,8 +4,6 @@ Requires ``make app`` (or equivalent) on http://127.0.0.1:8501.
 Writes PNGs under ``docs/screenshots/``.
 """
 
-from __future__ import annotations
-
 from pathlib import Path
 
 from playwright.sync_api import Page, sync_playwright

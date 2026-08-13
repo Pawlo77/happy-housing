@@ -1,7 +1,5 @@
 """Filter state for the Stats page (business analytics lens)."""
 
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 
 import pandas as pd

@@ -6,8 +6,6 @@ EPSG:2178 (PUWG 2000 zone 7) when present; older rows often only carry a
 district hint in ``dodatkoweInformacje``.
 """
 
-from __future__ import annotations
-
 import logging
 import re
 import zipfile
@@ -140,7 +138,6 @@ def _district_from_text(text: str | None) -> str | None:
 
 def parse_rcn_gml_stream(
     gml_handle: BinaryIO | Any,
-    *,
     max_rows: int | None = None,
 ) -> pd.DataFrame:
     """Stream-parse linked RCN features and emit joined Warsaw rows.
@@ -327,7 +324,6 @@ def parse_rcn_gml_stream(
 
 def _parse_flat_feature_fallback(
     gml_handle: BinaryIO | Any,
-    *,
     max_rows: int | None,
 ) -> list[dict[str, Any]]:
     """Parse self-contained feature members (unit-test / simplified GML)."""

@@ -1,7 +1,5 @@
 """Derived listing features for the price model (static + train-fold stats)."""
 
-from __future__ import annotations
-
 import logging
 
 import numpy as np

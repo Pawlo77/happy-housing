@@ -1,7 +1,5 @@
 """CLI progress bars for long pipeline loops (tqdm, pytest-safe)."""
 
-from __future__ import annotations
-
 import os
 import sys
 from collections.abc import Iterable
@@ -26,7 +24,7 @@ def pipeline_tqdm[T](
     total: int | None = None,
     unit: str = "it",
     leave: bool = True,
-) -> tqdm[Any]:
+) -> "tqdm[Any]":
     """``tqdm`` wrapper for pipeline / ingest loops."""
     return tqdm(
         iterable,

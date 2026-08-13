@@ -1,7 +1,5 @@
 """Admin page: section nav + short settings panels."""
 
-from __future__ import annotations
-
 import logging
 import subprocess  # nosec B404 — Admin runs fixed local pipeline/scrape commands
 import sys
@@ -143,7 +141,7 @@ def _run_command(command: list[str], timeout_s: int) -> tuple[int, str]:
     return completed.returncode, out
 
 
-@st.cache_data(ttl=300, show_spinner=False)  # type: ignore[misc]
+@st.cache_data(ttl=300, show_spinner=False)  # type: ignore[misc]  # Streamlit decorator stub
 def _cached_place_search(query: str) -> tuple[dict[str, float | str | int], ...]:
     """Cached Nominatim hits for live Admin place search."""
     hits = search_places(query)

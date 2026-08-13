@@ -1,7 +1,5 @@
 """Tests for LM Studio model key resolution."""
 
-from __future__ import annotations
-
 from typing import Any
 from unittest.mock import MagicMock
 

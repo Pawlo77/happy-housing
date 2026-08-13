@@ -1,7 +1,5 @@
 """Home About tab copy — business purpose in plain language."""
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 
 

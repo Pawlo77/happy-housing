@@ -1,7 +1,5 @@
 """Tests for regression metric helpers used by HPO."""
 
-from __future__ import annotations
-
 import numpy as np
 
 from happy_housing.models.metrics import (

@@ -1,7 +1,5 @@
 """Fingerprint-based pipeline step cache for incremental runs."""
 
-from __future__ import annotations
-
 import hashlib
 import json
 import logging
@@ -65,7 +63,7 @@ class StepManifest:
     """step_id → {inputs_fp, schema, written_at}."""
 
     @classmethod
-    def load(cls, path: Path) -> StepManifest:
+    def load(cls, path: Path) -> "StepManifest":
         """Load manifest; missing/invalid → empty."""
         if not path.exists():
             return cls(path=path)

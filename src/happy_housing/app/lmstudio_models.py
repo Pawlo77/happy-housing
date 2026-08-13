@@ -1,7 +1,5 @@
 """LM Studio model discovery, key resolution, and get-or-load helpers."""
 
-from __future__ import annotations
-
 import logging
 import time
 from typing import Any
@@ -54,7 +52,6 @@ def list_lmstudio_llm_keys() -> list[str]:
 
 def resolve_lmstudio_model_key(
     requested: str,
-    *,
     available: tuple[str, ...] | list[str] | None = None,
 ) -> str:
     """Map a settings model id to a downloadable LMS key.

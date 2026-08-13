@@ -1,7 +1,5 @@
 """Tests for listed_at parsing."""
 
-from __future__ import annotations
-
 from happy_housing.ingest.listed_at import coalesce_listed_at, parse_listed_at
 
 

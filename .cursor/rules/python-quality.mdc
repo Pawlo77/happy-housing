@@ -12,6 +12,11 @@ Match tooling in `pyproject.toml` — do not fight ruff or mypy.
 - Imports at module top; no inline imports unless circular dependency is documented
 - Annotate all public functions, methods, and module-level names in `src/happy_housing`
 - Prefer `pathlib.Path`, explicit returns, `X | Y` over `Optional`
+- **No** `from __future__ import annotations` unless required (unquoted forward
+  refs that fail at definition time on Python 3.12). Prefer quoted
+  ``"ForwardName"`` / reorder definitions instead of a blanket future import.
+  Also quote annotations that use ``TYPE_CHECKING``-only imports or
+  non-subscriptable runtime types (e.g. ``"gpd.GeoDataFrame"``, ``"tqdm[Any]"``)
 - No bare `except:`; no `# type: ignore` without a comment
 - Ruff line length 88 — run the formatter
 - Exhaustive `match` on unions: `never` in the default branch

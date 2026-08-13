@@ -1,7 +1,5 @@
 """Tests for Admin commute-target live search + compare map helpers."""
 
-from __future__ import annotations
-
 from unittest.mock import MagicMock, patch
 
 from happy_housing.app.commute_target import (

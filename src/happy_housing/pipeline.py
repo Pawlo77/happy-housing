@@ -4,8 +4,6 @@ Expensive steps (RCN extract, enrich, train/score, recommender) skip when
 input fingerprints match ``pipeline_steps.json`` unless force refresh is set.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import logging

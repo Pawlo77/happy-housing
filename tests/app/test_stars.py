@@ -1,7 +1,5 @@
 """Tests for persistent starred-offer store."""
 
-from __future__ import annotations
-
 from pathlib import Path
 
 from happy_housing.app.stars import (

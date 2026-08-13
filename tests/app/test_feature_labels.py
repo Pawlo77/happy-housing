@@ -1,7 +1,5 @@
 """Tests for model feature hover descriptions."""
 
-from __future__ import annotations
-
 from happy_housing.app.feature_labels import feature_catalog_frame, feature_description
 
 

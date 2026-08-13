@@ -1,7 +1,5 @@
 """Data ingest helpers for listings, GTFS, GIOŚ, and RCN."""
 
-from __future__ import annotations
-
 import json
 import logging
 import re

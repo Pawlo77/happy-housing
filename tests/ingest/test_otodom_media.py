@@ -1,7 +1,5 @@
 """Otodom multi-photo URL extraction and media backfill triggers."""
 
-from __future__ import annotations
-
 import json
 
 import pytest

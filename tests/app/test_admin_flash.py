@@ -1,7 +1,5 @@
 """Tests for Admin session flash banners."""
 
-from __future__ import annotations
-
 from unittest.mock import MagicMock, patch
 
 from happy_housing.app.admin_flash import pop_admin_flash, set_admin_flash

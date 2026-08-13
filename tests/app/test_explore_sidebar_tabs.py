@@ -1,7 +1,5 @@
 """Tests for Explore sidebar Filters / Map layers tab labels."""
 
-from __future__ import annotations
-
 from happy_housing.app.page_explore import EXPLORE_SIDEBAR_TABS
 
 

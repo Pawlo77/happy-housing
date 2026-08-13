@@ -1,7 +1,5 @@
 """Tests for Stats livability ladders and model XAI helpers."""
 
-from __future__ import annotations
-
 from unittest.mock import MagicMock
 
 import numpy as np

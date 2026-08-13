@@ -1,7 +1,5 @@
 """Tests for Google-encoded polyline decode used by OTP legGeometry."""
 
-from __future__ import annotations
-
 from happy_housing.gis.polyline import decode_google_polyline
 
 
