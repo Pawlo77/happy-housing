@@ -143,6 +143,10 @@ class AppSettings:
     """How many features to show on importance / SHAP charts."""
     log_level: str = "INFO"
     """Package log level for the Streamlit app (DEBUG/INFO/WARNING/ERROR)."""
+    ops_log_poll_s: float = 2.0
+    """Admin Ops live-log fragment refresh interval (seconds)."""
+    ops_log_tail_lines: int = 120
+    """How many trailing log lines to show in the Ops job window."""
     model_opt_metric: str = "mape"
     """Validation metric for LightGBM HPO (mae/rmse/MAPE/medae/r2)."""
     model_val_size: float = 0.15
@@ -610,6 +614,17 @@ def load_app_settings(path: Path) -> AppSettings:
         ),
         log_level=_coerce_log_level(
             payload.get("log_level", defaults.log_level), defaults.log_level
+        ),
+        ops_log_poll_s=min(
+            30.0,
+            max(1.0, float(payload.get("ops_log_poll_s", defaults.ops_log_poll_s))),
+        ),
+        ops_log_tail_lines=max(
+            20,
+            min(
+                2000,
+                int(payload.get("ops_log_tail_lines", defaults.ops_log_tail_lines)),
+            ),
         ),
         model_opt_metric=coerce_opt_metric(
             payload.get("model_opt_metric", defaults.model_opt_metric),

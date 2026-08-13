@@ -1,9 +1,9 @@
 """Admin page: section nav + short settings panels."""
 
 import logging
-import subprocess  # nosec B404 — Admin runs fixed local pipeline/scrape commands
 import sys
 from collections.abc import Callable
+from datetime import timedelta
 from pathlib import Path
 from typing import Never
 
@@ -11,6 +11,15 @@ import pandas as pd
 import streamlit as st
 
 from happy_housing.app.admin_flash import pop_admin_flash, set_admin_flash
+from happy_housing.app.admin_jobs import (
+    format_log_lines_markdown,
+    job_elapsed_s,
+    load_active_job,
+    read_log_tail,
+    refresh_admin_job,
+    start_admin_job,
+    stop_admin_job,
+)
 from happy_housing.app.admin_ops import (
     build_ops_freshness_frame,
     clear_pipeline_step_cache,
@@ -75,6 +84,7 @@ from happy_housing.app.map_view_presets import (
     map_view_presets_path,
 )
 from happy_housing.app.maps import commute_compare_layers, render_deck
+from happy_housing.app.ops_services import check_pipeline_services
 from happy_housing.app.pipeline_ingest import (
     resolve_ingest_flags,
     resolve_ingest_limits,
@@ -127,18 +137,99 @@ def _assert_never(value: object) -> Never:
     raise AssertionError(f"unreachable admin section: {value!r}")
 
 
-def _run_command(command: list[str], timeout_s: int) -> tuple[int, str]:
-    """Run a subprocess and return ``(returncode, combined_output)``."""
-    completed = subprocess.run(  # nosec B603 — argv built in-process, shell=False
-        command,
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=timeout_s,
-        cwd=str(Path.cwd()),
+def _launch_ops_job(
+    *,
+    name: str,
+    command: list[str],
+    processed: Path,
+    log_level: str,
+) -> None:
+    """Start a background Ops job and force a UI refresh."""
+    active = load_active_job(processed)
+    if active is not None:
+        active = refresh_admin_job(processed, active.job_id)
+        if active.status == "running":
+            st.warning(
+                f"Job `{active.name}` still running (pid {active.pid}). "
+                "Stop it before starting another."
+            )
+            return
+    start_admin_job(
+        name=name,
+        command=command,
+        processed_dir=processed,
+        env={"HAPPY_HOUSING_LOG_LEVEL": str(log_level)},
     )
-    out = (completed.stdout or "") + (completed.stderr or "")
-    return completed.returncode, out
+    st.session_state.pop("_ops_cleared_job", None)
+    st.rerun()
+
+
+def _render_ops_services(config: object) -> None:
+    """Docker / OSRM / OTP readiness row."""
+    routing = getattr(config, "routing", None)
+    osrm_url = str(getattr(routing, "osrm_url", "http://127.0.0.1:5001"))
+    otp_url = str(getattr(routing, "otp_url", "http://127.0.0.1:8080"))
+    st.subheader("Routing services")
+    st.caption(
+        "Pipeline commute features need OSRM. OTP is optional (transit minutes). "
+        "Docker powers the compose stacks under `docker/`."
+    )
+    checks = check_pipeline_services(osrm_url=osrm_url, otp_url=otp_url)
+    cols = st.columns(len(checks))
+    for col, check in zip(cols, checks, strict=True):
+        with col:
+            st.metric(
+                check.label,
+                "up" if check.ok else "down",
+                delta=check.detail[:48],
+                delta_color="off",
+            )
+            if check.latency_ms is not None:
+                st.caption(f"{check.latency_ms:.0f} ms")
+
+
+def _render_ops_job_monitor(settings: AppSettings, processed: Path) -> None:
+    """Live log window for the active background job."""
+    st.subheader("Live job log")
+    poll_s = float(settings.ops_log_poll_s)
+    tail_n = int(settings.ops_log_tail_lines)
+
+    @st.fragment(run_every=timedelta(seconds=poll_s))  # type: ignore[misc]  # Streamlit stub
+    def _monitor() -> None:
+        job = load_active_job(processed)
+        if job is None:
+            st.caption("No active Ops job. Start a scrape or pipeline below.")
+            return
+        job = refresh_admin_job(processed, job.job_id)
+        elapsed = job_elapsed_s(job)
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Job", job.name)
+        m2.metric("Status", job.status)
+        m3.metric("Elapsed", f"{elapsed:.0f}s")
+        m4.metric("PID", str(job.pid))
+        if job.status == "running":
+            if st.button("Stop job", key=f"ops_stop_{job.job_id}"):
+                stop_admin_job(processed, job.job_id)
+                st.rerun()
+        elif job.status == "succeeded":
+            if st.session_state.get("_ops_cleared_job") != job.job_id:
+                clear_data_caches()
+                st.session_state["_ops_cleared_job"] = job.job_id
+            st.success(f"Finished OK in {elapsed:.0f}s · returncode={job.returncode}")
+        else:
+            st.error(
+                f"Job {job.status} · returncode={job.returncode} · {job.error or ''}"
+            )
+        log_text = read_log_tail(Path(job.log_path), max_lines=tail_n)
+        lines = log_text.splitlines() if log_text else []
+        st.caption(
+            f"Tail {len(lines)} / {tail_n} lines · refresh every {poll_s:.0f}s · "
+            f"`{job.log_path}`"
+        )
+        with st.container(height=320, border=True):
+            st.markdown(format_log_lines_markdown(lines))
+
+    _monitor()
 
 
 @st.cache_data(ttl=300, show_spinner=False)  # type: ignore[misc]  # Streamlit decorator stub
@@ -163,7 +254,8 @@ def _panel_ops(settings: AppSettings, settings_file: Path, proc: Path) -> None:
     meta = load_metadata()
     st.caption(
         "Ops hub — data freshness, scrape / pipeline, logging, and caches. "
-        "Tune ingest URLs and caps under **Sources**."
+        "Tune ingest URLs and caps under **Sources**. Jobs run in the "
+        "background; watch the live log window (not a blocking spinner)."
     )
     c1, c2, c3 = st.columns(3)
     c1.metric("Processed dir", config.data.processed_path().name)
@@ -180,6 +272,9 @@ def _panel_ops(settings: AppSettings, settings_file: Path, proc: Path) -> None:
         config.data.fixtures_path().name,
     )
     st.caption(f"Config: `configs/experiment.yaml` · `{config.data.fixtures_path()}`")
+
+    _render_ops_services(config)
+    _render_ops_job_monitor(settings, proc)
 
     st.subheader("Data freshness")
     freshness = build_ops_freshness_frame(
@@ -251,6 +346,7 @@ def _panel_ops(settings: AppSettings, settings_file: Path, proc: Path) -> None:
             )
             incr_arg = "True" if limits.otodom_incremental else "False"
             proxy_flag = bool(settings.http_free_proxies_enabled)
+            level = str(settings.log_level)
             cmd = [
                 sys.executable,
                 "-c",
@@ -260,7 +356,7 @@ def _panel_ops(settings: AppSettings, settings_file: Path, proc: Path) -> None:
                     "from happy_housing.ingest.proxy_pool import "
                     "configure_http_proxies; "
                     "from happy_housing.ingest.otodom import scrape_otodom_warsaw; "
-                    "configure_logging(); "
+                    f"configure_logging({level!r}, force=True); "
                     f"configure_http_proxies(enabled={proxy_flag!r}); "
                     f"scrape_otodom_warsaw(Path({str(out_path)!r}), "
                     f"max_pages={pages_arg}, max_listings={listings_arg}, "
@@ -275,31 +371,12 @@ def _panel_ops(settings: AppSettings, settings_file: Path, proc: Path) -> None:
                 listings_arg,
                 incr_arg,
             )
-            with st.status(
-                "Scraping Otodom (may take hours)…",
-                expanded=True,
-            ) as status:
-                st.write(
-                    f"max_pages={pages_arg} · max_listings={listings_arg} · "
-                    f"incremental={incr_arg}"
-                )
-                try:
-                    code, log = _run_command(cmd, timeout_s=24 * 3600)
-                except subprocess.TimeoutExpired:
-                    logger.error("Otodom scrape timed out")
-                    status.update(label="Otodom scrape timed out", state="error")
-                    st.error("Scrape timed out.")
-                else:
-                    st.code(log[-8000:] or "(no output)")
-                    if code == 0:
-                        clear_data_caches()
-                        logger.info("Otodom scrape finished → %s", out_path)
-                        status.update(label="Otodom scrape complete", state="complete")
-                        st.success(f"Scrape finished → {out_path}")
-                    else:
-                        logger.error("Otodom scrape failed (exit %s)", code)
-                        status.update(label="Otodom scrape failed", state="error")
-                        st.error(f"Scrape failed (exit {code})")
+            _launch_ops_job(
+                name="otodom_scrape",
+                command=cmd,
+                processed=proc,
+                log_level=level,
+            )
     with r2:
         if st.button(
             "Run pipeline (enrich + train + score + recommend)",
@@ -311,11 +388,14 @@ def _panel_ops(settings: AppSettings, settings_file: Path, proc: Path) -> None:
             settings.pipeline_overrides_enabled = True
             save_app_settings(settings_file, settings)
             gis_flag = bool(force_gis)
+            level = str(settings.log_level)
             cmd = [
                 sys.executable,
                 "-c",
                 (
+                    "from happy_housing.logging_config import configure_logging; "
                     "from happy_housing.pipeline import run_pipeline; "
+                    f"configure_logging({level!r}, force=True); "
                     f"run_pipeline(force_gis_refresh={gis_flag!r})"
                 ),
             ]
@@ -323,32 +403,12 @@ def _panel_ops(settings: AppSettings, settings_file: Path, proc: Path) -> None:
                 "Admin starting pipeline (overrides saved; force_gis=%s)",
                 gis_flag,
             )
-            with st.status(
-                "Running pipeline (may take hours)…",
-                expanded=True,
-            ) as status:
-                st.write(
-                    f"scrape_otodom={bool(scrape_in_pipe)} · "
-                    f"force_refresh={bool(force_refresh)} · "
-                    f"force_gis={gis_flag}"
-                )
-                try:
-                    code, log = _run_command(cmd, timeout_s=24 * 3600)
-                except subprocess.TimeoutExpired:
-                    logger.error("Pipeline timed out")
-                    status.update(label="Pipeline timed out", state="error")
-                    st.error("Pipeline timed out.")
-                else:
-                    st.code(log[-12000:] or "(no output)")
-                    if code == 0:
-                        clear_data_caches()
-                        logger.info("Pipeline finished successfully")
-                        status.update(label="Pipeline complete", state="complete")
-                        st.success("Pipeline finished — Home metrics refreshed.")
-                    else:
-                        logger.error("Pipeline failed (exit %s)", code)
-                        status.update(label="Pipeline failed", state="error")
-                        st.error(f"Pipeline failed (exit {code})")
+            _launch_ops_job(
+                name="pipeline",
+                command=cmd,
+                processed=proc,
+                log_level=level,
+            )
     with r3:
         if st.button("Clear pipeline step cache", key="admin_clear_step_cache"):
             removed = clear_pipeline_step_cache(proc)
@@ -371,14 +431,33 @@ def _panel_ops(settings: AppSettings, settings_file: Path, proc: Path) -> None:
         "HAPPY_HOUSING_LOG_LEVEL overrides when set at process start.",
         key="settings_log_level",
     )
+    poll_s = st.number_input(
+        "Ops log refresh (s)",
+        min_value=1.0,
+        max_value=30.0,
+        value=float(settings.ops_log_poll_s),
+        step=1.0,
+        key="settings_ops_log_poll_s",
+    )
+    tail_n = st.number_input(
+        "Ops log tail lines",
+        min_value=20,
+        max_value=2000,
+        value=int(settings.ops_log_tail_lines),
+        step=20,
+        key="settings_ops_log_tail_lines",
+    )
     g1, g2, _g3 = st.columns([1, 1, 3])
     with g1:
         if st.button("Save logging settings", key="save_logging_settings"):
             settings.log_level = str(log_level)
+            settings.ops_log_poll_s = float(poll_s)
+            settings.ops_log_tail_lines = int(tail_n)
             save_app_settings(settings_file, settings)
             configure_logging(settings.log_level, force=True)
             logger.info("App log level set to %s", settings.log_level)
             st.success(f"Log level saved: {settings.log_level}")
+            st.rerun()
     with g2:
         if st.button("Clear Streamlit data caches", key="admin_clear_caches"):
             clear_data_caches()
