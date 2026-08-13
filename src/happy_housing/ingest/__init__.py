@@ -14,6 +14,7 @@ import pandas as pd
 import requests
 
 from happy_housing.ingest.gtfs_network import build_gtfs_route_shapes
+from happy_housing.ingest.http_client import resilient_requests_get
 
 logger = logging.getLogger(__name__)
 
@@ -71,12 +72,20 @@ def download_file(url: str, destination: Path, timeout_s: float = 120.0) -> Path
         logger.info("Reusing local archive %s (skip HTTP re-download)", destination)
         return destination
     logger.info("Downloading %s -> %s", url, destination)
-    with requests.get(url, stream=True, timeout=timeout_s) as response:
-        response.raise_for_status()
+    response = resilient_requests_get(
+        url,
+        timeout=timeout_s,
+        retries=5,
+        label=f"download {destination.name}",
+        stream=True,
+    )
+    try:
         with destination.open("wb") as handle:
             for chunk in response.iter_content(chunk_size=1024 * 1024):
                 if chunk:
                     handle.write(chunk)
+    finally:
+        response.close()
     return destination
 
 
@@ -246,12 +255,13 @@ def _fetch_gios_stations_http(url: str) -> pd.DataFrame:
     page = 0
     page_size = 500
     while True:
-        response = requests.get(
+        response = resilient_requests_get(
             url,
             params={"size": page_size, "page": page},
             timeout=60.0,
+            retries=4,
+            label=f"GIOŚ stations page {page}",
         )
-        response.raise_for_status()
         payload: dict[str, Any] = response.json()
         rows = (
             payload.get("Lista stacji pomiarowych") or payload.get("stationList") or []

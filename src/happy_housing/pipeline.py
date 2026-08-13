@@ -90,6 +90,7 @@ from happy_housing.ingest.gios_aq import (
 from happy_housing.ingest.gunb import download_gunb_mazowieckie, gunb_points_gdf
 from happy_housing.ingest.market import ensure_market_primary
 from happy_housing.ingest.otodom import scrape_otodom_warsaw
+from happy_housing.ingest.proxy_pool import configure_http_proxies
 from happy_housing.ingest.rcn import extract_rcn_transactions
 from happy_housing.ingest.warsaw_map import (
     fetch_warsaw_city_pois,
@@ -235,6 +236,7 @@ def run_pipeline(
     configure_logging(config.logging.level, force=False)
     processed = config.data.processed_path()
     app_settings = load_app_settings(settings_path(processed))
+    configure_http_proxies(enabled=bool(app_settings.http_free_proxies_enabled))
     force = bool(
         force_pipeline
         if force_pipeline is not None

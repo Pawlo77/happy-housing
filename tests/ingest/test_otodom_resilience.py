@@ -11,10 +11,10 @@ import pandas as pd
 import pytest
 import requests
 
+from happy_housing.ingest.http_client import is_retryable_http_error
 from happy_housing.ingest.otodom import (
     card_needs_detail_refresh,
     fetch_search_page,
-    is_retryable_http_error,
     merge_otodom_frames,
     scrape_otodom_warsaw,
 )

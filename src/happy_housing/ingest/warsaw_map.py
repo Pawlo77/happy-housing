@@ -19,7 +19,6 @@ from pathlib import Path
 
 import geopandas as gpd
 import pandas as pd
-import requests
 from shapely.geometry import shape
 
 from happy_housing.gis import (
@@ -27,6 +26,7 @@ from happy_housing.gis import (
     fetch_osm_fitness_pois,
 )
 from happy_housing.gis.amenity_catalog import sport_key_for_osrid
+from happy_housing.ingest.http_client import resilient_requests_get
 
 logger = logging.getLogger(__name__)
 
@@ -156,7 +156,7 @@ def discover_education_type_names(
 ) -> tuple[str, ...]:
     """Parse WFS GetCapabilities for typeNames matching education keywords."""
     try:
-        response = requests.get(
+        response = resilient_requests_get(
             wfs_url,
             params={
                 "service": "WFS",
@@ -164,9 +164,10 @@ def discover_education_type_names(
                 "request": "GetCapabilities",
             },
             timeout=timeout_s,
+            retries=4,
+            label="Warsaw WFS capabilities",
             headers={"User-Agent": "happy-housing/1.0"},
         )
-        response.raise_for_status()
         text = response.text
     except Exception as exc:
         logger.warning("WFS GetCapabilities failed: %s", exc)
@@ -211,7 +212,7 @@ def fetch_warsaw_wfs_layer(
 
     frame = gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
     try:
-        response = requests.get(
+        response = resilient_requests_get(
             wfs_url,
             params={
                 "service": "WFS",
@@ -221,9 +222,10 @@ def fetch_warsaw_wfs_layer(
                 "maxFeatures": "10000",
             },
             timeout=timeout_s,
+            retries=4,
+            label=f"Warsaw WFS {type_name}",
             headers={"User-Agent": "happy-housing/1.0"},
         )
-        response.raise_for_status()
         loaded = gpd.read_file(io.BytesIO(response.content))
         loaded = normalize_warsaw_crs(loaded)
         if loaded.crs is not None and str(loaded.crs) != "EPSG:4326":
@@ -400,7 +402,7 @@ def fetch_mapviewer_jdbc_theme(
     """Fetch a MapViewer JDBC theme as GeoJSON features (EPSG:4326)."""
     url = f"{dataserver_base.rstrip('/')}/{datasource}"
     try:
-        response = requests.get(
+        response = resilient_requests_get(
             url,
             params={
                 "t": theme,
@@ -412,9 +414,10 @@ def fetch_mapviewer_jdbc_theme(
                 "include_label_box": "true",
             },
             timeout=timeout_s,
+            retries=4,
+            label=f"Warsaw MapViewer {theme}",
             headers={"User-Agent": "happy-housing/1.0"},
         )
-        response.raise_for_status()
         payload = response.json()
         if isinstance(payload, dict) and payload.get("mds_error"):
             logger.warning(

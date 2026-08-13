@@ -127,16 +127,21 @@ def test_fetch_wfs_city_layer_retries_on_timeout(monkeypatch: Any) -> None:
     calls = {"n": 0}
     ok = MagicMock()
     ok.text = xml
+    ok.status_code = 200
     ok.raise_for_status = MagicMock()
 
-    def fake_get(*_a: object, **_k: object) -> MagicMock:
+    def fake_session_get(self: object, *_a: object, **_k: object) -> MagicMock:
+        _ = self
         calls["n"] += 1
         if calls["n"] == 1:
             raise requests.exceptions.ReadTimeout("read timed out")
         return ok
 
-    monkeypatch.setattr("happy_housing.ingest.gunb.requests.get", fake_get)
-    monkeypatch.setattr("happy_housing.ingest.gunb.time.sleep", lambda _s: None)
+    monkeypatch.setattr(requests.Session, "get", fake_session_get)
+    monkeypatch.setattr(
+        "happy_housing.ingest.http_client.time.sleep",
+        lambda _s: None,
+    )
 
     frame = _fetch_wfs_city_layer("ms:pozwolenia_2026", page_size=500)
     assert calls["n"] == 2
@@ -192,15 +197,16 @@ def test_fetch_wfs_filters_client_side_and_past_old_cap(monkeypatch: Any) -> Non
     ]
     calls: list[int] = []
 
-    def fake_get(
-        _url: object, params: dict[str, object] | None = None, **_k: object
-    ) -> MagicMock:
-        assert params is not None
-        start = int(params["startIndex"])
+    def fake_session_get(self: object, _url: object, **kwargs: object) -> MagicMock:
+        _ = self
+        params = kwargs.get("params")
+        assert isinstance(params, dict)
+        start = int(params["startIndex"])  # type: ignore[index]
         calls.append(start)
         idx = start // page_size
         body = pages[idx] if idx < len(pages) else ""
         resp = MagicMock()
+        resp.status_code = 200
         resp.text = f"""<?xml version='1.0' encoding="UTF-8" ?>
     <wfs:FeatureCollection xmlns:wfs="http://www.opengis.net/wfs/2.0"
       xmlns:gml="http://www.opengis.net/gml/3.2"
@@ -212,8 +218,11 @@ def test_fetch_wfs_filters_client_side_and_past_old_cap(monkeypatch: Any) -> Non
         resp.raise_for_status = MagicMock()
         return resp
 
-    monkeypatch.setattr("happy_housing.ingest.gunb.requests.get", fake_get)
-    monkeypatch.setattr("happy_housing.ingest.gunb.time.sleep", lambda _s: None)
+    monkeypatch.setattr(requests.Session, "get", fake_session_get)
+    monkeypatch.setattr(
+        "happy_housing.ingest.http_client.time.sleep",
+        lambda _s: None,
+    )
 
     frame = _fetch_wfs_city_layer("ms:pozwolenia_2025", page_size=page_size)
     assert calls == [0, 2, 4, 6]

@@ -34,6 +34,7 @@ classifiers = [
 
 dependencies = [
   "duckdb>=1.2.0",
+  "free-proxy>=1.2.2",
   "geopandas>=1.0.0",
   "humanize>=4.15.0",
   "ipykernel>=7.2.0",

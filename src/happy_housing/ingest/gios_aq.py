@@ -11,6 +11,9 @@ from typing import Any
 import pandas as pd
 import requests
 
+from happy_housing.ingest.http_client import resilient_get
+from happy_housing.ingest.proxy_pool import bind_http_proxy
+
 logger = logging.getLogger(__name__)
 
 GIOS_AQ_INDEX_URL = (
@@ -124,18 +127,28 @@ def _fetch_station_air_quality(
 ) -> dict[str, float]:
     """HTTP fetch of AQI + latest PM10/PM2.5/NO2 for one station."""
     out: dict[str, float] = {col: float("nan") for col in AIR_QUALITY_COLUMNS}
-    idx_resp = requests.get(
+    session = requests.Session()
+    bind_http_proxy(session)
+    idx_resp = resilient_get(
+        session,
         aq_index_url.format(station_id=station_id),
         timeout=timeout_s,
+        retries=4,
+        label=f"GIOŚ AQ index {station_id}",
     )
-    idx_resp.raise_for_status()
+    if idx_resp is None:
+        raise requests.RequestException(f"GIOŚ AQ index missing for {station_id}")
     out.update(parse_gios_aq_index(idx_resp.json()))
 
-    sens_resp = requests.get(
+    sens_resp = resilient_get(
+        session,
         sensors_url.format(station_id=station_id),
         timeout=timeout_s,
+        retries=4,
+        label=f"GIOŚ sensors {station_id}",
     )
-    sens_resp.raise_for_status()
+    if sens_resp is None:
+        raise requests.RequestException(f"GIOŚ sensors missing for {station_id}")
     sens_payload = sens_resp.json()
     sensors = (
         sens_payload.get("Lista stanowisk pomiarowych dla podanej stacji")
@@ -152,11 +165,15 @@ def _fetch_station_air_quality(
         sensor_id = sensor.get("Identyfikator stanowiska", sensor.get("id"))
         if sensor_id is None:
             continue
-        data_resp = requests.get(
+        data_resp = resilient_get(
+            session,
             data_url.format(sensor_id=int(sensor_id)),
             timeout=timeout_s,
+            retries=4,
+            label=f"GIOŚ data {sensor_id}",
         )
-        data_resp.raise_for_status()
+        if data_resp is None:
+            continue
         data_payload = data_resp.json()
         rows = (
             data_payload.get("Lista danych pomiarowych")

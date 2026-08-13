@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import re
-import time
 import zipfile
 from pathlib import Path
 
@@ -12,6 +11,7 @@ import geopandas as gpd
 import pandas as pd
 import requests
 
+from happy_housing.ingest.http_client import resilient_requests_get
 from happy_housing.pipeline_progress import pipeline_tqdm
 
 logger = logging.getLogger(__name__)
@@ -99,15 +99,6 @@ def resolve_gunb_wfs_layers(*, full_history: bool = False) -> tuple[str, ...]:
     return _GUNB_WFS_LAYERS_RECENT
 
 
-def _is_retryable_wfs_error(exc: BaseException) -> bool:
-    """Timeouts and connection drops are worth retrying against geoportal."""
-    if isinstance(exc, (requests.Timeout, requests.ConnectionError)):
-        return True
-    if isinstance(exc, requests.HTTPError) and exc.response is not None:
-        return exc.response.status_code in {502, 503, 504}
-    return False
-
-
 def _wfs_get(
     wfs_url: str,
     params: dict[str, object],
@@ -115,30 +106,14 @@ def _wfs_get(
     timeout_s: float | tuple[float, float] = _WFS_TIMEOUT_S,
     retries: int = _WFS_RETRIES,
 ) -> requests.Response:
-    """GET one WFS page with backoff on transient geoportal failures."""
-    last_exc: Exception | None = None
-    attempts = max(1, int(retries))
-    for attempt in range(1, attempts + 1):
-        try:
-            response = requests.get(wfs_url, params=params, timeout=timeout_s)
-            response.raise_for_status()
-            return response
-        except Exception as exc:
-            last_exc = exc
-            if not _is_retryable_wfs_error(exc) or attempt >= attempts:
-                raise
-            sleep_for = min(2.0 * attempt, 20.0)
-            logger.warning(
-                "GUNB WFS request failed (attempt %s/%s): %s; retry in %.1fs",
-                attempt,
-                attempts,
-                exc,
-                sleep_for,
-            )
-            time.sleep(sleep_for)
-    if last_exc is None:
-        raise RuntimeError("GUNB WFS request failed with no exception")
-    raise last_exc
+    """GET one WFS page with backoff + free-proxy rotation on blocks."""
+    return resilient_requests_get(
+        wfs_url,
+        params=params,
+        timeout=timeout_s,
+        retries=max(1, int(retries)),
+        label="GUNB WFS",
+    )
 
 
 def _keep_warsaw_metro_row(row: dict[str, object]) -> bool:
@@ -394,8 +369,12 @@ def download_gunb_bulk_zip(
         logger.info("Using cached GUNB zip %s", zip_path)
         return zip_path
     logger.info("Downloading GUNB bulk zip %s", url)
-    response = requests.get(url, timeout=600)
-    response.raise_for_status()
+    response = resilient_requests_get(
+        url,
+        timeout=600,
+        retries=5,
+        label="GUNB bulk zip",
+    )
     zip_path.write_bytes(response.content)
     logger.info("Wrote GUNB zip (%s bytes) → %s", len(response.content), zip_path)
     return zip_path

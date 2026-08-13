@@ -449,6 +449,7 @@ def _apply_pipeline_widgets(
     max_pages: int | None,
     max_listings: int | None,
     incremental: bool,
+    http_free_proxies_enabled: bool,
     download_rcn: bool,
     rcn_unlimited: bool,
     rcn_max_rows: int | None,
@@ -475,6 +476,7 @@ def _apply_pipeline_widgets(
     settings.otodom_max_pages = None if otodom_unlimited else max_pages
     settings.otodom_max_listings = None if otodom_unlimited else max_listings
     settings.otodom_incremental = bool(incremental)
+    settings.http_free_proxies_enabled = bool(http_free_proxies_enabled)
     settings.download_rcn = bool(download_rcn)
     settings.rcn_max_rows = None if rcn_unlimited else rcn_max_rows
     settings.rcn_zip_url = str(rcn_zip_url).strip()
@@ -549,14 +551,18 @@ def _panel_run(settings: AppSettings, settings_file: Path, proc: Path) -> None:
                 else str(int(limits.otodom_max_listings))
             )
             incr_arg = "True" if limits.otodom_incremental else "False"
+            proxy_flag = bool(settings.http_free_proxies_enabled)
             cmd = [
                 sys.executable,
                 "-c",
                 (
                     "from pathlib import Path; "
                     "from happy_housing.logging_config import configure_logging; "
+                    "from happy_housing.ingest.proxy_pool import "
+                    "configure_http_proxies; "
                     "from happy_housing.ingest.otodom import scrape_otodom_warsaw; "
                     "configure_logging(); "
+                    f"configure_http_proxies(enabled={proxy_flag!r}); "
                     f"scrape_otodom_warsaw(Path({str(out_path)!r}), "
                     f"max_pages={pages_arg}, max_listings={listings_arg}, "
                     f"incremental={incr_arg})"
@@ -687,6 +693,16 @@ def _panel_sources(settings: AppSettings, settings_file: Path, proc: Path) -> No
             "detail fetches, merge into existing parquet."
         ),
         key="pipe_otodom_incremental",
+    )
+    http_free_proxies_enabled = st.checkbox(
+        "Rotate free HTTP proxies on 403/429",
+        value=bool(settings.http_free_proxies_enabled),
+        help=(
+            "When Otodom (or other ingest hosts) block with 403/429, switch to "
+            "a free proxy from the free-proxy library / ProxyScrape list and "
+            "retry. Public listing data only — no paid proxy required."
+        ),
+        key="pipe_http_free_proxies",
     )
 
     st.subheader("FX (NBP → PLN)")
@@ -881,6 +897,7 @@ def _panel_sources(settings: AppSettings, settings_file: Path, proc: Path) -> No
             max_pages=max_pages,
             max_listings=max_listings,
             incremental=incremental,
+            http_free_proxies_enabled=http_free_proxies_enabled,
             download_rcn=download_rcn,
             rcn_unlimited=rcn_unlimited,
             rcn_max_rows=rcn_max_rows,

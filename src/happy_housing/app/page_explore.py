@@ -229,6 +229,7 @@ from happy_housing.gis.amenity_catalog import (
 from happy_housing.gis.gios_aq_field import AQ_MAP_OVERLAYS, AqMapOverlay
 from happy_housing.gis.warsaw_noise import NOISE_MAP_OVERLAYS, NoiseMapOverlay
 from happy_housing.ingest.otodom import fetch_listing_detail, otodom_session
+from happy_housing.ingest.proxy_pool import configure_http_proxies
 from happy_housing.models.train import (
     FEATURE_COLUMNS,
     build_feature_matrix,
@@ -2976,6 +2977,7 @@ def render_explore() -> None:
     stars_file = stars_path(proc)
     starred = load_stars(stars_file)
     app_settings = load_app_settings(settings_path(proc))
+    configure_http_proxies(enabled=bool(app_settings.http_free_proxies_enabled))
     prefs_file = preferences_path(proc)
     prefs = load_preferences(prefs_file)
     snaps_file = starred_snapshots_path(proc)

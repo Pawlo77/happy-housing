@@ -174,6 +174,8 @@ class AppSettings:
     """Otodom listing cap; None = unlimited (when overrides enabled)."""
     otodom_incremental: bool = True
     """Merge Otodom scrape into existing parquet."""
+    http_free_proxies_enabled: bool = True
+    """Rotate free HTTP proxies on 403/429 for Otodom + other ingest downloads."""
     rcn_max_rows: int | None = None
     """RCN extract row cap; None = full GML (when overrides enabled)."""
     scrape_otodom_in_pipeline: bool = True
@@ -585,6 +587,12 @@ def load_app_settings(path: Path) -> AppSettings:
         otodom_max_listings=_opt_positive_int(payload.get("otodom_max_listings")),
         otodom_incremental=bool(
             payload.get("otodom_incremental", defaults.otodom_incremental)
+        ),
+        http_free_proxies_enabled=bool(
+            payload.get(
+                "http_free_proxies_enabled",
+                defaults.http_free_proxies_enabled,
+            )
         ),
         rcn_max_rows=_opt_positive_int(payload.get("rcn_max_rows")),
         scrape_otodom_in_pipeline=bool(

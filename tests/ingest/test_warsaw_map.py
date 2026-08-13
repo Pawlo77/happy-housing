@@ -55,9 +55,10 @@ def test_fetch_warsaw_parks_parses_gml_and_caches(tmp_path: Path) -> None:
     """WFS GML parks land in EPSG:4326 GeoJSON cache."""
     mock_resp = MagicMock()
     mock_resp.content = _SAMPLE_GML
+    mock_resp.status_code = 200
     mock_resp.raise_for_status = MagicMock()
     with patch(
-        "happy_housing.ingest.warsaw_map.requests.get",
+        "happy_housing.ingest.warsaw_map.resilient_requests_get",
         return_value=mock_resp,
     ) as get:
         parks = fetch_warsaw_parks(tmp_path, force_refresh=True)
@@ -90,7 +91,7 @@ def test_fetch_warsaw_parks_uses_cache(tmp_path: Path) -> None:
         crs="EPSG:4326",
     )
     cached.to_file(tmp_path / "warsaw_parks.geojson", driver="GeoJSON")
-    with patch("happy_housing.ingest.warsaw_map.requests.get") as get:
+    with patch("happy_housing.ingest.warsaw_map.resilient_requests_get") as get:
         out = fetch_warsaw_parks(tmp_path)
     get.assert_not_called()
     assert len(out) == 1
@@ -100,9 +101,10 @@ def test_fetch_warsaw_wfs_layer_caches_under_custom_name(tmp_path: Path) -> None
     """Generic WFS fetch writes the requested cache filename."""
     mock_resp = MagicMock()
     mock_resp.content = _SAMPLE_GML
+    mock_resp.status_code = 200
     mock_resp.raise_for_status = MagicMock()
     with patch(
-        "happy_housing.ingest.warsaw_map.requests.get",
+        "happy_housing.ingest.warsaw_map.resilient_requests_get",
         return_value=mock_resp,
     ):
         frame = fetch_warsaw_wfs_layer(
@@ -119,7 +121,7 @@ def test_fetch_warsaw_schools_uses_fixture_when_wfs_fails(tmp_path: Path) -> Non
     """Schools fall back to fixture GeoJSON and cache warsaw_schools.geojson."""
     fixture = Path("data/fixtures/schools.geojson")
     with patch(
-        "happy_housing.ingest.warsaw_map.requests.get",
+        "happy_housing.ingest.warsaw_map.resilient_requests_get",
         side_effect=RuntimeError("offline"),
     ):
         schools = fetch_warsaw_schools(
@@ -136,14 +138,13 @@ def test_fetch_warsaw_schools_uses_fixture_when_wfs_fails(tmp_path: Path) -> Non
 
 def test_fetch_warsaw_schools_tries_candidate_type_names(tmp_path: Path) -> None:
     """First failing typeName is skipped; successful candidate is cached."""
-    fail = MagicMock()
-    fail.raise_for_status.side_effect = RuntimeError("404")
     ok = MagicMock()
     ok.content = _SAMPLE_GML
+    ok.status_code = 200
     ok.raise_for_status = MagicMock()
     with patch(
-        "happy_housing.ingest.warsaw_map.requests.get",
-        side_effect=[fail, ok],
+        "happy_housing.ingest.warsaw_map.resilient_requests_get",
+        side_effect=[RuntimeError("404"), ok],
     ) as get:
         schools = fetch_warsaw_schools(
             tmp_path,

@@ -11,6 +11,9 @@ from typing import Any
 import pandas as pd
 import requests
 
+from happy_housing.ingest.http_client import resilient_get
+from happy_housing.ingest.proxy_pool import bind_http_proxy
+
 logger = logging.getLogger(__name__)
 
 NBP_RATE_URL: str = "https://api.nbp.pl/api/exchangerates/rates/a/{code}/?format=json"
@@ -74,8 +77,17 @@ def fetch_nbp_mid_rate(
         return 1.0, _utc_today()
     url = NBP_RATE_URL.format(code=code.lower())
     http = session or requests.Session()
-    response = http.get(url, timeout=timeout_s, headers={"Accept": "application/json"})
-    response.raise_for_status()
+    bind_http_proxy(http)
+    response = resilient_get(
+        http,
+        url,
+        timeout=timeout_s,
+        retries=4,
+        label=f"NBP FX {code}",
+        headers={"Accept": "application/json"},
+    )
+    if response is None:
+        raise requests.RequestException(f"NBP FX missing for {code}")
     payload = response.json()
     rates = payload.get("rates") if isinstance(payload, dict) else None
     if not isinstance(rates, list) or not rates:

@@ -20,8 +20,13 @@ from happy_housing.ingest.fx import (
     fx_cache_path,
     price_value_from_characteristics,
 )
+from happy_housing.ingest.http_client import (
+    resilient_get,
+    retry_sleep_s,
+)
 from happy_housing.ingest.limits import reached_cap, resolve_ingest_cap
 from happy_housing.ingest.listed_at import coalesce_listed_at
+from happy_housing.ingest.proxy_pool import bind_http_proxy
 
 logger = logging.getLogger(__name__)
 
@@ -45,17 +50,6 @@ DEFAULT_TIMEOUT: Final[tuple[float, float]] = (
     DEFAULT_READ_TIMEOUT_S,
 )
 """``(connect, read)`` timeout pair passed to ``requests``."""
-
-_RETRYABLE_STATUS: Final[frozenset[int]] = frozenset({
-    408,
-    425,
-    429,
-    500,
-    502,
-    503,
-    504,
-})
-"""HTTP statuses that warrant a retry."""
 
 _MAX_CONSECUTIVE_PAGE_FAILURES: Final[int] = 5
 """Abort search walk after this many consecutive failed pages."""
@@ -375,6 +369,7 @@ def _session() -> requests.Session:
         "Accept-Language": "pl-PL,pl;q=0.9,en;q=0.8",
         "Accept": "text/html,application/xhtml+xml",
     })
+    bind_http_proxy(session)
     return session
 
 
@@ -383,21 +378,9 @@ def otodom_session() -> requests.Session:
     return _session()
 
 
-def is_retryable_http_error(exc: BaseException) -> bool:
-    """Return True for timeouts, connection errors, and retryable HTTP codes."""
-    if isinstance(exc, (requests.Timeout, requests.ConnectionError)):
-        return True
-    if isinstance(exc, requests.HTTPError) and exc.response is not None:
-        return int(exc.response.status_code) in _RETRYABLE_STATUS
-    return isinstance(exc, requests.RequestException)
-
-
 def _retry_sleep_s(attempt: int, *, status_code: int | None = None) -> float:
     """Backoff delay; 403/429 get a longer cool-down."""
-    base = min(2.0 * attempt, 20.0)
-    if status_code in {403, 429}:
-        return min(base * 2.5, 45.0)
-    return base
+    return retry_sleep_s(attempt, status_code=status_code)
 
 
 def _http_get(
@@ -408,53 +391,14 @@ def _http_get(
     retries: int = 5,
     label: str,
 ) -> requests.Response | None:
-    """GET with retries; return ``None`` after exhausting retryable failures."""
-    last_exc: Exception | None = None
-    for attempt in range(1, retries + 1):
-        status_code: int | None = None
-        try:
-            response = session.get(url, timeout=timeout)
-            status_code = int(response.status_code)
-            response.raise_for_status()
-            return response
-        except (
-            requests.RequestException,
-            ValueError,
-            TypeError,
-            KeyError,
-        ) as exc:
-            last_exc = exc
-            if isinstance(exc, requests.HTTPError) and exc.response is not None:
-                status_code = int(exc.response.status_code)
-            retryable = is_retryable_http_error(exc) or status_code in {
-                403,
-                *_RETRYABLE_STATUS,
-            }
-            if not retryable or attempt >= retries:
-                logger.warning(
-                    "%s failed permanently (attempt %s/%s): %s",
-                    label,
-                    attempt,
-                    retries,
-                    exc,
-                )
-                break
-            sleep_for = _retry_sleep_s(attempt, status_code=status_code)
-            logger.warning(
-                "%s failed (attempt %s/%s): %s; retry in %.1fs",
-                label,
-                attempt,
-                retries,
-                exc,
-                sleep_for,
-            )
-            time.sleep(sleep_for)
-    if isinstance(last_exc, requests.HTTPError):
-        raise last_exc
-    if last_exc is not None:
-        logger.debug("Last error for %s: %s", label, last_exc)
-        raise last_exc
-    return None
+    """GET with retries; rotate free proxies on Otodom 403/429 blocks."""
+    return resilient_get(
+        session,
+        url,
+        timeout=timeout,
+        retries=retries,
+        label=label,
+    )
 
 
 def _extract_next_data(html: str) -> dict[str, Any]:
