@@ -361,23 +361,15 @@ def fetch_gunb_warsaw_points(
 def download_gunb_bulk_zip(
     raw_dir: Path,
     url: str = _GUNB_MAZ_ZIP,
+    *,
+    force: bool = False,
 ) -> Path:
     """Download the official Mazowieckie GUNB zip into ``raw_dir``."""
+    from happy_housing.ingest import download_file
+
     raw_dir.mkdir(parents=True, exist_ok=True)
     zip_path = raw_dir / "gunb_mazowieckie.zip"
-    if zip_path.exists() and zip_path.stat().st_size > 1_000_000:
-        logger.info("Using cached GUNB zip %s", zip_path)
-        return zip_path
-    logger.info("Downloading GUNB bulk zip %s", url)
-    response = resilient_requests_get(
-        url,
-        timeout=600,
-        retries=5,
-        label="GUNB bulk zip",
-    )
-    zip_path.write_bytes(response.content)
-    logger.info("Wrote GUNB zip (%s bytes) → %s", len(response.content), zip_path)
-    return zip_path
+    return download_file(url, zip_path, timeout_s=600.0, force=force)
 
 
 def _frame_from_bulk_zip(zip_path: Path) -> pd.DataFrame:
@@ -412,7 +404,7 @@ def download_gunb_mazowieckie(
     """
     raw_dir.mkdir(parents=True, exist_ok=True)
     try:
-        zip_path = download_gunb_bulk_zip(raw_dir, url=url)
+        zip_path = download_gunb_bulk_zip(raw_dir, url=url, force=refresh_wfs_cache)
         bulk = _frame_from_bulk_zip(zip_path)
         if not bulk.empty:
             bulk_out = raw_dir / "gunb_mazowieckie_bulk.parquet"

@@ -56,19 +56,50 @@ def load_listings_json(path: Path | str) -> pd.DataFrame:
     return frame
 
 
-def download_file(url: str, destination: Path, timeout_s: float = 120.0) -> Path:
-    """Download a remote file to ``destination`` if missing.
+def download_file(
+    url: str,
+    destination: Path,
+    timeout_s: float = 120.0,
+    *,
+    force: bool = False,
+) -> Path:
+    """Download a remote file to ``destination`` if missing or URL changed.
+
+    A sidecar ``{destination}.url`` stores the last fetched URL so Admin URL
+    edits (e.g. a newer RCN/GTFS zip) trigger a re-download without ``force``.
 
     Args:
         url: HTTP(S) URL to fetch.
         destination: Local output path.
         timeout_s: Request timeout in seconds.
+        force: Always re-download even when the local file matches ``url``.
 
     Returns:
         Path to the downloaded file.
     """
     destination.parent.mkdir(parents=True, exist_ok=True)
-    if destination.exists() and destination.stat().st_size > 0:
+    meta_path = Path(f"{destination}.url")
+    wanted = str(url).strip()
+    recorded = ""
+    if meta_path.exists():
+        try:
+            recorded = meta_path.read_text(encoding="utf-8").strip()
+        except OSError:
+            recorded = ""
+    reuse = (
+        not force
+        and destination.exists()
+        and destination.stat().st_size > 0
+        and (not recorded or recorded == wanted)
+    )
+    if reuse:
+        if not recorded:
+            try:
+                meta_path.write_text(wanted + "\n", encoding="utf-8")
+            except OSError as exc:
+                logger.warning(
+                    "Could not write download URL sidecar %s: %s", meta_path, exc
+                )
         logger.info("Reusing local archive %s (skip HTTP re-download)", destination)
         return destination
     logger.info("Downloading %s -> %s", url, destination)
@@ -86,6 +117,10 @@ def download_file(url: str, destination: Path, timeout_s: float = 120.0) -> Path
                     handle.write(chunk)
     finally:
         response.close()
+    try:
+        meta_path.write_text(wanted + "\n", encoding="utf-8")
+    except OSError as exc:
+        logger.warning("Could not write download URL sidecar %s: %s", meta_path, exc)
     return destination
 
 
@@ -102,7 +137,9 @@ def download_gtfs_stops(
     """
     from happy_housing.pipeline_cache import outputs_fresh_vs_inputs
 
-    zip_path = download_file(url, raw_dir / "gtfs_warsaw.zip", timeout_s=600.0)
+    zip_path = download_file(
+        url, raw_dir / "gtfs_warsaw.zip", timeout_s=600.0, force=force
+    )
     hourly_path = output_parquet.with_name("gtfs_stop_hourly.parquet")
     shapes_path = output_parquet.with_name("gtfs_route_shapes.parquet")
     outputs = [output_parquet, hourly_path, shapes_path]

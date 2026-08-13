@@ -295,7 +295,12 @@ def download_panorama_crime(
     try:
         if force and archive.exists():
             archive.unlink()
-        download_file(url or _DEFAULT_PANORAMA_URL, archive, timeout_s=300.0)
+        download_file(
+            url or _DEFAULT_PANORAMA_URL,
+            archive,
+            timeout_s=300.0,
+            force=force,
+        )
         frame = extract_panorama_crime_archive(archive, extract_dir)
         if frame.empty:
             raise ValueError("Parsed crime table is empty.")

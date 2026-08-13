@@ -348,6 +348,7 @@ def run_pipeline(
             urls.rcn_zip,
             raw / "rcn_warsaw.zip",
             timeout_s=1800.0,
+            force=bool(force_gis_refresh or force),
         )
         rcn_fp = fingerprint(file_token(zip_path), f"max_rows={rcn_cap}")
         if manifest.should_skip(
