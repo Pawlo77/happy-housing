@@ -147,6 +147,10 @@ class AppSettings:
     """Admin Ops live-log fragment refresh interval (seconds)."""
     ops_log_tail_lines: int = 120
     """How many trailing log lines to show in the Ops job window."""
+    freshness_source_warn_h: float = 168.0
+    """Source age (hours) past which Freshness marks ``age_warn``."""
+    freshness_derived_warn_h: float = 168.0
+    """Derived product age (hours) past which Freshness marks ``stale``."""
     model_opt_metric: str = "mape"
     """Validation metric for LightGBM HPO (mae/rmse/MAPE/medae/r2)."""
     model_val_size: float = 0.15
@@ -624,6 +628,30 @@ def load_app_settings(path: Path) -> AppSettings:
             min(
                 2000,
                 int(payload.get("ops_log_tail_lines", defaults.ops_log_tail_lines)),
+            ),
+        ),
+        freshness_source_warn_h=min(
+            8760.0,
+            max(
+                1.0,
+                float(
+                    payload.get(
+                        "freshness_source_warn_h",
+                        defaults.freshness_source_warn_h,
+                    )
+                ),
+            ),
+        ),
+        freshness_derived_warn_h=min(
+            8760.0,
+            max(
+                1.0,
+                float(
+                    payload.get(
+                        "freshness_derived_warn_h",
+                        defaults.freshness_derived_warn_h,
+                    )
+                ),
             ),
         ),
         model_opt_metric=coerce_opt_metric(

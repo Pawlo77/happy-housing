@@ -20,10 +20,7 @@ from happy_housing.app.admin_jobs import (
     start_admin_job,
     stop_admin_job,
 )
-from happy_housing.app.admin_ops import (
-    build_ops_freshness_frame,
-    clear_pipeline_step_cache,
-)
+from happy_housing.app.admin_ops import clear_pipeline_step_cache
 from happy_housing.app.ai_review import (
     DEFAULT_SYSTEM_PROMPT,
     clear_ai_review_session_keys,
@@ -63,6 +60,11 @@ from happy_housing.app.filter_presets import (
     clear_filter_presets,
     filter_presets_path,
     load_filter_presets,
+)
+from happy_housing.app.freshness import (
+    build_freshness_report,
+    derived_to_frame,
+    sources_to_frame,
 )
 from happy_housing.app.geocode import (
     format_place_option_labels,
@@ -117,6 +119,7 @@ logger = logging.getLogger(__name__)
 
 ADMIN_SECTIONS: tuple[str, ...] = (
     "Ops",
+    "Freshness",
     "Commute",
     "Sources",
     "Explore",
@@ -129,7 +132,7 @@ ADMIN_SECTIONS: tuple[str, ...] = (
     "Stars & News",
     "Stats",
 )
-"""Top-nav section labels (Ops hub first, then tunables)."""
+"""Top-nav section labels (Ops hub first, Freshness next, then tunables)."""
 
 
 def _assert_never(value: object) -> Never:
@@ -249,11 +252,12 @@ def _cached_place_search(query: str) -> tuple[dict[str, float | str | int], ...]
 
 
 def _panel_ops(settings: AppSettings, settings_file: Path, proc: Path) -> None:
-    """Freshness, recompute / redownload, logging, and caches."""
+    """Recompute / redownload, logging, and caches."""
     config = load_config()
     meta = load_metadata()
     st.caption(
-        "Ops hub — data freshness, scrape / pipeline, logging, and caches. "
+        "Ops hub — scrape / pipeline jobs, logging, and caches. "
+        "Source + model freshness → **Freshness**. "
         "Tune ingest URLs and caps under **Sources**. Jobs run in the "
         "background; watch the live log window (not a blocking spinner)."
     )
@@ -275,18 +279,6 @@ def _panel_ops(settings: AppSettings, settings_file: Path, proc: Path) -> None:
 
     _render_ops_services(config)
     _render_ops_job_monitor(settings, proc)
-
-    st.subheader("Data freshness")
-    freshness = build_ops_freshness_frame(
-        processed_dir=proc,
-        cache_dir=config.data.cache_path(),
-        fixtures_dir=config.data.fixtures_path(),
-    )
-    st.dataframe(
-        freshness.drop(columns=["url"], errors="ignore"),
-        hide_index=True,
-        width="stretch",
-    )
 
     limits = resolve_ingest_limits(settings, config)
     flags = resolve_ingest_flags(settings, config)
@@ -463,6 +455,81 @@ def _panel_ops(settings: AppSettings, settings_file: Path, proc: Path) -> None:
             clear_data_caches()
             logger.info("Cleared Streamlit data caches from Admin")
             st.success("Caches cleared.")
+
+
+def _panel_freshness(settings: AppSettings, settings_file: Path, proc: Path) -> None:
+    """Local-disk source + derived product freshness dashboard."""
+    config = load_config()
+    st.caption(
+        "Local disk freshness — preferred ``processed``/``cache`` artifacts vs "
+        "fixture fallbacks, last mtime, and whether scored listings / model / "
+        "recommender / run metadata lag upstream sources. "
+        "Remote completeness audit: ``docs/data-sources/``. "
+        "Scrape / pipeline actions stay under **Ops**."
+    )
+    report = build_freshness_report(
+        processed_dir=proc,
+        cache_dir=config.data.cache_path(),
+        fixtures_dir=config.data.fixtures_path(),
+        source_warn_h=float(settings.freshness_source_warn_h),
+        derived_warn_h=float(settings.freshness_derived_warn_h),
+    )
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Sources ok", report.n_sources_ok)
+    m2.metric("Fixture only", report.n_sources_fixture)
+    m3.metric("Missing / empty", report.n_sources_missing + report.n_sources_empty)
+    m4.metric(
+        "Derived ok / stale / missing",
+        (
+            f"{report.n_derived_ok} / {report.n_derived_stale} / "
+            f"{report.n_derived_missing}"
+        ),
+    )
+
+    st.subheader("Data sources")
+    st.dataframe(
+        sources_to_frame(report.sources),
+        hide_index=True,
+        width="stretch",
+    )
+    st.subheader("Derived products")
+    st.dataframe(
+        derived_to_frame(report.derived),
+        hide_index=True,
+        width="stretch",
+    )
+
+    st.subheader("Warn thresholds")
+    c1, c2 = st.columns(2)
+    with c1:
+        source_warn = st.number_input(
+            "Source age warn (hours)",
+            min_value=1.0,
+            max_value=8760.0,
+            value=float(settings.freshness_source_warn_h),
+            step=24.0,
+            help="Marks age_warn when a source mtime is older than this.",
+            key="settings_freshness_source_warn_h",
+        )
+    with c2:
+        derived_warn = st.number_input(
+            "Derived age warn (hours)",
+            min_value=1.0,
+            max_value=8760.0,
+            value=float(settings.freshness_derived_warn_h),
+            step=24.0,
+            help=(
+                "Marks derived products stale when older than this, "
+                "even if newer than sources."
+            ),
+            key="settings_freshness_derived_warn_h",
+        )
+    if st.button("Save freshness settings", key="save_freshness_settings"):
+        settings.freshness_source_warn_h = float(source_warn)
+        settings.freshness_derived_warn_h = float(derived_warn)
+        save_app_settings(settings_file, settings)
+        st.success("Freshness warn thresholds saved.")
+        st.rerun()
 
 
 def _panel_commute(settings: AppSettings, settings_file: Path, proc: Path) -> None:
@@ -2091,6 +2158,8 @@ def panel_for_section(section: str) -> PanelFn:
     match section:
         case "Ops":
             return _panel_ops
+        case "Freshness":
+            return _panel_freshness
         case "Commute":
             return _panel_commute
         case "Sources":

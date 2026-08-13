@@ -9,6 +9,7 @@ def test_admin_sections_cover_planned_ia() -> None:
     """Top-nav pills match the short-panel IA (Ops hub first)."""
     assert ADMIN_SECTIONS == (
         "Ops",
+        "Freshness",
         "Commute",
         "Sources",
         "Explore",

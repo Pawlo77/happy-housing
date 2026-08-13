@@ -70,6 +70,20 @@ def test_round_trip_settings(tmp_path: Path) -> None:
     assert loaded.model_nbhd_radius_m == 600.0
 
 
+def test_freshness_warn_settings_round_trip(tmp_path: Path) -> None:
+    path = settings_path(tmp_path)
+    save_app_settings(
+        path,
+        AppSettings(
+            freshness_source_warn_h=72.0,
+            freshness_derived_warn_h=48.0,
+        ),
+    )
+    loaded = load_app_settings(path)
+    assert loaded.freshness_source_warn_h == 72.0
+    assert loaded.freshness_derived_warn_h == 48.0
+
+
 def test_commute_target_settings_round_trip(tmp_path: Path) -> None:
     path = settings_path(tmp_path)
     save_app_settings(
