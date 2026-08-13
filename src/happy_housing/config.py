@@ -266,7 +266,7 @@ class IngestLimitsConfig:
     """Geocoded OLX listings; ``None`` keeps every normalized offer."""
     olx_incremental: bool = True
     """Merge into existing OLX parquet; early-stop on known newest pages."""
-    olx_include_rent: bool = False
+    olx_include_rent: bool = True
     """Also harvest Warsaw flat rentals (excluded from price-model labels)."""
     rcn_max_rows: int | None = None
     """RCN joined Warsaw rows; ``None`` parses the full GML."""
@@ -303,7 +303,7 @@ class IngestLimitsConfig:
             otodom_incremental=bool(mapping.get("otodom_incremental", True)),
             olx_max_listings=_opt_int("olx_max_listings"),
             olx_incremental=bool(mapping.get("olx_incremental", True)),
-            olx_include_rent=bool(mapping.get("olx_include_rent", False)),
+            olx_include_rent=bool(mapping.get("olx_include_rent", True)),
             rcn_max_rows=_opt_int("rcn_max_rows"),
         )
 

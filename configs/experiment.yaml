@@ -52,7 +52,7 @@ ingest:
   otodom_incremental: true
   olx_max_listings: null
   olx_incremental: true
-  olx_include_rent: false
+  olx_include_rent: true
   rcn_max_rows: null
 
 logging:

@@ -18,6 +18,14 @@ def test_load_missing_returns_defaults(tmp_path: Path) -> None:
     settings = load_app_settings(settings_path(tmp_path))
     assert settings.lm_model == AppSettings().lm_model
     assert settings.recommender_top_n == 15
+    assert settings.olx_include_rent is True
+    assert settings.scrape_olx_in_pipeline is True
+    assert settings.scrape_otodom_in_pipeline is True
+    assert settings.gunb_wfs_full_history is True
+    assert settings.download_rcn is True
+    assert settings.download_gunb is True
+    assert settings.olx_max_listings is None
+    assert settings.otodom_max_listings is None
 
 
 def test_round_trip_settings(tmp_path: Path) -> None:

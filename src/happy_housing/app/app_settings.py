@@ -203,7 +203,7 @@ class AppSettings:
     """OLX listing cap; None = unlimited (when overrides enabled)."""
     olx_incremental: bool = True
     """Merge OLX scrape into existing parquet."""
-    olx_include_rent: bool = False
+    olx_include_rent: bool = True
     """Include Warsaw flat rentals from OLX (not used as price-model labels)."""
     http_free_proxies_enabled: bool = True
     """Rotate free HTTP proxies on 403/429 for Otodom + other ingest downloads."""
@@ -233,8 +233,8 @@ class AppSettings:
     """Re-download RCN during pipeline."""
     download_gunb: bool = True
     """Re-download GUNB during pipeline."""
-    gunb_wfs_full_history: bool = False
-    """Fetch all GUNB WFS year layers incl. pozostale (slow; default recent 3y)."""
+    gunb_wfs_full_history: bool = True
+    """Fetch all GUNB WFS year layers incl. pozostale (slow; default full history)."""
     download_crime: bool = True
     """Re-download GUS Panorama dzielnic crime rates during pipeline."""
     gtfs_zip_url: str = ""

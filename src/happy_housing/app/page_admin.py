@@ -974,6 +974,12 @@ def _panel_sources(settings: AppSettings, settings_file: Path, proc: Path) -> No
     )
 
     st.subheader("Otodom")
+    scrape_in_pipe = st.checkbox(
+        "Scrape Otodom in pipeline",
+        value=bool(flags.scrape_otodom),
+        help="Pull Warsaw sale listings during full pipeline runs.",
+        key="pipe_scrape_otodom",
+    )
     otodom_unlimited = st.checkbox(
         "Unlimited (ignore page/listing caps)",
         value=limits.otodom_max_pages is None and limits.otodom_max_listings is None,
@@ -1014,6 +1020,12 @@ def _panel_sources(settings: AppSettings, settings_file: Path, proc: Path) -> No
     )
 
     st.subheader("OLX")
+    scrape_olx_in_pipe = st.checkbox(
+        "Scrape OLX in pipeline",
+        value=bool(flags.scrape_olx),
+        help="District-tiled Warsaw offers during full pipeline runs.",
+        key="pipe_scrape_olx",
+    )
     olx_unlimited = st.checkbox(
         "Unlimited OLX listings",
         value=limits.olx_max_listings is None,
@@ -1132,9 +1144,9 @@ def _panel_sources(settings: AppSettings, settings_file: Path, proc: Path) -> No
         "GUNB WFS full history (all year layers + pozostale)",
         value=bool(settings.gunb_wfs_full_history),
         help=(
-            "Off (default): recent 3 year layers only (~1h first fetch). "
-            "On: scans every national bucket incl. pozostale (2M+ features; "
-            "can take 12h+). Cached per-layer parquets under data/raw/."
+            "On (default): scans every national bucket incl. pozostale "
+            "(2M+ features; can take 12h+). Off: recent 3 year layers only "
+            "(~1h first fetch). Cached per-layer parquets under data/raw/."
         ),
         key="pipe_gunb_wfs_full_history",
     )
@@ -1207,11 +1219,7 @@ def _panel_sources(settings: AppSettings, settings_file: Path, proc: Path) -> No
         )
     )
 
-    # Preserve Run-panel toggle if present in session; else current settings.
-    scrape_in_pipe = bool(
-        st.session_state.get("pipe_scrape_otodom", flags.scrape_otodom)
-    )
-    scrape_olx_in_pipe = bool(st.session_state.get("pipe_scrape_olx", flags.scrape_olx))
+    # Ops panel shares the same widget keys for scrape toggles.
     with st.expander("Source URLs", expanded=False):
         rcn_zip_url = st.text_input(
             "RCN zip URL",
@@ -2381,6 +2389,4 @@ def render_admin() -> None:
         section = ADMIN_SECTIONS[0]
     logger.debug("Admin section=%s", section)
     st.subheader(str(section))
-    st.caption("One panel at a time · settings persist under processed data.")
-    st.divider()
     panel_for_section(str(section))(settings, settings_file, proc)
