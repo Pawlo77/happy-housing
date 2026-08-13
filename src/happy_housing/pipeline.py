@@ -111,6 +111,7 @@ from happy_housing.pipeline_cache import (
     payload_token,
     pipeline_steps_path,
 )
+from happy_housing.pipeline_progress import log_step
 from happy_housing.storage import write_geoparquet
 from happy_housing.vision.photo_features import attach_photo_features
 
@@ -288,12 +289,13 @@ def run_pipeline(
 
     if flags.scrape_otodom:
         try:
-            otodom = scrape_otodom_warsaw(
-                otodom_parquet,
-                max_pages=page_cap,
-                max_listings=listing_cap,
-                incremental=limits.otodom_incremental,
-            )
+            with log_step(logger, "otodom_scrape"):
+                otodom = scrape_otodom_warsaw(
+                    otodom_parquet,
+                    max_pages=page_cap,
+                    max_listings=listing_cap,
+                    incremental=limits.otodom_incremental,
+                )
             otodom["source"] = "otodom"
             listings_parts.append(otodom)
         except Exception as exc:
@@ -444,6 +446,8 @@ def run_pipeline(
             shops = load_shop_points(fixtures / "shops.json")
 
     # Independent HTTP / WFS fetches in parallel (not OSMnx — shared settings).
+    logger.info("STEP start warsaw_gis")
+    _gis_t0 = time.perf_counter()
     with ThreadPoolExecutor(max_workers=3) as pool:
         fut_parks = pool.submit(
             fetch_warsaw_parks,
@@ -468,7 +472,13 @@ def run_pipeline(
         parks = fut_parks.result()
         schools = fut_schools.result()
         city_pois = fut_pois.result()
-    # OSMnx road / bike fetches stay serial (global ox.settings).
+    logger.info(
+        "STEP done warsaw_gis in %.1fs (parks=%s schools=%s pois=%s)",
+        time.perf_counter() - _gis_t0,
+        len(parks),
+        len(schools),
+        len(city_pois),
+    )  # OSMnx road / bike fetches stay serial (global ox.settings).
     traffic_sample = fetch_traffic_road_sample(
         cache,
         bbox=config.bbox.as_tuple(),
@@ -539,6 +549,8 @@ def run_pipeline(
         train_frame = pd.read_parquet(enriched_path)
         train_frame = train_frame.drop(columns=["geometry"], errors="ignore")
     else:
+        logger.info("STEP start enrich")
+        _enrich_t0 = time.perf_counter()
         if app_settings.snap_listings_out_of_parks:
             listings = snap_listings_out_of_parks(
                 listings,
@@ -647,6 +659,11 @@ def run_pipeline(
             )
             _write_enriched_geoparquet(train_frame)
         manifest.mark_and_save("enrich", enrich_fp)
+        logger.info(
+            "STEP done enrich in %.1fs (%.2f min)",
+            time.perf_counter() - _enrich_t0,
+            (time.perf_counter() - _enrich_t0) / 60.0,
+        )
 
     rcn_for_model = (
         pd.read_parquet(rcn_parquet) if rcn_parquet.exists() else pd.DataFrame()
@@ -696,6 +713,8 @@ def run_pipeline(
         if not feature_names:
             feature_names = list(FEATURE_COLUMNS)
     else:
+        logger.info("STEP start train_score")
+        _train_t0 = time.perf_counter()
         result = run_training_with_mlflow(
             train_frame,
             config,
@@ -731,6 +750,11 @@ def run_pipeline(
         model_metrics = dict(result.metrics)
         feature_names = list(result.feature_names)
         manifest.mark_and_save("train_score", train_score_fp)
+        logger.info(
+            "STEP done train_score in %.1fs (%.2f min)",
+            time.perf_counter() - _train_t0,
+            (time.perf_counter() - _train_t0) / 60.0,
+        )
 
     prefs = load_preferences(preferences_path(processed))
     rec_settings = {
@@ -754,6 +778,8 @@ def run_pipeline(
         logger.info("Skip recommender (scored + settings unchanged)")
         skipped_steps.append("recommender")
     else:
+        logger.info("STEP start recommender")
+        _rec_t0 = time.perf_counter()
         if "model_price_per_m2" not in train_frame.columns:
             train_frame = pd.read_parquet(scored_path)
         retrain_recommender(
@@ -773,6 +799,11 @@ def run_pipeline(
             commute_mode=app_settings.commute_display_mode,
         )
         manifest.mark_and_save("recommender", rec_fp)
+        logger.info(
+            "STEP done recommender in %.1fs (%.2f min)",
+            time.perf_counter() - _rec_t0,
+            (time.perf_counter() - _rec_t0) / 60.0,
+        )
 
     if manifest.steps:
         manifest.save()

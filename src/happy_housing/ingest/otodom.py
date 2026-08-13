@@ -1011,10 +1011,18 @@ def scrape_otodom_warsaw(
     total_items: int | None = None
     consecutive_failures = 0
     known_page_streak = 0
+    scrape_t0 = time.perf_counter()
     while True:
         if page_cap is not None and page > page_cap:
             break
-        logger.info("Otodom search page %s", page)
+        elapsed = max(0.001, time.perf_counter() - scrape_t0)
+        logger.info(
+            "Otodom search page %s · cards=%s · %.1f pages/min · wall=%.0fs",
+            page,
+            len(cards),
+            page / (elapsed / 60.0),
+            elapsed,
+        )
         try:
             ads = fetch_search_page(
                 session,
@@ -1213,10 +1221,11 @@ def scrape_otodom_warsaw(
     output_parquet.parent.mkdir(parents=True, exist_ok=True)
     frame.to_parquet(output_parquet, index=False)
     logger.info(
-        "Wrote %s Otodom listings to %s (fresh=%s prior=%s)",
+        "Wrote %s Otodom listings to %s (fresh=%s prior=%s · %.1f listings/min)",
         len(frame),
         output_parquet,
         len(fresh),
         len(existing),
+        len(frame) / max(0.001, (time.perf_counter() - scrape_t0) / 60.0),
     )
     return frame
