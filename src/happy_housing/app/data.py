@@ -160,7 +160,7 @@ def load_amenities() -> gpd.GeoDataFrame:
 
 
 def load_parks() -> gpd.GeoDataFrame:
-    """Load UM Warszawa PLACE_SKWERY parks from cache or fixture."""
+    """Load UM + OSM park polygons from cache or fixture."""
     config = load_config()
     cache = config.data.cache_path() / "warsaw_parks.geojson"
     fixture = config.data.fixtures_path() / "parks.geojson"

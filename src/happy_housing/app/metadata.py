@@ -120,11 +120,31 @@ DEFAULT_SOURCE_CATALOG: tuple[DataSource, ...] = (
         unit="amenities",
     ),
     DataSource(
-        name="UM Warszawa PLACE_SKWERY (testmapa WFS)",
-        url="https://testmapa.um.warszawa.pl/",
-        role="Official parks and squares — nearest-park distance (dist_park_m).",
+        name="UM Warszawa PLACE_SKWERY + OSM green",
+        url="https://wfs.um.warszawa.pl/serwis",
+        role=(
+            "Official parks/squares plus OSM parks, gardens, forests, and woods "
+            "— nearest-green distance (dist_park_m)."
+        ),
         key="warsaw_parks",
         unit="parks",
+    ),
+    DataSource(
+        name="UM Warszawa education WFS / OSM schools",
+        url="https://wfs.um.warszawa.pl/serwis",
+        role="School POIs for dist_school_m (catchment polygons skipped).",
+        key="warsaw_schools",
+        unit="schools",
+    ),
+    DataSource(
+        name="UM Warszawa civic + sports POIs",
+        url="https://mapa.um.warszawa.pl/",
+        role=(
+            "Libraries, pharmacies, P+R, metro entrances, sports objects, "
+            "and OSM fitness centres."
+        ),
+        key="city_pois",
+        unit="pois",
     ),
     DataSource(
         name="ZTM Warsaw GTFS via mkuran.pl",
@@ -187,6 +207,20 @@ DEFAULT_SOURCE_CATALOG: tuple[DataSource, ...] = (
         role="Bike-path coverage features and Explore Map bike layer.",
         key="bike_paths",
         unit="ways",
+    ),
+    DataSource(
+        name="UM Warszawa strategic noise (WMS 2022)",
+        url="https://mapa.um.warszawa.pl/",
+        role="Road/rail/tram/aircraft/industry Lden & Lnight rasters.",
+        key="um_noise",
+        unit="layers",
+    ),
+    DataSource(
+        name="NBP table A FX mid-rates",
+        url="https://api.nbp.pl/",
+        role="Convert non-PLN Otodom asking prices to PLN.",
+        key="fx",
+        unit="rates",
     ),
 )
 """Canonical data sources with URLs for the Home page."""

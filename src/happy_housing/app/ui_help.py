@@ -119,7 +119,7 @@ LAYER_HELP: dict[str, str] = {
         "dist_gunb_m is a model feature."
     ),
     "parks": (
-        "UM Warszawa PLACE_SKWERY parks & squares (same layer as testmapa). "
+        "UM PLACE_SKWERY parks/squares plus OSM parks, gardens, forests, and woods. "
         "Closer green space raises day-to-day livability and often supports "
         "price; dist_park_m is a model feature and Prefs can cap max distance."
     ),
@@ -301,8 +301,8 @@ PREF_HELP: dict[str, str] = {
         "quieter living; model uses dist_gunb_m."
     ),
     "max_park": (
-        "Max metres to nearest UM park/square (PLACE_SKWERY). Closer greenery "
-        "improves livability; model uses dist_park_m."
+        "Max metres to nearest park/green (UM PLACE_SKWERY + OSM forests). "
+        "Closer greenery improves livability; model uses dist_park_m."
     ),
     "max_bike_path": (
         "Max metres to nearest OSM bike path / cycleway. Model also uses "

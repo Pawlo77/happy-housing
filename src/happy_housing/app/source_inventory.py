@@ -46,6 +46,14 @@ _SOURCE_ARTIFACTS: dict[str, tuple[ArtifactRef, ...]] = {
         ArtifactRef("cache", "warsaw_parks.geojson"),
         ArtifactRef("fixtures", "parks.geojson"),
     ),
+    "warsaw_schools": (
+        ArtifactRef("cache", "warsaw_schools.geojson"),
+        ArtifactRef("fixtures", "schools.geojson"),
+    ),
+    "city_pois": (
+        ArtifactRef("cache", "warsaw_city_pois.geojson"),
+        ArtifactRef("fixtures", "city_pois.geojson"),
+    ),
     "gtfs": (ArtifactRef("processed", "gtfs_stops.parquet"),),
     "gios": (
         ArtifactRef("processed", "gios_stations.parquet"),
@@ -63,11 +71,13 @@ _SOURCE_ARTIFACTS: dict[str, tuple[ArtifactRef, ...]] = {
         ArtifactRef("fixtures", "chopin_aircraft_lden.geojson"),
         ArtifactRef("fixtures", "chopin_aircraft_lnight.geojson"),
     ),
+    "um_noise": (ArtifactRef("cache", "warsaw_noise"),),
     "traffic": (ArtifactRef("cache", "traffic_roads.parquet"),),
     "bike_paths": (
         ArtifactRef("cache", "bike_paths.geojson"),
         ArtifactRef("fixtures", "bike_paths.geojson"),
     ),
+    "fx": (ArtifactRef("processed", "fx_nbp_cache.json"),),
 }
 """Preferred artifact paths per catalog ``key`` (first existing wins)."""
 

@@ -313,13 +313,13 @@ def amenity_layers(
 
 
 def parks_layer(parks: gpd.GeoDataFrame | None) -> pdk.Layer | None:
-    """UM Warszawa PLACE_SKWERY park / square polygons."""
+    """UM PLACE_SKWERY + OSM green park / forest polygons."""
     return zone_polygon_layer(
         parks,
         layer_id="warsaw-parks",
         fill_rgba=[34, 139, 34, 70],
         line_rgba=[20, 100, 20, 200],
-        detail="UM Warszawa PLACE_SKWERY (testmapa parks/squares)",
+        detail="UM PLACE_SKWERY + OSM parks/forests",
         default_name="Park",
     )
 

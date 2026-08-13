@@ -180,7 +180,7 @@ class LayerFlags:
     gunb: bool = False
     """GUNB construction / permit points."""
     parks: bool = False
-    """UM Warszawa parks / squares (PLACE_SKWERY)."""
+    """UM PLACE_SKWERY + OSM green polygons."""
     city_poi_types: tuple[str, ...] = ()
     """Selected city / sports / civic object_type keys for map markers."""
     city_boundary: bool = False
