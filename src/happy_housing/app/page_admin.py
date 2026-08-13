@@ -184,9 +184,8 @@ def _render_ops_services(config: object) -> None:
             st.metric(
                 check.label,
                 "up" if check.ok else "down",
-                delta=check.detail[:48],
-                delta_color="off",
             )
+            st.caption(check.detail)
             if check.latency_ms is not None:
                 st.caption(f"{check.latency_ms:.0f} ms")
 

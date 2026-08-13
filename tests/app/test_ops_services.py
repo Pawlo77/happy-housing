@@ -91,3 +91,42 @@ def test_check_docker_engine_missing_binary() -> None:
         result = check_docker_engine()
     assert result.ok is False
     assert "not found" in result.detail.lower() or "missing" in result.detail.lower()
+
+
+def test_check_docker_engine_empty_stderr_falls_back_to_version() -> None:
+    """Regression: empty stderr must not collapse to bare ``error``."""
+    failed = MagicMock(returncode=1, stdout="", stderr="")
+    ok_version = MagicMock(returncode=0, stdout="29.6.2\n", stderr="")
+
+    def _run(argv: list[str], **_kwargs: object) -> MagicMock:
+        joined = " ".join(argv)
+        if "version" in joined:
+            return ok_version
+        return failed
+
+    with (
+        patch(
+            "happy_housing.app.ops_services.shutil.which",
+            return_value="/bin/docker",
+        ),
+        patch("happy_housing.app.ops_services.subprocess.run", side_effect=_run),
+    ):
+        result = check_docker_engine()
+    assert result.ok is True
+    assert "29.6.2" in result.detail
+
+
+def test_check_docker_engine_all_probes_fail_message() -> None:
+    failed = MagicMock(returncode=1, stdout="", stderr="")
+    with (
+        patch(
+            "happy_housing.app.ops_services.shutil.which",
+            return_value="/bin/docker",
+        ),
+        patch("happy_housing.app.ops_services.subprocess.run", return_value=failed),
+    ):
+        result = check_docker_engine()
+    assert result.ok is False
+    assert result.detail.strip().lower() != "error"
+    assert "rc=" in result.detail
+    assert "Docker Desktop" in result.detail or "docker context" in result.detail

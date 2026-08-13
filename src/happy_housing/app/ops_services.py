@@ -34,7 +34,7 @@ class ServiceCheck:
 
 
 def check_docker_engine() -> ServiceCheck:
-    """Probe local Docker CLI (``docker info``)."""
+    """Probe local Docker CLI (info → version → ps fallbacks)."""
     if shutil.which("docker") is None:
         return ServiceCheck(
             key="docker",
@@ -44,41 +44,66 @@ def check_docker_engine() -> ServiceCheck:
             latency_ms=None,
             required_for=("pipeline", "osrm", "otp"),
         )
+    probes: tuple[tuple[str, ...], ...] = (
+        ("docker", "info", "--format", "{{.ServerVersion}}"),
+        ("docker", "version", "--format", "{{.Server.Version}}"),
+        ("docker", "ps", "-q"),
+    )
     t0 = time.perf_counter()
+    last_detail = "docker probe failed"
     try:
-        completed = subprocess.run(  # nosec B603 B607 — fixed argv, no shell
-            ["docker", "info", "--format", "{{.ServerVersion}}"],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=5.0,
-        )
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        return ServiceCheck(
-            key="docker",
-            label="Docker engine",
-            ok=False,
-            detail=f"docker info failed: {exc}",
-            latency_ms=None,
-            required_for=("pipeline", "osrm", "otp"),
-        )
+        for argv in probes:
+            try:
+                completed = subprocess.run(  # nosec B603 B607 — fixed argv, no shell
+                    list(argv),
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=8.0,
+                )
+            except subprocess.TimeoutExpired:
+                last_detail = (
+                    "docker probe timed out (8s) — is Docker Desktop starting?"
+                )
+                continue
+            except OSError as exc:
+                last_detail = f"docker spawn failed: {exc}"
+                continue
+            out = (completed.stdout or "").strip()
+            err = (completed.stderr or "").strip()
+            if completed.returncode == 0:
+                # ``ps -q`` may be empty when no containers; still means daemon up.
+                if argv[1] == "ps":
+                    label = "ps ok"
+                    detail = label
+                else:
+                    label = out.splitlines()[0] if out else "ok"
+                    detail = f"server {label}"
+                ms = (time.perf_counter() - t0) * 1000.0
+                return ServiceCheck(
+                    key="docker",
+                    label="Docker engine",
+                    ok=True,
+                    detail=detail,
+                    latency_ms=ms,
+                    required_for=("pipeline", "osrm", "otp"),
+                )
+            snippet = (err or out).strip()
+            if snippet:
+                last_detail = snippet[:160]
+            else:
+                last_detail = (
+                    f"docker {' '.join(argv[1:])} exit rc={completed.returncode} "
+                    "(no output) — start Docker Desktop / check `docker context`"
+                )
+    except Exception as exc:
+        last_detail = f"docker probe error: {exc}"
     ms = (time.perf_counter() - t0) * 1000.0
-    if completed.returncode != 0:
-        err = (completed.stderr or completed.stdout or "error").strip()[:160]
-        return ServiceCheck(
-            key="docker",
-            label="Docker engine",
-            ok=False,
-            detail=err or "docker info non-zero exit",
-            latency_ms=ms,
-            required_for=("pipeline", "osrm", "otp"),
-        )
-    version = (completed.stdout or "").strip() or "ok"
     return ServiceCheck(
         key="docker",
         label="Docker engine",
-        ok=True,
-        detail=f"server {version}",
+        ok=False,
+        detail=last_detail[:200],
         latency_ms=ms,
         required_for=("pipeline", "osrm", "otp"),
     )
