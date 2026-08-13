@@ -73,8 +73,9 @@ Tunables: Admin → Stats (including SHAP sample size).
 
 ### Admin
 
-Left section list (Overview · Commute · Run · Sources · …) — one short panel at
-a time for scrape, retrain, AI, and memory. No raw JSON dump.
+Top **pills** navigate short panels (Ops · Commute · Sources · Explore · Price
+model · Recommendations · Offer AI · …) — scrape / recompute, freshness, AI
+tunables, and memory. No raw JSON dump.
 
 ![Admin — Overview](docs/screenshots/09-admin.png)
 
@@ -95,7 +96,8 @@ uv run python scripts/capture_readme_screenshots.py
 | Spatial livability layers | Noise (emergency services, airport OOU), air quality, construction, planned transit |
 | Commute & transit context | Access to the city core and ZTM frequency, not just “distance to stop” |
 | Fair-price model | Estimated zł/m² from location and property features (LightGBM + SHAP) |
-| Preference recommender | Learn from starred offers; retrain from Admin |
+| Preference recommender | Rule blend on Δ / commute / prefs; demote seen offers; retrain from Admin |
+| Offer AI / Chat / extract | Local LM Studio reviews, tool-calling assistant, description attr fill |
 | Time-aware map overlays | Transit at a chosen hour, traffic proxy, amenity layers |
 
 ## Motivation
@@ -109,10 +111,13 @@ Warsaw’s housing market moves fast, and public portals show asking prices with
 1. **Ingest** — Listings and official transaction / transit / environmental feeds into local files.
 2. **Enrich** — Vectorized GIS features (distances, zone flags, air stations, permits, routing) on every property.
 3. **Store** — Columnar GeoParquet + in-process DuckDB (no external database server).
-4. **Model** — Tabular regressor on zł/m²; explain predictions with SHAP; optional preference recommender.
+4. **Model** — Tabular regressor on zł/m²; explain predictions with SHAP; separate rule recommender + local LMS agents.
 5. **Present** — Streamlit: Home pulse, Explore map/offer/board, Stats oddities, Admin controls.
 
 Principles: **free/open sources only**, **spatial vectorization**, **local compute** for cost and privacy.
+
+Deep technical write-ups (HPO space, prompts, app surfaces, speed):
+[docs/modeling/](docs/modeling/README.md).
 
 Roadmap and technical phases: [docs/plan.md](docs/plan.md).
 
@@ -125,7 +130,7 @@ Working local app: ingest → GIS enrich → LightGBM score → Streamlit GUI (H
 ```bash
 make install
 make check
-make pipeline   # or Admin → Pipeline / Otodom scrape
+make pipeline   # or Admin → Ops (scrape / pipeline)
 make app        # http://127.0.0.1:8501 — theme/server in `.streamlit/config.toml`
 ```
 
@@ -152,6 +157,7 @@ config = load_experiment_config(Path("configs/experiment.yaml"))
 | `.streamlit/config.toml` | Streamlit theme + local server (`runOnSave`, port, …) |
 | `data/fixtures/` | Small committed samples (raw dumps stay local / gitignored) |
 | `docs/plan.md` | Phased plan |
+| `docs/modeling/` | Fair-price, recommender, LMS agents, photo CV (technical) |
 | `docs/screenshots/` | README UI captures |
 | `scripts/capture_readme_screenshots.py` | Refresh screenshots (app running) |
 | `tests/` | Pytest |
