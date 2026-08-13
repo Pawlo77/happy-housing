@@ -16,7 +16,9 @@ from happy_housing.ingest.proxy_pool import (
 
 
 @pytest.fixture(autouse=True)
-def _reset_proxy_state() -> None:
+def _reset_proxy_state(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Avoid real CONNECT probes against fake 10.x hosts in unit tests.
+    monkeypatch.setattr(proxy_pool, "probe_https_proxy", lambda *_a, **_k: True)
     reset_http_proxies_for_tests()
     yield
     reset_http_proxies_for_tests()
@@ -28,7 +30,7 @@ def test_pool_rotate_marks_bad_and_binds_next() -> None:
     def _fetcher() -> list[str]:
         return list(fetched)
 
-    pool = FreeProxyPool(fetchers=[_fetcher])
+    pool = FreeProxyPool(fetchers=[_fetcher], probe=False)
     first = pool.ensure()
     assert first == "http://1.1.1.1:8080"
     session = requests.Session()
@@ -188,11 +190,51 @@ def test_pool_refills_when_queue_exhausted() -> None:
         state["i"] = min(i + 1, len(batches) - 1)
         return list(batches[i])
 
-    pool = FreeProxyPool(fetchers=[_fetcher])
+    pool = FreeProxyPool(fetchers=[_fetcher], probe=False)
     assert pool.ensure() == "http://1.1.1.1:1"
     assert pool.rotate(reason="bad") == "http://1.1.1.2:1"
     # Queue empty → refill pulls next batch.
     assert pool.rotate(reason="bad") == "http://2.2.2.1:1"
+
+
+def test_pool_skips_proxies_that_fail_connect_probe() -> None:
+    fetched = ["http://dead.proxy:1", "http://live.proxy:2"]
+
+    def _probe(url: str) -> bool:
+        return url.endswith(":2")
+
+    pool = FreeProxyPool(
+        fetchers=[lambda: list(fetched)],
+        probe=True,
+        probe_fn=_probe,
+    )
+    assert pool.ensure() == "http://live.proxy:2"
+    assert "http://dead.proxy:1" in pool.bad_proxies
+
+
+def test_fetch_proxifly_and_hproxy_parse_lists(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bodies = {
+        "proxifly": "1.2.3.4:8080\n5.6.7.8:3128\n",
+        "hproxy": "9.9.9.9:80\n8.8.8.8:8080\n",
+    }
+
+    def _fake_get(url: str, timeout: object = None, **_kwargs: object) -> MagicMock:
+        _ = timeout
+        response = MagicMock()
+        response.raise_for_status.return_value = None
+        if "proxifly" in url:
+            response.text = bodies["proxifly"]
+        else:
+            response.text = bodies["hproxy"]
+        return response
+
+    monkeypatch.setattr(proxy_pool.requests, "get", _fake_get)
+    proxifly = proxy_pool.fetch_proxifly_proxies(limit=10)
+    hproxy = proxy_pool.fetch_hproxy_proxies(limit=10)
+    assert proxifly == ["http://1.2.3.4:8080", "http://5.6.7.8:3128"]
+    assert hproxy == ["http://9.9.9.9:80", "http://8.8.8.8:8080"]
 
 
 def test_otodom_http_get_rotates_on_403(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -1069,10 +1069,10 @@ def _panel_sources(settings: AppSettings, settings_file: Path, proc: Path) -> No
         "Rotate free HTTP proxies on 403/429",
         value=bool(settings.http_free_proxies_enabled),
         help=(
-            "On Otodom 403/429, switch to free proxies (free-proxy / ProxyScrape). "
-            "Dead proxies rotate quickly without burning the detail retry budget "
-            "(up to ~40+ hops) so listings are not skipped just because the pool "
-            "is mostly junk. Keep on if direct IP is blocked."
+            "On Otodom 403/429, switch to free proxies (free-proxy / ProxyScrape / "
+            "Proxifly / HProxy). Candidates get a short HTTPS CONNECT probe; dead "
+            "tunnels rotate without burning the detail retry budget. Keep on if "
+            "direct IP is blocked."
         ),
         key="pipe_http_free_proxies",
     )
