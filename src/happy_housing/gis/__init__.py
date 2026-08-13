@@ -48,6 +48,13 @@ DEFAULT_OSM_FITNESS_TAGS: dict[str, bool | str | list[str]] = {
 }
 """Commercial indoor gyms / clubs (``leisure=fitness_centre``, ``amenity=gym``)."""
 
+DEFAULT_OSM_GREEN_TAGS: dict[str, bool | str | list[str]] = {
+    "leisure": ["park", "garden", "nature_reserve"],
+    "landuse": ["forest", "recreation_ground"],
+    "natural": "wood",
+}
+"""Public green polygons beyond UM PLACE_SKWERY (parks, woods, forests)."""
+
 CITY_POIS_SCHEMA_VERSION: int = 2
 """Bump when combined city-POI merge (sports + civic + OSM fitness) changes."""
 
@@ -504,6 +511,71 @@ def fetch_osm_fitness_pois(
         _write_osm_cache_meta(cache_path, tag_filter, row_count=len(pois))
         logger.info("Cached %s OSM fitness POIs → %s", len(pois), cache_path)
     return pois
+
+
+def fetch_osm_green_areas(
+    bbox: tuple[float, float, float, float],
+    cache_dir: Path,
+    tags: dict[str, bool | str | list[str]] | None = None,
+    *,
+    force_refresh: bool = False,
+) -> gpd.GeoDataFrame:
+    """Download OSM green polygons (parks, woods, forests); keep area geometry.
+
+    Complements UM ``PLACE_SKWERY``, which covers official parks/squares only
+    and omits large forests and many community greens.
+    """
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_path = cache_dir / "osm_green_areas.geojson"
+    tag_filter: dict[str, bool | str | list[str]] = dict(
+        tags if tags is not None else DEFAULT_OSM_GREEN_TAGS
+    )
+    if not force_refresh and _osm_cache_is_current(cache_path, tag_filter):
+        return gpd.read_file(cache_path)
+
+    west, south, east, north = bbox
+    frame = gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
+    try:
+        import osmnx as ox
+
+        ox.settings.use_cache = True
+        ox.settings.cache_folder = str(cache_dir / "osmnx")
+        ox.settings.timeout = _OSM_OVERPASS_TIMEOUT_S
+        features = ox.features_from_bbox(
+            bbox=(west, south, east, north),
+            tags=tag_filter,
+        )
+        if not features.empty:
+            frame = features.reset_index(drop=False)
+            if frame.crs is None:
+                frame = frame.set_crs("EPSG:4326")
+            elif str(frame.crs) != "EPSG:4326":
+                frame = frame.to_crs("EPSG:4326")
+            # Polygons only — points/lines are not useful park areas.
+            frame = frame[frame.geometry.geom_type.isin(["Polygon", "MultiPolygon"])]
+            keep = [
+                c
+                for c in (
+                    "name",
+                    "leisure",
+                    "landuse",
+                    "natural",
+                    "geometry",
+                )
+                if c in frame.columns
+            ]
+            frame = gpd.GeoDataFrame(frame[keep], geometry="geometry", crs="EPSG:4326")
+            if "name" not in frame.columns:
+                frame["name"] = None
+            frame = frame[frame.geometry.notna() & ~frame.geometry.is_empty]
+    except Exception as exc:
+        logger.warning("OSMnx green-area fetch failed: %s", exc)
+
+    if not frame.empty:
+        frame.to_file(cache_path, driver="GeoJSON")
+        _write_osm_cache_meta(cache_path, tag_filter, row_count=len(frame))
+        logger.info("Cached %s OSM green areas → %s", len(frame), cache_path)
+    return frame
 
 
 def _points_for_nearest(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:

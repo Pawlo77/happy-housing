@@ -1,12 +1,15 @@
 """UM Warszawa map portal WFS + MapViewer client (mapa.um.warszawa.pl).
 
-Parks & squares live in ``PLACE_SKWERY``; education POIs / catchments come from
-WFS layers matching school / oświata keywords (see ``SCHOOL_TYPE_NAME_CANDIDATES``).
-Sports objects (gyms, pools, …) come from Oracle MapViewer dataserver used by
-``/obiekty-sportowe/``. Commercial indoor gyms (Zdrofit, …) are merged from
-OSM ``leisure=fitness_centre`` / ``amenity=gym``. Other civic POIs (libraries,
-pharmacies, …) are WFS typeNames. Strategic noise maps are WMS-only — aircraft
-Lden still comes from EEA END fixtures elsewhere.
+Parks & squares start from ``PLACE_SKWERY`` and are merged with OSM green
+polygons (forests, woods, leisure parks) so ``dist_park_m`` is not limited to
+official skwers. Education POIs come from WFS layers matching school /
+oświata keywords (catchment ``OBWODY_*`` layers are skipped — see
+``SCHOOL_TYPE_NAME_CANDIDATES``). Sports objects (gyms, pools, …) come from
+Oracle MapViewer dataserver used by ``/obiekty-sportowe/``. Commercial indoor
+gyms (Zdrofit, …) are merged from OSM ``leisure=fitness_centre`` /
+``amenity=gym``. Other civic POIs (libraries, pharmacies, …) are WFS
+typeNames. Strategic noise maps are WMS-only — aircraft Lden still comes from
+EEA END fixtures elsewhere.
 """
 
 from __future__ import annotations
@@ -16,6 +19,7 @@ import json
 import logging
 import re
 from pathlib import Path
+from typing import Any
 
 import geopandas as gpd
 import pandas as pd
@@ -24,6 +28,7 @@ from shapely.geometry import shape
 from happy_housing.gis import (
     CITY_POIS_SCHEMA_VERSION,
     fetch_osm_fitness_pois,
+    fetch_osm_green_areas,
 )
 from happy_housing.gis.amenity_catalog import sport_key_for_osrid
 from happy_housing.ingest.http_client import resilient_requests_get
@@ -44,8 +49,13 @@ WARSAW_WFS_URL: str = "https://wfs.um.warszawa.pl/serwis"
 PLACE_SKWERY_TYPE: str = "ns92528565:PLACE_SKWERY"
 """Official parks / squares / skwers layer (PLACE_SKWERY)."""
 
+PARKS_CACHE_SCHEMA: int = 2
+"""Bump when park merge (UM + OSM green) or cache columns change."""
+
+WFS_MAX_FEATURES: int = 10_000
+"""GetFeature ``maxFeatures`` cap; MapGuide ``startIndex`` paging is unreliable."""
+
 SCHOOL_TYPE_NAME_CANDIDATES: tuple[str, ...] = (
-    "ns92528565:OBWODY_SZKOL_PODSTAWOWYCH",
     "ns92528565:SZKOLY",
     "ns92528565:OSWIATA",
     "ns92528565:PRZEDSZKOLA",
@@ -54,13 +64,16 @@ SCHOOL_TYPE_NAME_CANDIDATES: tuple[str, ...] = (
     "wfs:OSWIATA",
     "wfs:PRZEDSZKOLA",
 )
-"""Candidate education typeNames (live GetCapabilities + common UM guesses)."""
+"""Candidate education typeNames (POIs only — catchments deliberately omitted)."""
 
 _EDUCATION_NAME_RE: re.Pattern[str] = re.compile(
     r"SZKOL|OSWIAT|PRZEDSZKOL|PLACOWK.*OSW|EDUK",
     re.IGNORECASE,
 )
 """Substring filter for education-related WFS typeNames."""
+
+_CATCHMENT_NAME_RE: re.Pattern[str] = re.compile(r"OBWOD", re.IGNORECASE)
+"""School catchment polygons — not useful as school POI distances."""
 
 _DEFAULT_TIMEOUT_S: float = 180.0
 """WFS GetFeature timeout for city-wide layer download."""
@@ -173,10 +186,103 @@ def discover_education_type_names(
         logger.warning("WFS GetCapabilities failed: %s", exc)
         return ()
     names = re.findall(r"<wfs:Name>([^<]+)</wfs:Name>", text)
-    matched = tuple(n for n in names if _EDUCATION_NAME_RE.search(n))
+    matched = tuple(
+        n
+        for n in names
+        if _EDUCATION_NAME_RE.search(n) and not _CATCHMENT_NAME_RE.search(n)
+    )
     if matched:
         logger.info("Discovered education WFS typeNames: %s", matched)
     return matched
+
+
+def wfs_page_looks_truncated(
+    feature_count: int,
+    *,
+    max_features: int = WFS_MAX_FEATURES,
+) -> bool:
+    """True when a GetFeature page hit the configured ``maxFeatures`` ceiling."""
+    return int(feature_count) >= int(max_features)
+
+
+def _parks_meta_path(cache_path: Path) -> Path:
+    """Sidecar JSON next to ``warsaw_parks.geojson``."""
+    return cache_path.with_name(cache_path.stem + ".meta.json")
+
+
+def _parks_cache_is_current(cache_path: Path) -> bool:
+    """True when parks GeoJSON exists and schema matches ``PARKS_CACHE_SCHEMA``."""
+    if not cache_path.exists():
+        return False
+    meta_path = _parks_meta_path(cache_path)
+    if not meta_path.exists():
+        return False
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return int(meta.get("schema_version", -1)) == PARKS_CACHE_SCHEMA
+
+
+def _write_parks_cache_meta(
+    cache_path: Path,
+    *,
+    n_um: int,
+    n_osm: int,
+    n_total: int,
+) -> None:
+    """Persist parks merge fingerprint next to the GeoJSON cache."""
+    payload: dict[str, Any] = {
+        "schema_version": PARKS_CACHE_SCHEMA,
+        "n_um": int(n_um),
+        "n_osm": int(n_osm),
+        "n_total": int(n_total),
+        "sources": ["um_place_skwery", "osm"],
+    }
+    _parks_meta_path(cache_path).write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def merge_park_frames(
+    um: gpd.GeoDataFrame,
+    osm: gpd.GeoDataFrame,
+) -> gpd.GeoDataFrame:
+    """Concatenate UM PLACE_SKWERY and OSM green polygons with ``park_source``."""
+    parts: list[gpd.GeoDataFrame] = []
+    if not um.empty:
+        u = um.copy()
+        if u.crs is None:
+            u = u.set_crs("EPSG:4326")
+        elif str(u.crs) != "EPSG:4326":
+            u = u.to_crs("EPSG:4326")
+        if "name" not in u.columns:
+            u["name"] = "park"
+        u["park_source"] = "um_place_skwery"
+        parts.append(u[["name", "park_source", "geometry"]])
+    if not osm.empty:
+        o = osm.copy()
+        if o.crs is None:
+            o = o.set_crs("EPSG:4326")
+        elif str(o.crs) != "EPSG:4326":
+            o = o.to_crs("EPSG:4326")
+        if "name" not in o.columns:
+            o["name"] = None
+        names = o["name"].astype(object)
+        blank = names.isna() | names.astype(str).str.strip().isin({"", "nan", "None"})
+        o = o.copy()
+        o.loc[blank, "name"] = "OSM green"
+        o["park_source"] = "osm"
+        parts.append(o[["name", "park_source", "geometry"]])
+    if not parts:
+        return gpd.GeoDataFrame(
+            columns=["name", "park_source", "geometry"],
+            geometry=[],
+            crs="EPSG:4326",
+        )
+    out = gpd.GeoDataFrame(pd.concat(parts, ignore_index=True), crs="EPSG:4326")
+    return out[out.geometry.notna() & ~out.geometry.is_empty].reset_index(drop=True)
 
 
 def fetch_warsaw_wfs_layer(
@@ -219,7 +325,7 @@ def fetch_warsaw_wfs_layer(
                 "version": "1.1.0",
                 "request": "GetFeature",
                 "typeName": type_name,
-                "maxFeatures": "10000",
+                "maxFeatures": str(WFS_MAX_FEATURES),
             },
             timeout=timeout_s,
             retries=4,
@@ -239,6 +345,15 @@ def fetch_warsaw_wfs_layer(
         frame = _ensure_name_column(frame, default_name)
         frame = frame[frame.geometry.notna() & ~frame.geometry.is_empty]
         logger.info("Fetched %s features from WFS typeName=%s", len(frame), type_name)
+        if wfs_page_looks_truncated(len(frame)):
+            logger.warning(
+                "WFS typeName=%s returned %s features (== maxFeatures=%s). "
+                "Layer may be truncated; UM startIndex paging is unreliable — "
+                "use bbox tiling or a complementary source.",
+                type_name,
+                len(frame),
+                WFS_MAX_FEATURES,
+            )
     except Exception as exc:
         logger.warning("Warsaw WFS typeName=%s failed: %s", type_name, exc)
 
@@ -260,31 +375,74 @@ def fetch_warsaw_parks(
     wfs_url: str = WARSAW_WFS_URL,
     type_name: str = PLACE_SKWERY_TYPE,
     timeout_s: float = _DEFAULT_TIMEOUT_S,
+    bbox: tuple[float, float, float, float] | None = None,
 ) -> gpd.GeoDataFrame:
-    """Download PLACE_SKWERY polygons via WFS; cache as GeoJSON in EPSG:4326.
+    """Download PLACE_SKWERY and merge OSM green polygons; cache as GeoJSON.
+
+    UM ``PLACE_SKWERY`` is official parks/squares only (~400 features city-wide).
+    When ``bbox`` is set, OSM parks/gardens/forests/woods in that box are merged
+    so forests such as Las Kabacki appear in ``dist_park_m`` and Explore maps.
 
     Args:
         cache_dir: Directory for ``warsaw_parks.geojson``.
-        fixture_path: Optional offline GeoJSON/JSON fallback.
+        fixture_path: Optional offline GeoJSON/JSON fallback for the UM layer.
         force_refresh: Ignore existing cache.
         wfs_url: WFS endpoint.
-        type_name: WFS typeName.
+        type_name: WFS typeName for official parks.
         timeout_s: HTTP timeout.
+        bbox: WGS84 ``(west, south, east, north)`` for the OSM green fetch;
+            ``None`` keeps UM-only (tests / offline).
 
     Returns:
-        Park polygons in EPSG:4326 with a ``name`` column when available.
+        Park polygons in EPSG:4326 with ``name`` and ``park_source``.
     """
     meta = WARSAW_LAYER_REGISTRY["parks"]
-    return fetch_warsaw_wfs_layer(
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_path = cache_dir / meta["cache_name"]
+    expect_merge = bbox is not None
+    if not force_refresh and expect_merge and _parks_cache_is_current(cache_path):
+        return gpd.read_file(cache_path)
+    if not force_refresh and not expect_merge and cache_path.exists():
+        return gpd.read_file(cache_path)
+
+    um = fetch_warsaw_wfs_layer(
         cache_dir,
         type_name=type_name,
-        cache_name=meta["cache_name"],
+        cache_name="_warsaw_parks_um_only.geojson",
         fixture_path=fixture_path,
-        force_refresh=force_refresh,
+        force_refresh=True,
         wfs_url=wfs_url,
         timeout_s=timeout_s,
         default_name="park",
     )
+    osm = gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
+    if bbox is not None:
+        osm = fetch_osm_green_areas(
+            bbox,
+            cache_dir,
+            force_refresh=force_refresh,
+        )
+    merged = merge_park_frames(um, osm)
+    if merged.empty and fixture_path is not None and fixture_path.exists():
+        logger.warning("Using parks fixture %s", fixture_path)
+        merged = _load_fixture_geojson(fixture_path, default_name="park")
+        merged["park_source"] = "fixture"
+    if not merged.empty:
+        merged.to_file(cache_path, driver="GeoJSON")
+        _write_parks_cache_meta(
+            cache_path,
+            n_um=len(um),
+            n_osm=len(osm),
+            n_total=len(merged),
+        )
+        logger.info(
+            "Cached %s parks (UM=%s OSM=%s) → %s",
+            len(merged),
+            len(um),
+            len(osm),
+            cache_path,
+        )
+    return merged
 
 
 def fetch_warsaw_schools(

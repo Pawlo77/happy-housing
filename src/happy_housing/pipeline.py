@@ -452,6 +452,7 @@ def run_pipeline(
             cache,
             fixture_path=fixtures / "parks.geojson",
             force_refresh=force_gis_refresh,
+            bbox=config.bbox.as_tuple(),
         )
         fut_schools = pool.submit(
             fetch_warsaw_schools,

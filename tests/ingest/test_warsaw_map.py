@@ -5,8 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from happy_housing.ingest.warsaw_map import (
     WARSAW_WFS_URL,
+    discover_education_type_names,
     fetch_warsaw_parks,
     fetch_warsaw_schools,
     fetch_warsaw_wfs_layer,
@@ -157,3 +160,19 @@ def test_fetch_warsaw_schools_tries_candidate_type_names(tmp_path: Path) -> None
     assert get.call_count == 2
     assert len(schools) == 1
     assert (tmp_path / "warsaw_schools.geojson").exists()
+
+
+def test_discover_education_skips_catchments(monkeypatch: pytest.MonkeyPatch) -> None:
+    """OBWODY catchment typeNames must not be treated as school POIs."""
+    caps = MagicMock()
+    caps.text = """
+    <wfs:Name>ns92528565:OBWODY_SZKOL_PODSTAWOWYCH</wfs:Name>
+    <wfs:Name>ns92528565:SZKOLY</wfs:Name>
+    """
+    monkeypatch.setattr(
+        "happy_housing.ingest.warsaw_map.resilient_requests_get",
+        lambda *a, **k: caps,
+    )
+    names = discover_education_type_names()
+    assert "ns92528565:SZKOLY" in names
+    assert all("OBWOD" not in n.upper() for n in names)
