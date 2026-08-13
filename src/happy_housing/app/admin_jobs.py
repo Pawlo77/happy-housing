@@ -15,6 +15,7 @@ from typing import Any, Literal
 logger = logging.getLogger(__name__)
 
 JobStatus = Literal["running", "succeeded", "failed", "killed"]
+"""Lifecycle values persisted in Admin job JSON."""
 
 _LEVEL_RE = re.compile(
     r"\b(DEBUG|INFO|WARNING|WARN|ERROR|CRITICAL)\b",
@@ -209,7 +210,6 @@ def refresh_admin_job(processed_dir: Path, job_id: str) -> AdminJobState:
 
 
 def start_admin_job(
-    *,
     name: str,
     command: list[str],
     processed_dir: Path,

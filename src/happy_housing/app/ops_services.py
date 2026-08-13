@@ -154,7 +154,6 @@ def check_otp(base_url: str) -> ServiceCheck:
 
 
 def check_pipeline_services(
-    *,
     osrm_url: str,
     otp_url: str,
 ) -> list[ServiceCheck]:
