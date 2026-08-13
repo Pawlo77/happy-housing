@@ -14,6 +14,7 @@ Home cards: [`DEFAULT_SOURCE_CATALOG`](../../src/happy_housing/app/metadata.py).
 | Doc | Key | Publisher | Completeness |
 |-----|-----|-----------|--------------|
 | [Otodom](otodom.md) | `otodom` | otodom.pl | Intentional subset (sale flats); incremental |
+| [OLX](olx.md) | `olx` | olx.pl public API | Intentional subset (sale; rent optional); district-tiled |
 | [RCN](rcn.md) | `rcn` | UM Warszawa | Intentional subset (geolocated deeds) |
 | [OpenStreetMap](osm.md) | `osm` | OSM / Overpass | Intentional bbox subset |
 | [Parks & green](warsaw-parks.md) | `warsaw_parks` | UM WFS + OSM | **Fixed** — UM skwers + OSM green |
