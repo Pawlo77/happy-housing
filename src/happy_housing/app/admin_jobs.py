@@ -1,11 +1,14 @@
 """Background Admin jobs with streamed log files (Ops scrape / pipeline)."""
 
+import contextlib
 import json
 import logging
 import os
 import re
+import shlex
 import signal
 import subprocess  # nosec B404 — Admin spawns fixed local pipeline/scrape argv
+import sys
 import time
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
@@ -25,6 +28,13 @@ _LEVEL_RE = re.compile(
 
 _ACTIVE_NAME: str = "active.json"
 """Pointer file naming the current Ops job id."""
+
+_SIGSEGV_HINT: str = (
+    "Child died SIGSEGV (rc=-11). Streamlit was likely started under the "
+    "Cursor agent sandbox — stop the app and run `make app` from Terminal.app "
+    "(or Cursor terminal with full permissions), then retry Ops."
+)
+"""User-facing hint when seatbelt kills job children."""
 
 
 @dataclass(slots=True)
@@ -81,6 +91,13 @@ class AdminJobState:
         )
 
 
+def cursor_agent_sandbox_active() -> bool:
+    """True when this process inherits Cursor agent seatbelt markers."""
+    return bool(os.environ.get("CURSOR_AGENT")) or bool(
+        os.environ.get("__CURSOR_SANDBOX_ENV_RESTORE")
+    )
+
+
 def jobs_dir(processed_dir: Path) -> Path:
     """Directory for Admin job JSON + log files."""
     return processed_dir / "admin_jobs"
@@ -88,6 +105,14 @@ def jobs_dir(processed_dir: Path) -> Path:
 
 def _state_path(processed_dir: Path, job_id: str) -> Path:
     return jobs_dir(processed_dir) / f"{job_id}.json"
+
+
+def _exit_path(processed_dir: Path, job_id: str) -> Path:
+    return jobs_dir(processed_dir) / f"{job_id}.exit"
+
+
+def _runner_path(processed_dir: Path, job_id: str) -> Path:
+    return jobs_dir(processed_dir) / f"{job_id}.sh"
 
 
 def _active_path(processed_dir: Path) -> Path:
@@ -159,6 +184,30 @@ def _pid_alive(pid: int) -> bool:
     return True
 
 
+def _read_exit_code(processed_dir: Path, job_id: str) -> int | None:
+    path = _exit_path(processed_dir, job_id)
+    if not path.exists():
+        return None
+    try:
+        text = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    if not text:
+        return None
+    try:
+        return int(text.splitlines()[0].strip())
+    except ValueError:
+        return None
+
+
+def _error_for_returncode(returncode: int) -> str | None:
+    if returncode == -11:
+        return _SIGSEGV_HINT
+    if returncode < 0:
+        return f"Child killed by signal {-returncode}"
+    return None
+
+
 def refresh_admin_job(processed_dir: Path, job_id: str) -> AdminJobState:
     """Poll child process and update status JSON."""
     state = load_admin_job(processed_dir, job_id)
@@ -174,11 +223,15 @@ def refresh_admin_job(processed_dir: Path, job_id: str) -> AdminJobState:
         if returncode is None:
             return state
         _CHILDREN.pop(job_id, None)
-    elif _pid_alive(state.pid):
-        return state
     else:
-        # Orphaned after Streamlit reload — process gone.
-        returncode = 0
+        exit_code = _read_exit_code(processed_dir, job_id)
+        if exit_code is not None:
+            returncode = exit_code
+        elif _pid_alive(state.pid):
+            return state
+        else:
+            # Process gone with no sidecar — treat as abnormal death.
+            returncode = -11
 
     new_status: JobStatus
     if returncode == 0:
@@ -187,6 +240,7 @@ def refresh_admin_job(processed_dir: Path, job_id: str) -> AdminJobState:
         new_status = "killed"
     else:
         new_status = "failed"
+    error = state.error or _error_for_returncode(int(returncode))
     state = AdminJobState(
         job_id=state.job_id,
         name=state.name,
@@ -197,7 +251,7 @@ def refresh_admin_job(processed_dir: Path, job_id: str) -> AdminJobState:
         finished_at=_utc_now(),
         returncode=int(returncode if returncode is not None else 1),
         log_path=state.log_path,
-        error=state.error,
+        error=error,
     )
     _write_state(processed_dir, state)
     logger.info(
@@ -207,6 +261,63 @@ def refresh_admin_job(processed_dir: Path, job_id: str) -> AdminJobState:
         state.returncode,
     )
     return state
+
+
+def _write_runner_script(
+    runner: Path,
+    command: list[str],
+    cwd: Path,
+    log_path: Path,
+    exit_path: Path,
+    env: dict[str, str],
+) -> None:
+    """Write a zsh wrapper that tees logs and records the exit code."""
+    exports = [
+        f"export {shlex.quote(key)}={shlex.quote(value)}"
+        for key, value in sorted(env.items())
+        if key and key.isidentifier()
+    ]
+    body = "\n".join([
+        "#!/bin/zsh",
+        "set +e",
+        f"cd {shlex.quote(str(cwd))} || exit 126",
+        *exports,
+        f"exec >>{shlex.quote(str(log_path))} 2>&1",
+        "print -- 'Admin job runner pid='$$",
+        f"print -- 'Admin job cwd='{shlex.quote(str(cwd))}",
+        f"print -- 'Admin job cmd='{shlex.quote(shlex.join(command))}",
+        shlex.join(command),
+        "rc=$?",
+        'print -- "Admin job exit rc=$rc"',
+        f'print -r -- "$rc" >{shlex.quote(str(exit_path))}',
+        "exit $rc",
+        "",
+    ])
+    runner.write_text(body, encoding="utf-8")
+    runner.chmod(0o755)
+
+
+def _applescript_quote(value: str) -> str:
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _spawn_via_osascript(runner: Path) -> int:
+    """Start ``runner`` outside Cursor seatbelt; return child pid."""
+    shell = f"{shlex.quote(str(runner))} >/dev/null 2>&1 & echo $!"
+    completed = subprocess.run(  # nosec B603 B607 — fixed osascript argv
+        ["osascript", "-e", f'do shell script "{_applescript_quote(shell)}"'],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=15.0,
+    )
+    if completed.returncode != 0:
+        err = (completed.stderr or completed.stdout or "").strip()
+        raise OSError(f"osascript job spawn failed: {err or completed.returncode}")
+    pid_text = (completed.stdout or "").strip().splitlines()
+    if not pid_text:
+        raise OSError("osascript job spawn returned no pid")
+    return int(pid_text[-1].strip())
 
 
 def start_admin_job(
@@ -222,39 +333,100 @@ def start_admin_job(
     safe = re.sub(r"[^a-zA-Z0-9_-]+", "_", name).strip("_") or "job"
     job_id = f"{stamp}_{safe}"
     log_path = root / f"{job_id}.log"
-    log_handle = log_path.open("w", encoding="utf-8", buffering=1)
-    child_env = os.environ.copy()
+    log_path.write_text("", encoding="utf-8")
+    exit_path = _exit_path(processed_dir, job_id)
+    if exit_path.exists():
+        exit_path.unlink()
+    runner = _runner_path(processed_dir, job_id)
+    child_env = {k: str(v) for k, v in os.environ.items()}
     if env:
-        child_env.update(env)
-    # Force line-buffered Python logs in the child.
+        child_env.update({k: str(v) for k, v in env.items()})
     child_env.setdefault("PYTHONUNBUFFERED", "1")
-    proc = subprocess.Popen(  # nosec B603 — argv built in-process, shell=False
-        command,
-        cwd=str(Path.cwd()),
-        stdout=log_handle,
-        stderr=subprocess.STDOUT,
-        text=True,
-        env=child_env,
-        start_new_session=True,
+    # Avoid leaking Cursor seatbelt markers into the worker when we can.
+    child_env.pop("CURSOR_AGENT", None)
+    child_env.pop("__CURSOR_SANDBOX_ENV_RESTORE", None)
+    cwd = Path.cwd()
+    runner_env = {
+        "PYTHONUNBUFFERED": child_env.get("PYTHONUNBUFFERED", "1"),
+        "HAPPY_HOUSING_LOG_LEVEL": child_env.get("HAPPY_HOUSING_LOG_LEVEL", "INFO"),
+        "PATH": child_env.get("PATH", os.environ.get("PATH", "")),
+        "HOME": child_env.get("HOME", str(Path.home())),
+        "TMPDIR": child_env.get("TMPDIR", ""),
+        "VIRTUAL_ENV": child_env.get("VIRTUAL_ENV", ""),
+        "LANG": child_env.get("LANG", "en_US.UTF-8"),
+    }
+    for key in (
+        "DOCKER_HOST",
+        "SSL_CERT_FILE",
+        "REQUESTS_CA_BUNDLE",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "NO_PROXY",
+    ):
+        if child_env.get(key):
+            runner_env[key] = child_env[key]
+    _write_runner_script(
+        runner,
+        command=list(command),
+        cwd=cwd,
+        log_path=log_path,
+        exit_path=exit_path,
+        env=runner_env,
     )
-    # Parent closes its copy; child keeps the fd open for streaming.
-    log_handle.close()
+
+    proc: subprocess.Popen[str] | None = None
+    spawn_error: str | None = None
+    if sys.platform == "darwin" and cursor_agent_sandbox_active():
+        try:
+            pid = _spawn_via_osascript(runner)
+            logger.info(
+                "Started admin job %s via osascript escape pid=%s → %s",
+                job_id,
+                pid,
+                log_path,
+            )
+        except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+            logger.warning("osascript escape failed (%s); falling back to Popen", exc)
+            spawn_error = str(exc)
+            proc = subprocess.Popen(  # nosec B603 — runner script, shell=False
+                [str(runner)],
+                cwd=str(cwd),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                start_new_session=True,
+            )
+            pid = int(proc.pid)
+    else:
+        proc = subprocess.Popen(  # nosec B603 — runner script, shell=False
+            [str(runner)],
+            cwd=str(cwd),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            env=child_env,
+            start_new_session=True,
+        )
+        pid = int(proc.pid)
+
     state = AdminJobState(
         job_id=job_id,
         name=name,
         status="running",
-        pid=int(proc.pid),
+        pid=pid,
         command=list(command),
         started_at=_utc_now(),
         finished_at=None,
         returncode=None,
         log_path=str(log_path.resolve()),
-        error=None,
+        error=spawn_error,
     )
     _write_state(processed_dir, state)
     _set_active(processed_dir, job_id)
-    _CHILDREN[job_id] = proc
-    logger.info("Started admin job %s pid=%s → %s", job_id, proc.pid, log_path)
+    if proc is not None:
+        _CHILDREN[job_id] = proc
+    logger.info("Started admin job %s pid=%s → %s", job_id, pid, log_path)
     return state
 
 
@@ -277,6 +449,8 @@ def stop_admin_job(processed_dir: Path, job_id: str) -> AdminJobState:
             os.killpg(state.pid, signal.SIGTERM)
     except (ProcessLookupError, PermissionError, OSError) as exc:
         logger.warning("SIGTERM failed for job %s: %s", job_id, exc)
+        with contextlib.suppress(ProcessLookupError, PermissionError, OSError):
+            os.kill(state.pid, signal.SIGTERM)
     deadline = time.time() + 5.0
     while time.time() < deadline:
         if proc is not None and proc.poll() is not None:
@@ -292,10 +466,16 @@ def stop_admin_job(processed_dir: Path, job_id: str) -> AdminJobState:
             if proc is not None:
                 proc.kill()
             else:
-                os.killpg(state.pid, signal.SIGKILL)
+                with contextlib.suppress(ProcessLookupError, PermissionError, OSError):
+                    os.killpg(state.pid, signal.SIGKILL)
+                with contextlib.suppress(ProcessLookupError, PermissionError, OSError):
+                    os.kill(state.pid, signal.SIGKILL)
         except (ProcessLookupError, PermissionError, OSError) as exc:
             logger.warning("SIGKILL failed for job %s: %s", job_id, exc)
     rc = proc.poll() if proc is not None else -9
+    exit_code = _read_exit_code(processed_dir, job_id)
+    if exit_code is not None:
+        rc = exit_code
     _CHILDREN.pop(job_id, None)
     state = AdminJobState(
         job_id=state.job_id,

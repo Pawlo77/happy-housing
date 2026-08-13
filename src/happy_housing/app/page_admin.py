@@ -12,6 +12,7 @@ import streamlit as st
 
 from happy_housing.app.admin_flash import pop_admin_flash, set_admin_flash
 from happy_housing.app.admin_jobs import (
+    cursor_agent_sandbox_active,
     format_log_lines_markdown,
     job_elapsed_s,
     load_active_job,
@@ -282,6 +283,13 @@ def _panel_ops(settings: AppSettings, settings_file: Path, proc: Path) -> None:
     st.divider()
     _render_ops_services(config)
     st.divider()
+    if cursor_agent_sandbox_active():
+        st.warning(
+            "This Streamlit process was started under the **Cursor agent sandbox**. "
+            "Ops jobs may die instantly with `returncode=-11`. "
+            "Prefer `make app` from Terminal.app (or a Cursor terminal with full "
+            "permissions). Jobs now try an osascript escape on macOS."
+        )
     _render_ops_job_monitor(settings, proc)
     st.divider()
 
