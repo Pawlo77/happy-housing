@@ -205,6 +205,28 @@ def test_explore_datasets_needed_spatial_skips_zones_when_off() -> None:
     assert "city_boundary" not in needed
 
 
+def test_explore_datasets_needed_spatial_skips_map_only_overlays() -> None:
+    """Spatial uses traffic + zones only — not noise/AQ/shops/transit GIS."""
+    flags = LayerFlags(
+        noise_overlay="total_lden",
+        aq_overlay="pm25",
+        shop_show_grocery=True,
+        transit_intensity=True,
+        gunb=True,
+        parks=True,
+        military=True,
+        traffic=True,
+    )
+    needed = explore_datasets_needed(section="Spatial", flags=flags)
+    assert needed == frozenset({"traffic", "military"})
+    assert "warsaw_noise" not in needed
+    assert "gios_aq" not in needed
+    assert "shops" not in needed
+    assert "gunb" not in needed
+    assert "parks" not in needed
+    assert "stops" not in needed
+
+
 def test_prepare_listings_for_map_ignores_unused_columns() -> None:
     """Map prep must not require copying description / media columns."""
     import pandas as pd

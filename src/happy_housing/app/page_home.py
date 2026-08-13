@@ -30,6 +30,7 @@ from happy_housing.app.methodology_docs import (
     model_tab_methodology_markdown,
 )
 from happy_housing.app.recommender import load_recommender_metrics
+from happy_housing.app.scored_views import HOME_VIEW_COLUMNS, project_frame
 from happy_housing.app.source_inventory import (
     SourceInventoryRow,
     build_source_inventory,
@@ -291,7 +292,7 @@ def render_home() -> None:
     logger.info("Rendering Home")
     meta = load_metadata()
     try:
-        frame = load_scored()
+        frame = project_frame(load_scored(), HOME_VIEW_COLUMNS)
     except FileNotFoundError as exc:
         logger.warning("Home missing scored listings: %s", exc)
         st.warning(str(exc))

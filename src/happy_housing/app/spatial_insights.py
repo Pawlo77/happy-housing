@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
+from happy_housing.app.scored_views import SPATIAL_VIEW_COLUMNS, project_frame
 from happy_housing.app.stats_insights import normalize_district
 
 SPATIAL_FIELD_MODE_MODEL: str = "model"
@@ -103,7 +104,7 @@ def _num(frame: pd.DataFrame, col: str) -> pd.Series:
 
 
 def _with_coords(frame: pd.DataFrame) -> pd.DataFrame:
-    work = frame.copy()
+    work = project_frame(frame, SPATIAL_VIEW_COLUMNS).copy()
     work["lat"] = _num(work, "lat")
     work["lon"] = _num(work, "lon")
     return work.dropna(subset=["lat", "lon"])
@@ -249,7 +250,7 @@ def district_spatial_summary(
     empty = pd.DataFrame(columns=["district", "n", "value"])
     if frame.empty or "district" not in frame.columns or metric_key == "traffic":
         return empty
-    work = frame.copy()
+    work = project_frame(frame, SPATIAL_VIEW_COLUMNS).copy()
     work["district"] = work["district"].map(normalize_district)
     work = work.loc[work["district"].ne("") & work["district"].ne("nan")]
     if work.empty:

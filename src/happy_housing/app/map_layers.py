@@ -258,9 +258,21 @@ def explore_datasets_needed(
         return frozenset()
 
     needed: set[str] = set()
-    # Spatial always needs traffic for the metric; zones follow flags.
+    # Spatial only needs traffic + optional zone polygons — not Map amenity GIS.
     if name == "Spatial":
         needed.add("traffic")
+        if flags.city_boundary:
+            needed.add("city_boundary")
+        if flags.district_boundaries:
+            needed.add("district_boundaries")
+        if flags.military:
+            needed.add("military")
+        if flags.rail_areas:
+            needed.add("rail_areas")
+        if flags.airport:
+            needed.add("airport")
+        return frozenset(needed)
+
     if flags.noise_overlay and flags.noise_overlay != "off":
         needed.add("warsaw_noise")
     if flags.aq_overlay and flags.aq_overlay != "off":

@@ -225,11 +225,11 @@ def load_airport_areas() -> gpd.GeoDataFrame:
     return _load_zone_fixture("airport_areas.geojson")
 
 
-@st.cache_data(show_spinner=False)  # type: ignore[misc]
+@st.cache_resource(show_spinner=False)  # type: ignore[misc]
 def _load_warsaw_noise_overlay(
     cache_root: str, mtime: float, overlay_key: str
 ) -> dict[str, object] | None:
-    """Cached continuous UM noise BitmapLayer payload (dict for Streamlit cache)."""
+    """Cached continuous UM noise BitmapLayer payload (resource — no copy)."""
     del mtime
     from happy_housing.gis.warsaw_noise import (
         load_warsaw_noise_rasters,
@@ -297,11 +297,11 @@ def load_warsaw_noise_heatmap(overlay_key: str) -> pd.DataFrame:
     return pd.DataFrame(columns=["lon", "lat", "db", "weight"])
 
 
-@st.cache_data(show_spinner=False)  # type: ignore[misc]
+@st.cache_resource(show_spinner=False)  # type: ignore[misc]
 def _load_gios_aq_overlay(
     cache_root: str, mtime: float, overlay_key: str
 ) -> dict[str, object] | None:
-    """Cached continuous GIOŚ AQ BitmapLayer payload (dict for Streamlit cache)."""
+    """Cached continuous GIOŚ AQ BitmapLayer payload (resource — no copy)."""
     del mtime
     from happy_housing.gis.gios_aq_field import (
         load_gios_aq_field_rasters,

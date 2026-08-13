@@ -7,6 +7,7 @@ import logging
 import lightgbm as lgb
 import numpy as np
 import pandas as pd
+import streamlit as st
 
 from happy_housing.models.train import (
     CATEGORICAL_FEATURE_COLUMNS,
@@ -45,13 +46,19 @@ def sample_frame_for_shap(
     *,
     sample_n: int = 300,
     random_state: int = 42,
+    feature_columns: list[str] | tuple[str, ...] | None = None,
 ) -> pd.DataFrame:
     """Cap rows for global SHAP so Stats stays interactive."""
     if frame.empty or sample_n <= 0:
         return frame.copy()
-    if len(frame) <= sample_n:
-        return frame.reset_index(drop=True)
-    return frame.sample(n=int(sample_n), random_state=int(random_state)).reset_index(
+    work = frame
+    if feature_columns is not None:
+        keep = [c for c in feature_columns if c in frame.columns]
+        if keep:
+            work = frame.loc[:, keep]
+    if len(work) <= sample_n:
+        return work.reset_index(drop=True)
+    return work.sample(n=int(sample_n), random_state=int(random_state)).reset_index(
         drop=True
     )
 
@@ -93,7 +100,47 @@ def mean_abs_shap_table(
     cols = model_feature_columns(booster)
     if not cols:
         return empty
-    sample = sample_frame_for_shap(frame, sample_n=sample_n, random_state=random_state)
+    listing_fp = ""
+    if "listing_id" in frame.columns:
+        listing_fp = str(int(pd.util.hash_pandas_object(frame["listing_id"]).sum()))
+    else:
+        listing_fp = f"n={len(frame)}"
+    return _cached_mean_abs_shap_table(
+        listing_fp,
+        int(sample_n),
+        int(top_n),
+        int(random_state),
+        booster,
+        explainer,
+        frame,
+        tuple(cols),
+    )
+
+
+def _cached_mean_abs_shap_table(
+    listing_fp: str,
+    sample_n: int,
+    top_n: int,
+    random_state: int,
+    booster: lgb.Booster,
+    explainer: object,
+    frame: pd.DataFrame,
+    cols: tuple[str, ...],
+) -> pd.DataFrame:
+    """Session-memoized SHAP summary keyed by lens fingerprint + sample size."""
+    cache_key = ("stats_mean_abs_shap", listing_fp, sample_n, top_n, random_state, cols)
+    cached = st.session_state.get("_stats_shap_summary_key")
+    if cached == cache_key:
+        payload = st.session_state.get("_stats_shap_summary_val")
+        if isinstance(payload, pd.DataFrame):
+            return payload.copy()
+    empty = pd.DataFrame(columns=["feature", "mean_abs_shap", "mean_shap"])
+    sample = sample_frame_for_shap(
+        frame,
+        sample_n=sample_n,
+        random_state=random_state,
+        feature_columns=cols,
+    )
     try:
         features = build_feature_matrix(sample, cols)
         for col in CATEGORICAL_FEATURE_COLUMNS:
@@ -104,7 +151,10 @@ def mean_abs_shap_table(
         explanation = explainer(features)  # type: ignore[operator]
         values = np.asarray(explanation.values, dtype=float)
         names = list(features.columns)
-        return rank_mean_abs_shap(feature_names=names, shap_values=values, top_n=top_n)
+        out = rank_mean_abs_shap(feature_names=names, shap_values=values, top_n=top_n)
     except Exception as exc:
         logger.warning("Global SHAP summary failed: %s", exc)
-        return empty
+        out = empty
+    st.session_state["_stats_shap_summary_key"] = cache_key
+    st.session_state["_stats_shap_summary_val"] = out
+    return out.copy()

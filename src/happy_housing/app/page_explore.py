@@ -185,6 +185,7 @@ from happy_housing.app.recommender import (
     retrain_recommender,
     top_recommendations,
 )
+from happy_housing.app.scored_views import BOARD_VIEW_COLUMNS, project_frame
 from happy_housing.app.spatial_insights import (
     SPATIAL_FIELD_MODE_MODEL,
     SPATIAL_FIELD_MODES,
@@ -1727,6 +1728,19 @@ def _fetch_otodom_offer_media(slug: str) -> dict[str, object]:
     }
 
 
+def offer_needs_live_media_fetch(row: pd.Series | dict[str, object]) -> bool:
+    """True when Overview lacks both cover photo and description.
+
+    Multi-photo / floor-plan enrichment is deferred to an explicit gallery load
+    so Offer Overview can paint price facts without a blocking Otodom round-trip.
+    """
+    getter = row.get if hasattr(row, "get") else lambda key, default=None: default
+    existing = getter("description")
+    has_desc = isinstance(existing, str) and bool(existing.strip())
+    photos = image_urls_from_row(row)
+    return (not photos) and (not has_desc)
+
+
 def _ensure_offer_media(row: pd.Series) -> pd.Series:
     """Fill description / multi-photo / floor-plan fields from Otodom when missing."""
     out = row.copy()
@@ -1814,9 +1828,29 @@ def _render_offer_gallery(row: pd.Series) -> None:
     """Photo carousel + optional floor-plan images under the gallery.
 
     Fragment-scoped: arrow / lightbox nav avoid a full Explore rerun.
+    Live Otodom enrich runs here (or on button) so Overview metrics paint first.
     """
-    photos = image_urls_from_row(row)
-    listing_id = str(row.get("listing_id") or "unknown")
+    work = row
+    photos = image_urls_from_row(work)
+    plans = floor_plan_urls_from_row(work)
+    enrich_key = f"offer_media_enrich_{work.get('listing_id') or 'unknown'}"
+    auto_fetch = offer_needs_live_media_fetch(work)
+    want_richer = len(photos) <= 1 or not plans
+    if auto_fetch:
+        work = _ensure_offer_media(work)
+        photos = image_urls_from_row(work)
+        plans = floor_plan_urls_from_row(work)
+    elif want_richer and st.button(
+        "Load full gallery from Otodom",
+        key=enrich_key,
+        help="Fetch multi-photo gallery and floor plans when the parquet row is thin.",
+    ):
+        work = _ensure_offer_media(work)
+        photos = image_urls_from_row(work)
+        plans = floor_plan_urls_from_row(work)
+        st.rerun(scope="fragment")
+
+    listing_id = str(work.get("listing_id") or "unknown")
     if photos:
         if len(photos) == 1:
             st.image(photos[0], width="stretch")
@@ -1888,7 +1922,7 @@ def _render_offer_gallery(row: pd.Series) -> None:
                 photos,
                 open_clicked=open_clicked,
             )
-    plans = floor_plan_urls_from_row(row)
+    plans = floor_plan_urls_from_row(work)
     if plans:
         st.markdown("##### Floor plan")
         for i, url in enumerate(plans):
@@ -2148,7 +2182,6 @@ def _tab_offer(
 
     with overview:
         if overview.open:
-            row = _ensure_offer_media(row)
             description = str(row.get("description") or "").strip()
             left, right = st.columns([1.1, 1.6])
             with left:
@@ -2165,6 +2198,23 @@ def _tab_offer(
             st.markdown("#### Source description")
             if description:
                 st.markdown(sanitize_listing_html(description), unsafe_allow_html=True)
+            elif (
+                isinstance(row.get("slug"), str)
+                and str(row.get("slug") or "").strip()
+                and st.button(
+                    "Load description from Otodom",
+                    key=f"offer_load_desc_{selected_id}",
+                )
+            ):
+                enriched = _ensure_offer_media(row)
+                description = str(enriched.get("description") or "").strip()
+                if description:
+                    st.markdown(
+                        sanitize_listing_html(description),
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    st.info("No listing description available for this offer.")
             else:
                 st.info("No listing description available for this offer.")
 
@@ -2332,8 +2382,9 @@ def _tab_board(
 ) -> None:
     """Tabular offer board; selecting a row opens Offer for that listing."""
     impressions = load_impressions(impressions_file)
+    slim = project_frame(filtered, BOARD_VIEW_COLUMNS)
     enriched = enrich_board_recommendations(
-        filtered,
+        slim,
         impressions=impressions,
         demotion_alpha=float(app_settings.recommender_demotion_alpha),
         prefs=prefs,

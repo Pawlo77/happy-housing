@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import geopandas as gpd
+import numpy as np
 import pandas as pd
 import pydeck as pdk
 import streamlit as st
@@ -570,7 +571,7 @@ def transit_intensity_layers(
     return [layer] if layer is not None else []
 
 
-@st.cache_data(show_spinner=False)  # type: ignore[misc]
+@st.cache_resource(show_spinner=False)  # type: ignore[misc]
 def _cached_transit_intensity_overlay(
     hour: int,
     bbox: tuple[float, float, float, float],
@@ -579,7 +580,7 @@ def _cached_transit_intensity_overlay(
     hourly_path: str,
     hourly_mtime: float,
 ) -> IntensityMapOverlay | None:
-    """Mtime-keyed transit intensity bitmap (skip grid rebuild on Map reruns)."""
+    """Mtime-keyed transit intensity bitmap (shared resource — no copy tax)."""
     del stops_mtime, hourly_mtime
     return prepare_transit_intensity_overlay(
         pd.read_parquet(stops_path),
@@ -653,14 +654,14 @@ def traffic_heatmap_layer(sample: pd.DataFrame, *, hour: int) -> pdk.Layer | Non
     )
 
 
-@st.cache_data(show_spinner=False)  # type: ignore[misc]
+@st.cache_resource(show_spinner=False)  # type: ignore[misc]
 def _cached_traffic_intensity_overlay(
     hour: int,
     bbox: tuple[float, float, float, float],
     traffic_path: str,
     traffic_mtime: float,
 ) -> IntensityMapOverlay | None:
-    """Mtime-keyed traffic intensity bitmap (skip grid rebuild on Map reruns)."""
+    """Mtime-keyed traffic intensity bitmap (shared resource — no copy tax)."""
     del traffic_mtime
     return prepare_traffic_intensity_overlay(
         pd.read_parquet(traffic_path),
@@ -1155,6 +1156,28 @@ def spatial_marker_layer(
     )
 
 
+@st.cache_resource(show_spinner=False)  # type: ignore[misc]
+def _cached_spatial_intensity_overlay(
+    metric_key: str,
+    field_mode: str,
+    bbox: tuple[float, float, float, float],
+    lon_b: bytes,
+    lat_b: bytes,
+    weight_b: bytes,
+) -> IntensityMapOverlay | None:
+    """Cached Spatial metric BitmapLayer (grid+PNG); keyed by packed coords."""
+    lon = np.frombuffer(lon_b, dtype=np.float64)
+    lat = np.frombuffer(lat_b, dtype=np.float64)
+    weight = np.frombuffer(weight_b, dtype=np.float64)
+    return prepare_weighted_points_overlay(
+        lon,
+        lat,
+        weight,
+        bbox_wgs84=bbox,
+        layer_key=f"spatial-{metric_key}-{field_mode}",
+    )
+
+
 def build_spatial_layers(
     *,
     listings: pd.DataFrame,
@@ -1192,12 +1215,16 @@ def build_spatial_layers(
         listings, metric_key, field_mode=field_mode
     )
     if not field_pts.empty:
-        overlay = prepare_weighted_points_overlay(
-            field_pts["lon"].to_numpy(dtype=float),
-            field_pts["lat"].to_numpy(dtype=float),
-            field_pts["weight"].to_numpy(dtype=float),
-            bbox_wgs84=load_config().bbox.as_tuple(),
-            layer_key=f"spatial-{metric_key}-{field_mode}",
+        lon = field_pts["lon"].to_numpy(dtype=np.float64)
+        lat = field_pts["lat"].to_numpy(dtype=np.float64)
+        weight = field_pts["weight"].to_numpy(dtype=np.float64)
+        overlay = _cached_spatial_intensity_overlay(
+            str(metric_key),
+            str(field_mode),
+            load_config().bbox.as_tuple(),
+            lon.tobytes(),
+            lat.tobytes(),
+            weight.tobytes(),
         )
         heat = intensity_bitmap_layer(
             overlay,

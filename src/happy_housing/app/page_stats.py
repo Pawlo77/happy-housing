@@ -30,6 +30,7 @@ from happy_housing.app.explore_nav import (
     open_explore_offer,
 )
 from happy_housing.app.property_filter_ui import render_property_attr_filters
+from happy_housing.app.scored_views import drop_heavy_listing_columns
 from happy_housing.app.stats_filters import StatsFilterState, apply_stats_filters
 from happy_housing.app.stats_insights import (
     affordability_bands,
@@ -883,7 +884,7 @@ def render_stats() -> None:
     )
 
     try:
-        frame = load_scored()
+        frame = drop_heavy_listing_columns(load_scored())
     except FileNotFoundError as exc:
         logger.warning("Stats missing scored listings: %s", exc)
         st.error(str(exc))
