@@ -1,10 +1,15 @@
 """Preflight checks for Docker / OSRM / OTP used by Admin Ops."""
 
+import http.client
+import json
 import logging
+import os
 import shutil
+import socket
 import subprocess  # nosec B404 — fixed `docker info` probe, no shell
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import requests
@@ -13,6 +18,9 @@ logger = logging.getLogger(__name__)
 
 _HTTP_TIMEOUT_S: float = 3.0
 """Short timeout for Ops health probes."""
+
+_DOCKER_SOCK_TIMEOUT_S: float = 3.0
+"""Unix-socket timeout for Docker Engine API."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,14 +41,93 @@ class ServiceCheck:
     """Which Admin actions need this service."""
 
 
+class _UnixHTTPConnection(http.client.HTTPConnection):
+    """HTTP over a Unix domain socket (Docker Engine API)."""
+
+    def __init__(self, sock_path: str, timeout: float) -> None:
+        super().__init__("localhost", timeout=timeout)
+        self._sock_path = sock_path
+
+    def connect(self) -> None:
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        sock.settimeout(self.timeout)
+        sock.connect(self._sock_path)
+        self.sock = sock
+
+
+def _docker_socket_candidates() -> list[Path]:
+    """Ordered Docker Engine socket paths (Desktop + Linux defaults)."""
+    paths: list[Path] = []
+    host = (os.environ.get("DOCKER_HOST") or "").strip()
+    if host.startswith("unix://"):
+        paths.append(Path(host.removeprefix("unix://")))
+    paths.extend((
+        Path.home() / ".docker" / "run" / "docker.sock",
+        Path("/var/run/docker.sock"),
+        Path("/run/docker.sock"),
+    ))
+    seen: set[str] = set()
+    ordered: list[Path] = []
+    for path in paths:
+        key = str(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        ordered.append(path)
+    return ordered
+
+
+def _probe_docker_engine_socket() -> tuple[str, float] | None:
+    """Return ``(version, latency_ms)`` if Engine API answers on a local sock.
+
+    Prefer the socket over the ``docker`` CLI: CLI can SIGSEGV / deny under
+    sandboxed Streamlit parents while the daemon (and HTTP-published
+    containers) stay healthy.
+    """
+    t0 = time.perf_counter()
+    for sock_path in _docker_socket_candidates():
+        if not sock_path.exists():
+            continue
+        try:
+            conn = _UnixHTTPConnection(str(sock_path), timeout=_DOCKER_SOCK_TIMEOUT_S)
+            try:
+                conn.request("GET", "/version")
+                response = conn.getresponse()
+                body = response.read()
+            finally:
+                conn.close()
+            if response.status != 200:
+                continue
+            payload = json.loads(body.decode("utf-8", errors="replace") or "{}")
+            version = str(payload.get("Version") or "").strip() or "ok"
+            ms = (time.perf_counter() - t0) * 1000.0
+            return version, ms
+        except (OSError, TimeoutError, json.JSONDecodeError, http.client.HTTPException):
+            logger.debug("Docker sock probe failed for %s", sock_path, exc_info=True)
+            continue
+    return None
+
+
 def check_docker_engine() -> ServiceCheck:
-    """Probe local Docker CLI (info → version → ps fallbacks)."""
+    """Probe Docker Engine (unix socket first, then CLI fallbacks)."""
+    sock = _probe_docker_engine_socket()
+    if sock is not None:
+        version, ms = sock
+        return ServiceCheck(
+            key="docker",
+            label="Docker engine",
+            ok=True,
+            detail=f"server {version}",
+            latency_ms=ms,
+            required_for=("pipeline", "osrm", "otp"),
+        )
+
     if shutil.which("docker") is None:
         return ServiceCheck(
             key="docker",
             label="Docker engine",
             ok=False,
-            detail="docker binary not found on PATH",
+            detail="docker sock unreachable and docker binary not on PATH",
             latency_ms=None,
             required_for=("pipeline", "osrm", "otp"),
         )
@@ -74,8 +161,7 @@ def check_docker_engine() -> ServiceCheck:
             if completed.returncode == 0:
                 # ``ps -q`` may be empty when no containers; still means daemon up.
                 if argv[1] == "ps":
-                    label = "ps ok"
-                    detail = label
+                    detail = "ps ok"
                 else:
                     label = out.splitlines()[0] if out else "ok"
                     detail = f"server {label}"
@@ -89,7 +175,12 @@ def check_docker_engine() -> ServiceCheck:
                     required_for=("pipeline", "osrm", "otp"),
                 )
             snippet = (err or out).strip()
-            if snippet:
+            if completed.returncode < 0:
+                last_detail = (
+                    f"docker {' '.join(argv[1:])} killed by signal "
+                    f"{-completed.returncode} — Engine sock also unreachable"
+                )
+            elif snippet:
                 last_detail = snippet[:160]
             else:
                 last_detail = (

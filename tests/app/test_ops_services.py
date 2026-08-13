@@ -84,13 +84,19 @@ def test_check_pipeline_services_orders() -> None:
 
 
 def test_check_docker_engine_missing_binary() -> None:
-    with patch(
-        "happy_housing.app.ops_services.shutil.which",
-        return_value=None,
+    with (
+        patch(
+            "happy_housing.app.ops_services.shutil.which",
+            return_value=None,
+        ),
+        patch(
+            "happy_housing.app.ops_services._probe_docker_engine_socket",
+            return_value=None,
+        ),
     ):
         result = check_docker_engine()
     assert result.ok is False
-    assert "not found" in result.detail.lower() or "missing" in result.detail.lower()
+    assert "not" in result.detail.lower() or "unreachable" in result.detail.lower()
 
 
 def test_check_docker_engine_empty_stderr_falls_back_to_version() -> None:
@@ -109,6 +115,10 @@ def test_check_docker_engine_empty_stderr_falls_back_to_version() -> None:
             "happy_housing.app.ops_services.shutil.which",
             return_value="/bin/docker",
         ),
+        patch(
+            "happy_housing.app.ops_services._probe_docker_engine_socket",
+            return_value=None,
+        ),
         patch("happy_housing.app.ops_services.subprocess.run", side_effect=_run),
     ):
         result = check_docker_engine()
@@ -123,6 +133,10 @@ def test_check_docker_engine_all_probes_fail_message() -> None:
             "happy_housing.app.ops_services.shutil.which",
             return_value="/bin/docker",
         ),
+        patch(
+            "happy_housing.app.ops_services._probe_docker_engine_socket",
+            return_value=None,
+        ),
         patch("happy_housing.app.ops_services.subprocess.run", return_value=failed),
     ):
         result = check_docker_engine()
@@ -130,3 +144,37 @@ def test_check_docker_engine_all_probes_fail_message() -> None:
     assert result.detail.strip().lower() != "error"
     assert "rc=" in result.detail
     assert "Docker Desktop" in result.detail or "docker context" in result.detail
+
+
+def test_check_docker_engine_socket_ok_when_cli_segfaults() -> None:
+    """CLI may SIGSEGV under sandboxed parents; Engine API via sock still works."""
+    crashed = MagicMock(returncode=-11, stdout="", stderr="")
+    with (
+        patch(
+            "happy_housing.app.ops_services.shutil.which",
+            return_value="/bin/docker",
+        ),
+        patch(
+            "happy_housing.app.ops_services._probe_docker_engine_socket",
+            return_value=("29.6.2", 12.5),
+        ),
+        patch("happy_housing.app.ops_services.subprocess.run", return_value=crashed),
+    ):
+        result = check_docker_engine()
+    assert result.ok is True
+    assert "29.6.2" in result.detail
+    assert result.latency_ms == 12.5
+
+
+def test_check_docker_engine_prefers_socket_over_cli() -> None:
+    with (
+        patch(
+            "happy_housing.app.ops_services._probe_docker_engine_socket",
+            return_value=("28.0.0", 3.0),
+        ),
+        patch("happy_housing.app.ops_services.subprocess.run") as run_mock,
+    ):
+        result = check_docker_engine()
+    assert result.ok is True
+    assert "28.0.0" in result.detail
+    run_mock.assert_not_called()
