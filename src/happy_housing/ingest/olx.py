@@ -5,6 +5,7 @@ Warsaw ``district_id`` from the geo-encoder API, walk ``created_at:desc``, and
 merge incrementally into ``olx_listings.parquet`` like Otodom.
 """
 
+import json
 import logging
 import re
 import time
@@ -19,7 +20,12 @@ from happy_housing.ingest.fx import apply_fx_to_listings_frame, fx_cache_path
 from happy_housing.ingest.http_client import resilient_get
 from happy_housing.ingest.limits import reached_cap, resolve_ingest_cap
 from happy_housing.ingest.listed_at import coalesce_listed_at
-from happy_housing.ingest.listing_common import merge_listing_frames
+from happy_housing.ingest.listing_common import (
+    align_buyer_listing_row,
+    extras_from_free_text,
+    flags_from_extras_and_tags,
+    merge_listing_frames,
+)
 from happy_housing.ingest.proxy_pool import bind_http_proxy
 
 logger = logging.getLogger(__name__)
@@ -188,6 +194,74 @@ def _money_amount(price: object) -> tuple[float | None, str]:
         return None, currency
 
 
+def _param_label(value: object) -> str | None:
+    """Human-readable OLX param label when present."""
+    if value is None:
+        return None
+    if isinstance(value, Mapping):
+        label = value.get("label")
+    else:
+        label = getattr(value, "label", None)
+    if label is None:
+        return None
+    text = str(label).strip()
+    return text or None
+
+
+def _param_text(value: object) -> str:
+    """Concat param key, value key, and label for token matching."""
+    parts = [_param_key(value), _param_label(value)]
+    if isinstance(value, Mapping):
+        raw = value.get("value")
+        if raw is not None:
+            parts.append(str(raw))
+    return " ".join(p for p in parts if p)
+
+
+def _olx_extras_from_params(params: dict[str, Any]) -> set[str]:
+    """Map OLX param keys/labels to shared amenity extra tokens."""
+    extras: set[str] = set()
+    for key, val in params.items():
+        blob = f"{key} {_param_text(val)}".lower()
+        extras |= extras_from_free_text(blob)
+        if key in {"winda", "elevator", "lift"}:
+            extras.add("lift")
+        if key in {"garage", "garaz", "garaż"}:
+            extras.add("garage")
+        if key in {"parking", "parking_place"}:
+            extras.add("parking")
+        if key in {"balkon", "balcony"}:
+            extras.add("balcony")
+    return extras
+
+
+def _olx_categorical(params: dict[str, Any], *keys: str) -> str | None:
+    """Return the first non-empty OLX param label for ``keys``."""
+    for key in keys:
+        label = _param_label(params.get(key))
+        if label:
+            return label
+        param_key = _param_key(params.get(key))
+        if param_key:
+            return param_key.replace("_", " ")
+    return None
+
+
+def _photo_urls_json(photos: object) -> str:
+    """Serialize OLX photo links for gallery parity with Otodom."""
+    if not isinstance(photos, list):
+        return "[]"
+    urls: list[str] = []
+    for photo in photos:
+        if isinstance(photo, Mapping):
+            link = photo.get("link")
+        else:
+            link = getattr(photo, "link", None)
+        if isinstance(link, str) and link.strip():
+            urls.append(link.replace("{width}", "800").replace("{height}", "600"))
+    return json.dumps(urls, ensure_ascii=False)
+
+
 def _photo_url(photos: object) -> str | None:
     if not isinstance(photos, list) or not photos:
         return None
@@ -342,12 +416,32 @@ def normalize_olx_offer(
     )
     image = _photo_url(payload.get("photos"))
     kind = "rent" if str(listing_kind).lower() == "rent" else "sale"
-    return {
+    description = str(payload.get("description") or "").strip() or None
+    title = str(payload.get("title") or "").strip() or None
+    extras = _olx_extras_from_params(params) | extras_from_free_text(
+        f"{title or ''} {description or ''}"
+    )
+    flags = flags_from_extras_and_tags(
+        extras=extras,
+        tags=set(),
+        floor_label=_param_label(params.get("floor_select")),
+        floor_no=floor_no,
+    )
+    year_built_raw = _param_number(params.get("build_year"))
+    if year_built_raw is None:
+        year_built_raw = _param_number(params.get("rok_budowy"))
+    year_built = int(year_built_raw) if year_built_raw is not None else None
+    rent_raw = _param_number(params.get("rent"))
+    if rent_raw is None:
+        rent_raw = _param_number(params.get("czynsz"))
+    rent = float(rent_raw) if rent_raw is not None else None
+    is_business = bool(payload.get("business"))
+    row = {
         "listing_id": f"OLX-{olx_id}",
         "olx_id": olx_id,
-        "title": str(payload.get("title") or "").strip() or None,
+        "title": title,
         "url": str(payload.get("url") or "").strip() or None,
-        "description": str(payload.get("description") or "").strip() or None,
+        "description": description,
         "lat": lat,
         "lon": lon,
         "price_original": float(amount),
@@ -355,7 +449,7 @@ def normalize_olx_offer(
         "price_pln": float(amount) if currency == "PLN" else None,
         "area_m2": float(area),
         "rooms": rooms,
-        "year_built": None,
+        "year_built": year_built,
         "district": district,
         "listed_at": listed_at,
         "floor_no": floor_no,
@@ -363,10 +457,21 @@ def normalize_olx_offer(
         "market_primary": market_primary,
         "price_per_m2": float(ppm),
         "image_url": image,
+        "image_urls_json": _photo_urls_json(payload.get("photos")),
         "listing_kind": kind,
-        "is_business": bool(payload.get("business")),
+        "is_business": is_business,
         "source": "olx",
+        "building_type": _olx_categorical(params, "building_type", "typ_nieruchomosci"),
+        "construction_status": _olx_categorical(
+            params, "construction_status", "stan_wykonczenia"
+        ),
+        "building_material": _olx_categorical(params, "building_material"),
+        "heating": _olx_categorical(params, "heating", "ogrzewanie"),
+        "rent": rent,
+        "is_private_owner": 0 if is_business else 1,
+        **flags,
     }
+    return align_buyer_listing_row(row)
 
 
 def fetch_warsaw_district_ids(

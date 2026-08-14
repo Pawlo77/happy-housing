@@ -36,3 +36,11 @@ Intentional subset: sale-first, district-tiled, rate-limited. Not a full
 historical dump. Overlap with Otodom is expected; the pipeline collapses
 cross-portal duplicates (shared geo fingerprint or cover photo) before enrich
 and scoring, preferring Otodom over OLX.
+
+## Feature parity
+
+OLX does **not** use a separate detail-backfill job. Each offer comes from one
+public API response (coords, description, photos, and structured ``params``).
+Normalize maps those params plus description tokens into the same buyer-listing
+schema as Otodom (amenity flags, heating, build year, rent, …). Otodom defaults
+to search cards + background detail backfill for the same columns.

@@ -78,6 +78,29 @@ def test_normalize_olx_offer_sale_fields() -> None:
     assert row["price_pln"] == pytest.approx(500_000.0)
     assert row["area_m2"] == pytest.approx(42.5)
     assert row["rooms"] == 2
+    assert row["listing_active"] == 1
+    assert row["has_balcony"] == 0
+
+
+def test_normalize_olx_offer_parses_extended_params() -> None:
+    payload = _offer_payload()
+    payload["description"] = "Mieszkanie z balkonem i windą."
+    payload["params"].extend([
+        _param("build_year", value_key="2010", label="2010"),
+        _param("rent", value=850.0, label="850 zł"),
+        _param("heating", value_key="gas", label="Gazowe"),
+        _param("building_type", value_key="block", label="Blok"),  # codespell:ignore
+    ])
+    row = normalize_olx_offer(payload, listing_kind="sale")
+    assert row is not None
+    assert row["year_built"] == 2010
+    assert row["rent"] == pytest.approx(850.0)
+    assert row["heating"] == "Gazowe"
+    assert row["building_type"] == "Blok"  # codespell:ignore
+    assert row["has_balcony"] == 1
+    assert row["has_lift"] == 1
+    assert row["characteristics_json"] is None
+    assert row["image_urls_json"].startswith("[")
     assert row["floor_no"] == 3
     assert row["district"] == "Wola"
     assert row["listing_kind"] == "sale"

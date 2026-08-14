@@ -1,9 +1,7 @@
 """Tests for Otodom amenity flag promotion (basement, parking, attic)."""
 
-from happy_housing.ingest.otodom import (
-    flags_from_extras_and_tags,
-    flatten_otodom_ad,
-)
+from happy_housing.ingest.listing_common import flags_from_extras_and_tags
+from happy_housing.ingest.otodom import flatten_otodom_ad
 
 
 def test_flags_from_extras_split_garage_and_outdoor_parking() -> None:

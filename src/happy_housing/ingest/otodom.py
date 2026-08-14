@@ -26,6 +26,8 @@ from happy_housing.ingest.limits import reached_cap, resolve_ingest_cap
 from happy_housing.ingest.listed_at import coalesce_listed_at
 from happy_housing.ingest.listing_common import (
     LISTING_ACTIVE_COLUMN,
+    align_buyer_listing_row,
+    flags_from_extras_and_tags,
     listing_is_active,
     merge_listing_frames,
 )
@@ -183,38 +185,6 @@ def _char_map(characteristics: object) -> dict[str, str]:
     return out
 
 
-def flags_from_extras_and_tags(
-    *,
-    extras: set[str],
-    tags: set[str],
-    floor_label: str | None,
-    floor_no: int | float | None,
-) -> dict[str, int]:
-    """Derive boolean amenity / attic flags from Otodom extras and search tags."""
-    tag_u = {str(t).upper() for t in tags}
-    extras_l = {str(e).lower() for e in extras}
-    has_garage = int("garage" in extras_l or bool({"GARAGE"} & tag_u))
-    has_outdoor_parking = int(
-        "parking" in extras_l or bool({"PARKING_SPOT", "PARKING"} & tag_u)
-    )
-    # If both garage and parking tokens exist, keep both flags.
-    has_basement = int("basement" in extras_l or "BASEMENT" in tag_u)
-    label = str(floor_label or "").upper()
-    is_attic = int(
-        label in {"GARRET", "ATTIC"} or (floor_no is not None and int(floor_no) >= 99)
-    )
-    return {
-        "has_balcony": int("balcony" in extras_l or "BALCONY" in tag_u),
-        "has_garage": has_garage,
-        "has_outdoor_parking": has_outdoor_parking,
-        "has_lift": int("lift" in extras_l or bool({"LIFT", "ELEVATOR"} & tag_u)),
-        "has_terrace": int("terrace" in extras_l or "TERRACE" in tag_u),
-        "has_garden": int("garden" in extras_l or "GARDEN" in tag_u),
-        "has_basement": has_basement,
-        "is_attic": is_attic,
-    }
-
-
 def extract_image_urls(ad: dict[str, Any]) -> list[str]:
     """Prefer medium (else large/small) photo URLs from an Otodom ad."""
     images = ad.get("images")
@@ -320,7 +290,7 @@ def flatten_otodom_ad(ad: dict[str, Any]) -> dict[str, Any]:
     image_urls = extract_image_urls(ad)
     floor_plan_urls = extract_floor_plan_urls(ad)
 
-    return {
+    row = {
         "lat": float(lat) if lat is not None else None,
         "lon": float(lon) if lon is not None else None,
         "year_built": year_built,
@@ -363,6 +333,7 @@ def flatten_otodom_ad(ad: dict[str, Any]) -> dict[str, Any]:
             ensure_ascii=False,
         ),
     }
+    return align_buyer_listing_row(row)
 
 
 def _session() -> requests.Session:
@@ -532,7 +503,7 @@ def _normalize_search_item(item: dict[str, Any]) -> dict[str, Any]:
     # Defer FX to frame-level apply (needs cache path); stash original + currency.
     price_f = float(price) if price is not None else None
     ppm_f = float(ppm) if ppm is not None else None
-    return {
+    return align_buyer_listing_row({
         "listing_id": f"OTO-{item.get('id')}",
         "otodom_id": item.get("id"),
         "slug": item.get("slug"),
@@ -573,7 +544,7 @@ def _normalize_search_item(item: dict[str, Any]) -> dict[str, Any]:
         "lon": None,
         "year_built": None,
         LISTING_ACTIVE_COLUMN: 1,
-    }
+    })
 
 
 def _ad_description(ad: dict[str, Any]) -> str | None:
