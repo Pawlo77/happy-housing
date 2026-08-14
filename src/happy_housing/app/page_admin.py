@@ -1593,6 +1593,42 @@ def _panel_explore(settings: AppSettings, settings_file: Path, proc: Path) -> No
         step=100,
         key="settings_map_max_shop",
     )
+    st.markdown("**Offer comps**")
+    st.caption(
+        "Local RCN membership on Offer → Comps. Radius defaults to Price model "
+        "neighborhood search (metres)."
+    )
+    c1, c2 = st.columns(2)
+    max_pins = c1.number_input(
+        "Max comps pins",
+        min_value=20,
+        max_value=3_000,
+        value=int(settings.offer_comps_max_pins),
+        step=20,
+        key="settings_offer_comps_max_pins",
+        help="Cap pydeck RCN / nearby-ask pins (GUNB-style payload bound).",
+    )
+    months = c2.number_input(
+        "Deed recency (months, 0 = all)",
+        min_value=0,
+        max_value=120,
+        value=int(settings.offer_comps_months),
+        key="settings_offer_comps_months",
+    )
+    include_metro = st.checkbox(
+        "Include metro / unlabelled RCN",
+        value=bool(settings.offer_comps_include_metro),
+        key="settings_offer_comps_include_metro",
+        help=(
+            "Deeds outside the 18 dzielnice or GIS bbox plot as metro, "
+            "not gmina layers."
+        ),
+    )
+    show_asks = st.checkbox(
+        "Show nearby live asks on comps map",
+        value=bool(settings.offer_comps_show_nearby_asks),
+        key="settings_offer_comps_show_asks",
+    )
     if st.button("Save Explore settings", type="primary", key="save_explore_settings"):
         settings.explore_default_hour = int(hour)
         settings.explore_default_basemap = (
@@ -1601,6 +1637,10 @@ def _panel_explore(settings: AppSettings, settings_file: Path, proc: Path) -> No
         settings.map_delta_color_scale_zl = float(delta_scale)
         settings.map_max_gunb_points = int(max_gunb)
         settings.map_max_shop_points = int(max_shop)
+        settings.offer_comps_max_pins = int(max_pins)
+        settings.offer_comps_months = int(months)
+        settings.offer_comps_include_metro = bool(include_metro)
+        settings.offer_comps_show_nearby_asks = bool(show_asks)
         save_app_settings(settings_file, settings)
         st.success("Explore map settings saved.")
 
@@ -2533,6 +2573,14 @@ def _panel_stats(settings: AppSettings, settings_file: Path, proc: Path) -> None
         value=int(settings.stats_top_n),
         key="settings_stats_top_n",
     )
+    trend_min = st.number_input(
+        "Min n per month-slice (trends)",
+        min_value=1,
+        max_value=200,
+        value=int(settings.stats_trend_min_n),
+        key="settings_stats_trend_min_n",
+        help="Hide rooms/era/district month series below this count.",
+    )
     shap_n = st.number_input(
         "SHAP sample size (Model tab)",
         min_value=20,
@@ -2553,6 +2601,7 @@ def _panel_stats(settings: AppSettings, settings_file: Path, proc: Path) -> None
         if st.button("Save Stats settings", type="primary", key="save_stats_settings"):
             settings.stats_min_district_offers = int(min_offers)
             settings.stats_top_n = int(top_n)
+            settings.stats_trend_min_n = int(trend_min)
             settings.stats_shap_sample_n = int(shap_n)
             settings.stats_xai_top_n = int(xai_top)
             save_app_settings(settings_file, settings)

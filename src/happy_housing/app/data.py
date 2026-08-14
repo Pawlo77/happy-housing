@@ -56,6 +56,11 @@ def scored_path() -> Path:
     return processed_dir() / "listings_scored.parquet"
 
 
+def rcn_transactions_path() -> Path:
+    """RCN deed parquet path (full transactions, not scored stubs)."""
+    return processed_dir() / "rcn_transactions.parquet"
+
+
 def metadata_path() -> Path:
     """Run metadata JSON path."""
     return processed_dir() / "run_metadata.json"
@@ -72,8 +77,15 @@ def _with_listed_month(frame: pd.DataFrame) -> pd.DataFrame:
         frame["listed_month"] = "unknown"
         return frame
     raw = frame["listed_at"].astype(str)
-    parsed = pd.to_datetime(raw, errors="coerce", utc=True, format="mixed")
-    # RCN GML ids embed a timestamp suffix: …_YYYY-MM-DDTHH-MM-SS
+    parsed = pd.Series(pd.NaT, index=frame.index, dtype="datetime64[ns, UTC]")
+    iso_ts = raw.str.match(r"^\d{4}-\d{2}-\d{2}T", na=False)
+    iso_day = raw.str.match(r"^\d{4}-\d{2}-\d{2}$", na=False)
+    if iso_ts.any():
+        parsed.loc[iso_ts] = pd.to_datetime(raw.loc[iso_ts], errors="coerce", utc=True)
+    if iso_day.any():
+        parsed.loc[iso_day] = pd.to_datetime(
+            raw.loc[iso_day], errors="coerce", utc=True, format="%Y-%m-%d"
+        )
     missing = parsed.isna()
     if missing.any():
         extracted = raw.loc[missing].str.extract(r"_(\d{4}-\d{2}-\d{2})T", expand=False)
@@ -118,6 +130,24 @@ def load_scored() -> pd.DataFrame:
         oto.stat().st_mtime if oto.exists() else 0.0,
     )
     logger.debug("Loaded scored listings n=%s from %s", len(frame), path.name)
+    return frame
+
+
+@st.cache_resource(show_spinner=False)  # type: ignore[misc]  # Streamlit decorator stub
+def _read_rcn_resource(path: str, mtime: float) -> pd.DataFrame:
+    """Cached RCN deeds (resource — treat as read-only)."""
+    del mtime
+    return _with_listed_month(pd.read_parquet(path))
+
+
+def load_rcn_transactions() -> pd.DataFrame:
+    """Load full RCN deeds with ``listed_month``; empty frame if missing."""
+    path = rcn_transactions_path()
+    if not path.exists():
+        logger.warning("Missing RCN transactions at %s", path)
+        return pd.DataFrame()
+    frame = _read_rcn_resource(str(path), path.stat().st_mtime)
+    logger.debug("Loaded RCN deeds n=%s from %s", len(frame), path.name)
     return frame
 
 

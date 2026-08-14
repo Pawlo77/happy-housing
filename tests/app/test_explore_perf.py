@@ -100,6 +100,10 @@ def test_explore_datasets_needed_offer_skips_gis_on_overview() -> None:
         explore_datasets_needed(section="Offer", flags=flags, offer_subtab="Overview")
         == frozenset()
     )
+    assert (
+        explore_datasets_needed(section="Offer", flags=flags, offer_subtab="Comps")
+        == frozenset()
+    )
     needed = explore_datasets_needed(section="Offer", flags=flags, offer_subtab="Map")
     assert "gunb" in needed
     assert "city_pois" in needed
@@ -126,6 +130,7 @@ def test_explore_map_not_mounted_on_offer_for_speed() -> None:
     assert keep_explore_map_mounted("Board") is False
     assert explore_needs_recommended_pins("Map") is True
     assert explore_needs_recommended_pins("Offer", "Overview") is False
+    assert explore_needs_recommended_pins("Offer", "Comps") is False
     assert explore_needs_recommended_pins("Offer", "Map") is True
     assert explore_needs_recommended_pins("Board") is False
     key_a = recommended_pins_memo_key(

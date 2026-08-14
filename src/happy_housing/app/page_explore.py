@@ -37,10 +37,14 @@ from happy_housing.app.board_table import (
     prepare_board_display,
 )
 from happy_housing.app.charts import (
+    ASK_COLOR,
+    INK_COLOR,
     OVERPRICED,
     UNDERPRICED,
     bar_chart,
     diverging_bar_chart,
+    line_chart,
+    multi_line_chart,
 )
 from happy_housing.app.commute_modes import (
     coerce_commute_display_mode,
@@ -70,12 +74,14 @@ from happy_housing.app.data import (
     load_military_areas,
     load_parks,
     load_rail_areas,
+    load_rcn_transactions,
     load_scored,
     load_shap_bundle,
     load_shops,
     load_traffic_sample,
     load_warsaw_noise_overlay,
     processed_dir,
+    rcn_transactions_path,
     scored_path,
 )
 from happy_housing.app.explore_nav import (
@@ -143,6 +149,7 @@ from happy_housing.app.maps import (
     cached_spatial_map_layers,
     commute_route_layers,
     commute_target_layer,
+    comps_pins_layer,
     explore_map_camera,
     explore_map_layer_cache_key,
     explore_map_selection_key,
@@ -150,6 +157,7 @@ from happy_housing.app.maps import (
     listing_ids_fingerprint,
     render_deck,
 )
+from happy_housing.app.offer_comps import prepare_offer_comps
 from happy_housing.app.offer_display import (
     floor_plan_urls_from_row,
     image_urls_from_row,
@@ -1744,6 +1752,284 @@ def _fetch_otodom_offer_media(slug: str) -> dict[str, object]:
     }
 
 
+@st.cache_data(show_spinner=False)  # type: ignore[misc]  # Streamlit decorator stub
+def _cached_offer_comps_bundle(
+    listing_id: str,
+    lat: float,
+    lon: float,
+    ask_ppm: float,
+    area_m2: float | None,
+    radius_m: float,
+    months: int,
+    include_metro: bool,
+    show_nearby_asks: bool,
+    max_pins: int,
+    rcn_mtime: float,
+    scored_mtime: float,
+) -> dict[str, Any]:
+    """Neighbor frames + KPIs keyed by listing, radius, and RCN/scored mtimes."""
+    del rcn_mtime, scored_mtime
+    asks = load_scored() if show_nearby_asks else pd.DataFrame()
+    return prepare_offer_comps(
+        lat=lat,
+        lon=lon,
+        ask_ppm=ask_ppm,
+        area_m2=area_m2,
+        listing_id=listing_id,
+        rcn=load_rcn_transactions(),
+        asks=asks,
+        radius_m=radius_m,
+        months=months,
+        include_metro=include_metro,
+        show_nearby_asks=show_nearby_asks,
+        max_pins=max_pins,
+    )
+
+
+def _fmt_comp_metric(value: object, *, suffix: str = "", digits: int = 0) -> str:
+    if value is None:
+        return "—"
+    try:
+        number = float(value)  # type: ignore[arg-type]  # object scalar from stats dict
+    except (TypeError, ValueError):
+        return "—"
+    if number != number:
+        return "—"
+    if digits <= 0:
+        return f"{number:,.0f}{suffix}"
+    return f"{number:,.{digits}f}{suffix}"
+
+
+def _render_offer_comps(
+    row: pd.Series,
+    *,
+    app_settings: AppSettings,
+    basemap: str,
+) -> None:
+    """Offer → Comps: local RCN membership, pins, path, nearest deeds."""
+    lat = pd.to_numeric(row.get("lat"), errors="coerce")
+    lon = pd.to_numeric(row.get("lon"), errors="coerce")
+    ask_ppm = pd.to_numeric(row.get("price_per_m2"), errors="coerce")
+    area = pd.to_numeric(row.get("area_m2"), errors="coerce")
+    listing_id = str(row.get("listing_id") or "")
+    if pd.isna(lat) or pd.isna(lon):
+        st.info("This offer has no coordinates — cannot query local deeds.")
+        return
+    if pd.isna(ask_ppm) or float(ask_ppm) <= 0:
+        st.info("This offer has no zł/m² — cannot rank against local deeds.")
+        return
+    rcn_path = rcn_transactions_path()
+    if not rcn_path.exists():
+        st.info("No RCN deeds on disk. Run the pipeline (download RCN) first.")
+        return
+    radius_m = float(app_settings.model_nbhd_radius_m)
+    bundle = _cached_offer_comps_bundle(
+        listing_id,
+        float(lat),
+        float(lon),
+        float(ask_ppm),
+        None if pd.isna(area) else float(area),
+        radius_m,
+        int(app_settings.offer_comps_months),
+        bool(app_settings.offer_comps_include_metro),
+        bool(app_settings.offer_comps_show_nearby_asks),
+        int(app_settings.offer_comps_max_pins),
+        file_mtime(rcn_path),
+        file_mtime(scored_path()),
+    )
+    stats = bundle["stats"]
+    loyalty = bundle["loyalty"]
+    n_local = int(stats.get("n") or 0)
+    st.caption(
+        f"RCN deeds within {radius_m:.0f} m"
+        + (
+            f" · last {int(app_settings.offer_comps_months)} months"
+            if int(app_settings.offer_comps_months) > 0
+            else " · all dates"
+        )
+        + ". Green = cheaper than this ask, amber ±5%, red dearer. "
+        "Loyalty is price-level stickiness, not days-on-market."
+    )
+    k1, k2, k3, k4, k5 = st.columns(5)
+    k1.metric(
+        "Local RCN median",
+        _fmt_comp_metric(stats.get("median_ppm"), suffix=" zł/m²"),
+    )
+    gap = stats.get("gap_ppm")
+    k2.metric(
+        "Ask vs median",
+        _fmt_comp_metric(gap, suffix=" zł/m²"),
+        delta=_fmt_comp_metric(gap) if gap is not None else None,
+    )
+    k3.metric(
+        "Percentile vs deeds",
+        _fmt_comp_metric(stats.get("percentile"), suffix="%"),
+    )
+    k4.metric("Deeds in radius", f"{n_local:,}")
+    k5.metric(
+        "12m vs 36m",
+        _fmt_comp_metric(loyalty.get("drift_12_vs_36"), suffix=" zł/m²"),
+    )
+    if n_local < 8:
+        st.caption(
+            "Thin neighborhood — percentiles and drift are directional, not precise."
+        )
+    ask_stats = bundle.get("ask_stats")
+    size_stats = bundle.get("size_stats")
+    extra = []
+    if size_stats is not None and int(size_stats.get("n") or 0) > 0:
+        extra.append(
+            f"Similar-size band n={int(size_stats['n'])} · "
+            f"median {_fmt_comp_metric(size_stats.get('median_ppm'))} zł/m²"
+        )
+    if ask_stats is not None and int(ask_stats.get("n") or 0) > 0:
+        extra.append(
+            f"Nearby asks n={int(ask_stats['n'])} · "
+            f"percentile {_fmt_comp_metric(ask_stats.get('percentile'))}%"
+        )
+    nearest = stats.get("nearest_m")
+    if nearest is not None:
+        extra.append(f"Nearest deed {nearest:.0f} m")
+    idw = stats.get("idw_ppm")
+    if idw is not None:
+        extra.append(f"IDW {_fmt_comp_metric(idw)} zł/m²")
+    yoy = loyalty.get("yoy_pct")
+    if yoy is not None:
+        extra.append(f"Local YoY {yoy:+.1f}%")
+    iqr = loyalty.get("iqr_ppm")
+    if iqr is not None:
+        extra.append(f"IQR {_fmt_comp_metric(iqr)} zł/m²")
+    if extra:
+        st.caption(" · ".join(extra))
+
+    map_rcn = bundle["map_rcn"]
+    map_asks = bundle["map_asks"]
+    layers: list[Any] = []
+    rcn_layer = comps_pins_layer(map_rcn, layer_id="comps-rcn")
+    if rcn_layer is not None:
+        layers.append(rcn_layer)
+    if not map_asks.empty:
+        asks_pins = map_asks.copy()
+        asks_pins["radius"] = 16.0
+        asks_pins["color_r"] = 47
+        asks_pins["color_g"] = 111
+        asks_pins["color_b"] = 126
+        asks_pins["color_a"] = 190
+        ask_layer = comps_pins_layer(
+            asks_pins,
+            layer_id="comps-asks",
+            radius_min_pixels=3,
+            radius_max_pixels=8,
+        )
+        if ask_layer is not None:
+            layers.append(ask_layer)
+    layers.append(focus_marker_layer(float(lat), float(lon)))
+    if n_local == 0:
+        st.info("No RCN deeds in this radius (centroid fallbacks dropped).")
+    render_deck(
+        layers,
+        latitude=float(lat),
+        longitude=float(lon),
+        zoom=14.0,
+        map_style=basemap_style(basemap),
+        chart_key=f"offer_comps_deck_{listing_id}",
+    )
+
+    monthly_rcn = bundle["monthly_rcn"]
+    monthly_asks = bundle["monthly_asks"]
+    parts: list[pd.DataFrame] = []
+    if not monthly_rcn.empty:
+        parts.append(
+            monthly_rcn.rename(columns={"median_ppm": "value_ppm"}).assign(
+                series="RCN ink"
+            )
+        )
+    if not monthly_asks.empty:
+        parts.append(
+            monthly_asks.rename(columns={"median_ppm": "value_ppm"}).assign(
+                series="Ask"
+            )
+        )
+    if not parts:
+        st.caption("Not enough dated local comps for a monthly path.")
+    else:
+        path = pd.concat(parts, ignore_index=True)
+        if path["listed_month"].nunique() < 2:
+            st.caption("Need two local months for a trend line.")
+        else:
+            multi_line_chart(
+                path,
+                x="listed_month",
+                y="value_ppm",
+                color="series",
+                title="Local monthly median zł/m²",
+                color_domain=["RCN ink", "Ask"],
+                color_range=[INK_COLOR, ASK_COLOR],
+                y_title="zł/m²",
+            )
+        vol_parts: list[pd.DataFrame] = []
+        if not monthly_rcn.empty:
+            vol_parts.append(
+                monthly_rcn.rename(columns={"n": "offers"}).assign(series="RCN deeds")
+            )
+        if not monthly_asks.empty:
+            vol_parts.append(
+                monthly_asks.rename(columns={"n": "offers"}).assign(series="Asks")
+            )
+        if vol_parts:
+            vol = pd.concat(vol_parts, ignore_index=True)
+            if vol["listed_month"].nunique() >= 2:
+                multi_line_chart(
+                    vol,
+                    x="listed_month",
+                    y="offers",
+                    color="series",
+                    title="Local volume by month",
+                    y_title="Count",
+                )
+            elif not monthly_rcn.empty:
+                line_chart(
+                    monthly_rcn.rename(columns={"n": "offers"}),
+                    x="listed_month",
+                    y="offers",
+                    title="Local RCN volume",
+                    y_title="Deeds",
+                )
+
+    neighbors = bundle["neighbors"]
+    st.markdown("**Nearest deeds**")
+    if neighbors.empty:
+        st.caption("No deeds to list.")
+        return
+    table = neighbors.copy()
+    keep = [
+        c
+        for c in (
+            "distance_m",
+            "listed_at",
+            "price_per_m2",
+            "area_m2",
+            "district",
+            "is_metro",
+            "listing_id",
+        )
+        if c in table.columns
+    ]
+    table = table.loc[:, keep]
+    if "distance_m" in table.columns:
+        table = table.sort_values("distance_m")
+    st.dataframe(
+        table.head(40),
+        hide_index=True,
+        width="stretch",
+        column_config={
+            "distance_m": st.column_config.NumberColumn("Distance m", format="%.0f"),
+            "price_per_m2": st.column_config.NumberColumn("zł/m²", format="%.0f"),
+            "area_m2": st.column_config.NumberColumn("m²", format="%.0f"),
+        },
+    )
+
+
 def offer_needs_live_media_fetch(row: pd.Series | dict[str, object]) -> bool:
     """True when Overview lacks both cover photo and description.
 
@@ -2104,7 +2390,7 @@ def _tab_offer(
     osrm_url: str = "http://127.0.0.1:5001",
     otp_url: str = "http://127.0.0.1:8080",
 ) -> None:
-    """Single-offer deep dive with Overview / Context / Map / SHAP / AI subtabs."""
+    """Single-offer deep dive with Overview / Context / Comps / Map / SHAP / AI."""
     preferred = normalize_listing_id(st.session_state.get("explore_offer_id"))
     work = filtered
     outside_filters = False
@@ -2184,10 +2470,11 @@ def _tab_offer(
 
     row = work.loc[work["listing_id"].astype(str) == selected_id].iloc[0].copy()
 
-    overview, context, local_map, explain, ai_tab = st.tabs(
+    overview, context, comps_tab, local_map, explain, ai_tab = st.tabs(
         [
             "Overview",
             "Context",
+            "Comps",
             "Map",
             "Explain",
             "AI review",
@@ -2250,6 +2537,10 @@ def _tab_offer(
                 width="stretch",
             )
             _price_metrics(row)
+
+    with comps_tab:
+        if comps_tab.open:
+            _render_offer_comps(row, app_settings=app_settings, basemap=basemap)
 
     with local_map:
         if local_map.open:
@@ -3197,7 +3488,16 @@ def render_explore() -> None:
                 show_commute_route=bool(app_settings.offer_map_show_commute_route),
                 osrm_url=str(config.routing.osrm_url),
                 otp_url=str(config.routing.otp_url),
-                **map_kwargs,
+                **{
+                    key: value
+                    for key, value in map_kwargs.items()
+                    if key
+                    not in {
+                        "delta_scale_zl",
+                        "max_gunb_points",
+                        "max_shop_points",
+                    }
+                },
             )
     with tab_board:
         if tab_board.open:

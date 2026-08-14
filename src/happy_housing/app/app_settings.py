@@ -135,8 +135,18 @@ class AppSettings:
     """Listing pin colour tanh scale (zł/m² delta)."""
     stats_min_district_offers: int = 5
     """Minimum offers before a district appears on Stats scoreboards."""
+    stats_trend_min_n: int = 8
+    """Min offers/deeds per month-slice before a Stats trend series shows."""
     stats_top_n: int = 15
     """How many hunt / watch offers to list on Stats → Market."""
+    offer_comps_max_pins: int = 200
+    """Max RCN (and nearby-ask) pins on Offer → Comps."""
+    offer_comps_months: int = 0
+    """Recency window in months for comps (0 = all deeds)."""
+    offer_comps_include_metro: bool = True
+    """Include RCN deeds outside the 18 dzielnice / GIS bbox."""
+    offer_comps_show_nearby_asks: bool = True
+    """Draw live buyer asks in the same comps radius."""
     stats_shap_sample_n: int = 300
     """Max listings sampled for global mean |SHAP| on Stats → Model."""
     stats_xai_top_n: int = 20
@@ -634,6 +644,44 @@ def load_app_settings(path: Path) -> AppSettings:
                     defaults.stats_min_district_offers,
                 )
             ),
+        ),
+        stats_trend_min_n=max(
+            1,
+            min(
+                200,
+                int(payload.get("stats_trend_min_n", defaults.stats_trend_min_n)),
+            ),
+        ),
+        offer_comps_max_pins=max(
+            20,
+            min(
+                3_000,
+                int(
+                    payload.get(
+                        "offer_comps_max_pins",
+                        defaults.offer_comps_max_pins,
+                    )
+                ),
+            ),
+        ),
+        offer_comps_months=max(
+            0,
+            min(
+                120,
+                int(payload.get("offer_comps_months", defaults.offer_comps_months)),
+            ),
+        ),
+        offer_comps_include_metro=bool(
+            payload.get(
+                "offer_comps_include_metro",
+                defaults.offer_comps_include_metro,
+            )
+        ),
+        offer_comps_show_nearby_asks=bool(
+            payload.get(
+                "offer_comps_show_nearby_asks",
+                defaults.offer_comps_show_nearby_asks,
+            )
         ),
         stats_top_n=max(1, int(payload.get("stats_top_n", defaults.stats_top_n))),
         stats_shap_sample_n=max(

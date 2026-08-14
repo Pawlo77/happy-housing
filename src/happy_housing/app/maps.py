@@ -1092,6 +1092,29 @@ def focus_marker_layer(lat: float, lon: float) -> pdk.Layer:
     return layer
 
 
+def comps_pins_layer(
+    points: pd.DataFrame,
+    *,
+    layer_id: str,
+    radius_min_pixels: int = 4,
+    radius_max_pixels: int = 12,
+) -> pdk.Layer | None:
+    """Scatter comps coloured cheaper / similar / dearer vs the ask."""
+    if points.empty or not {"lon", "lat"} <= set(points.columns):
+        return None
+    work = points.copy()
+    if "radius" not in work.columns:
+        work["radius"] = 28.0
+    return _scatter(
+        work,
+        layer_id=layer_id,
+        fill_color="[color_r, color_g, color_b, color_a]",
+        radius="radius",
+        radius_min_pixels=radius_min_pixels,
+        radius_max_pixels=radius_max_pixels,
+    )
+
+
 def spatial_heatmap_layer(
     points: pd.DataFrame,
     *,

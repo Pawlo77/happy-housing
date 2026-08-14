@@ -31,6 +31,11 @@ def test_load_missing_returns_defaults(tmp_path: Path) -> None:
     assert settings.olx_max_listings is None
     assert settings.otodom_max_listings is None
     assert settings.http_free_proxies_enabled is False
+    assert settings.offer_comps_max_pins == 200
+    assert settings.offer_comps_months == 0
+    assert settings.offer_comps_include_metro is True
+    assert settings.offer_comps_show_nearby_asks is True
+    assert settings.stats_trend_min_n == 8
 
 
 def test_round_trip_settings(tmp_path: Path) -> None:
@@ -58,6 +63,11 @@ def test_round_trip_settings(tmp_path: Path) -> None:
             model_hpo_trials=8,
             model_use_neighborhood=False,
             model_nbhd_radius_m=600.0,
+            offer_comps_max_pins=120,
+            offer_comps_months=18,
+            offer_comps_include_metro=False,
+            offer_comps_show_nearby_asks=False,
+            stats_trend_min_n=12,
         ),
     )
     loaded = load_app_settings(path)
@@ -81,6 +91,11 @@ def test_round_trip_settings(tmp_path: Path) -> None:
     assert loaded.model_hpo_trials == 8
     assert loaded.model_use_neighborhood is False
     assert loaded.model_nbhd_radius_m == 600.0
+    assert loaded.offer_comps_max_pins == 120
+    assert loaded.offer_comps_months == 18
+    assert loaded.offer_comps_include_metro is False
+    assert loaded.offer_comps_show_nearby_asks is False
+    assert loaded.stats_trend_min_n == 12
 
 
 def test_freshness_warn_settings_round_trip(tmp_path: Path) -> None:
