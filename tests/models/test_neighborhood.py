@@ -5,6 +5,7 @@ import pandas as pd
 from happy_housing.models.neighborhood import (
     attach_neighborhood_rcn_features,
     idw_neighborhood_baseline,
+    query_rcn_neighbors,
 )
 
 
@@ -66,3 +67,26 @@ def test_neighborhood_excludes_self_sale_at_same_coords() -> None:
     assert float(out.iloc[0]["nbhd_rcn_n"]) == 1.0
     assert float(out.iloc[0]["nbhd_rcn_median_ppm"]) == 20_000.0
     assert float(out.iloc[0]["nbhd_rcn_nearest_m"]) > 5.0
+
+
+def test_query_rcn_neighbors_returns_rows_with_distance() -> None:
+    neighbors = query_rcn_neighbors(
+        52.2305,
+        21.0005,
+        _rcn_frame(),
+        radius_m=500.0,
+    )
+    assert not neighbors.empty
+    assert "distance_m" in neighbors.columns
+    assert float(neighbors["distance_m"].min()) < 500.0
+    assert neighbors["distance_m"].is_monotonic_increasing
+
+
+def test_query_rcn_neighbors_empty_when_far() -> None:
+    neighbors = query_rcn_neighbors(
+        51.95,
+        20.6,
+        _rcn_frame(),
+        radius_m=100.0,
+    )
+    assert neighbors.empty

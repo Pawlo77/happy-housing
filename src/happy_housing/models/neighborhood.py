@@ -182,3 +182,49 @@ def idw_neighborhood_baseline(
     return pd.to_numeric(enriched["nbhd_rcn_idw_ppm"], errors="coerce").to_numpy(
         dtype=float
     )
+
+
+def query_rcn_neighbors(
+    lat: float,
+    lon: float,
+    rcn: pd.DataFrame,
+    *,
+    radius_m: float = 800.0,
+    exclude_listing_id: str | None = None,
+) -> pd.DataFrame:
+    """Return RCN rows within ``radius_m`` of ``(lat, lon)``, nearest first.
+
+    Unlike :func:`attach_neighborhood_rcn_features`, an empty radius stays
+    empty (no nearest-1 fallback). Adds ``distance_m``.
+    """
+    comps = _valid_rcn(rcn)
+    if comps.empty:
+        return comps
+    coords = _rad_coords(comps)
+    valid = np.isfinite(coords).all(axis=1)
+    if not valid.any():
+        return comps.iloc[0:0].copy()
+    work = comps.loc[valid].reset_index(drop=True)
+    tree = BallTree(_rad_coords(work), metric="haversine")
+    query = np.radians(np.array([[float(lat), float(lon)]], dtype=float))
+    if not np.isfinite(query).all():
+        return work.iloc[0:0].copy()
+    radius_rad = float(radius_m) / _EARTH_RADIUS_M
+    indices, dists_rad = tree.query_radius(
+        query,
+        r=radius_rad,
+        return_distance=True,
+        sort_results=True,
+    )
+    neighbors = np.asarray(indices[0], dtype=int)
+    dists_m = np.asarray(dists_rad[0], dtype=float) * _EARTH_RADIUS_M
+    if exclude_listing_id is not None and "listing_id" in work.columns:
+        ids = work["listing_id"].astype(str).to_numpy()
+        keep = ids[neighbors] != str(exclude_listing_id)
+        neighbors = neighbors[keep]
+        dists_m = dists_m[keep]
+    if len(neighbors) == 0:
+        return work.iloc[0:0].copy()
+    out = work.iloc[neighbors].copy()
+    out["distance_m"] = dists_m
+    return out.reset_index(drop=True)
