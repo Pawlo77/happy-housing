@@ -60,6 +60,17 @@ _DISTRICT_CENTROIDS: dict[str, tuple[float, float]] = {
 }
 """Fallback lon/lat for parcels that lack GML geometry."""
 
+WARSAW_DISTRICT_NAMES: frozenset[str] = frozenset(_DISTRICT_CENTROIDS)
+"""Casefolded Warsaw dzielnica names used for metro vs city tagging."""
+
+
+def is_district_centroid(lon: float, lat: float, *, atol: float = 1e-4) -> bool:
+    """True when ``(lon, lat)`` matches a Warsaw dzielnica centroid fallback."""
+    for clon, clat in _DISTRICT_CENTROIDS.values():
+        if abs(lon - clon) <= atol and abs(lat - clat) <= atol:
+            return True
+    return False
+
 
 def _local(tag: str) -> str:
     return tag.split("}")[-1]
@@ -136,6 +147,14 @@ def _district_from_text(text: str | None) -> str | None:
     return None
 
 
+def _transaction_listed_at(elem: ET.Element) -> str | None:
+    """Prefer ``dataTransakcji``; fall back to GML version / id stamps."""
+    deed = _child_text(elem, "dataTransakcji")
+    if deed:
+        return deed
+    return _child_text(elem, "wersjaId") or _attr(elem, "id")
+
+
 def parse_rcn_gml_stream(
     gml_handle: BinaryIO | Any,
     max_rows: int | None = None,
@@ -167,7 +186,7 @@ def parse_rcn_gml_stream(
                     "transaction_id": tid,
                     "price_pln": price,
                     "nieruchomosc_id": prop_href,
-                    "listed_at": _child_text(elem, "wersjaId") or _attr(elem, "id"),
+                    "listed_at": _transaction_listed_at(elem),
                     "oznaczenie_transakcji": _child_text(elem, "oznaczenieTransakcji"),
                     "rodzaj_transakcji": _child_text(elem, "rodzajTransakcji"),
                     "rodzaj_rynku": _child_text(elem, "rodzajRynku"),
@@ -255,9 +274,12 @@ def parse_rcn_gml_stream(
             area = parcel["area_m2"] if area is None else area
         lon = lat = None
         district = None
+        coord_source = "missing"
         if parcel:
             lon, lat = parcel.get("lon"), parcel.get("lat")
             district = parcel.get("district")
+            if lon is not None and lat is not None:
+                coord_source = "parcel"
             if (lon is None or lat is None) and district:
                 key = district.casefold().replace("ł", "l").replace("ś", "s")
                 key = (
@@ -277,6 +299,7 @@ def parse_rcn_gml_stream(
                 ):
                     if candidate in _DISTRICT_CENTROIDS:
                         lon, lat = _DISTRICT_CENTROIDS[candidate]
+                        coord_source = "centroid"
                         break
         if price is None or price <= 0:
             continue
@@ -310,6 +333,7 @@ def parse_rcn_gml_stream(
                 parcel.get("dodatkowe_informacje") if parcel else None
             ),
             "cena_dzialki_pln": parcel.get("cena_dzialki_pln") if parcel else None,
+            "coord_source": coord_source,
         })
         if reached_cap(len(records), row_cap):
             break
@@ -391,15 +415,17 @@ def _parse_flat_feature_fallback(
         if price is None or price <= 0:
             elem.clear()
             continue
+        listed_at = _child_text(target, "dataTransakcji")
         records.append({
             "lon": lon,
             "lat": lat,
             "price_pln": price,
             "area_m2": area,
-            "listed_at": None,
+            "listed_at": listed_at,
             "kind": None,
             "district": "rcn",
             "source": "rcn",
+            "coord_source": "parcel",
         })
         elem.clear()
         if reached_cap(len(records), row_cap):

@@ -4,6 +4,7 @@ import io
 import zipfile
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 from happy_housing.ingest.rcn import extract_rcn_transactions, parse_rcn_gml_stream
@@ -44,6 +45,7 @@ def _linked_gml() -> str:
   <gml:featureMember>
     <rcn:RCN_Transakcja gml:id="TX1" xmlns:gml="http://www.opengis.net/gml/3.2">
       <rcn:cenaTransakcjiBrutto>900000.00</rcn:cenaTransakcjiBrutto>
+      <rcn:dataTransakcji>2024-06-15</rcn:dataTransakcji>
       <rcn:nieruchomosc xlink:href="PROP1"/>
     </rcn:RCN_Transakcja>
   </gml:featureMember>
@@ -76,6 +78,10 @@ def test_parse_rcn_gml_stream_projects_and_filters() -> None:
     assert frame["area_m2"].tolist() == [48.5, 72.0]
     assert frame["lon"].between(20.5, 21.5).all()
     assert frame["lat"].between(51.9, 52.5).all()
+    assert str(frame.iloc[0]["listed_at"]).startswith("2024-06-15")
+    assert frame.iloc[1]["listed_at"] in {None, ""} or pd.isna(
+        frame.iloc[1]["listed_at"]
+    )
 
 
 def test_parse_linked_rcn_uses_district_centroid() -> None:
@@ -86,6 +92,7 @@ def test_parse_linked_rcn_uses_district_centroid() -> None:
     assert float(frame.iloc[0]["price_pln"]) == 900000.0
     assert frame.iloc[0]["district"] == "Wola"
     assert 20.5 < float(frame.iloc[0]["lon"]) < 21.5
+    assert str(frame.iloc[0]["listed_at"]).startswith("2024-06-15")
 
 
 def test_extract_rcn_transactions_from_zip(tmp_path: Path) -> None:
