@@ -167,8 +167,8 @@ class TrainSettings:
     """Include interaction / log / district train-fold engineered features."""
     random_state: int = 42
     """RNG seed for splits and HPO sampling."""
-    train_otodom_labels_only: bool = True
-    """Drop RCN deed rows from training labels (comps still OK as features)."""
+    train_buyer_asks_only: bool = True
+    """Train on buyer asks (Otodom/OLX/fixture sales); RCN stays comps-only."""
     log_target: bool = True
     """Train on ``log1p(price_per_m2)``; report metrics in zł/m²."""
     district_calibration: bool = True
@@ -710,7 +710,7 @@ def train_price_model(
     )
     opt_metric = coerce_opt_metric(settings.opt_metric)
     work = frame
-    if settings.train_otodom_labels_only and "source" in frame.columns:
+    if settings.train_buyer_asks_only and "source" in frame.columns:
         sources = frame["source"].astype(str).str.lower()
         work = frame.loc[sources.isin(BUYER_LISTING_SOURCES)].copy()
         if "listing_kind" in work.columns:
@@ -719,7 +719,7 @@ def train_price_model(
         if "listing_active" in work.columns:
             work = work.loc[work["listing_active"].map(listing_is_active)].copy()
         logger.info(
-            "Train labels filtered to Otodom/OLX/fixture (sale): %s → %s rows",
+            "Train labels: buyer asks (Otodom/OLX/fixture, sale) %s → %s rows",
             len(frame),
             len(work),
         )
@@ -1074,7 +1074,7 @@ def oof_predict_price_per_m2(
     )
     preds = np.full(len(frame), np.nan, dtype=float)
     label_mask = pd.Series(True, index=frame.index)
-    if settings.train_otodom_labels_only and "source" in frame.columns:
+    if settings.train_buyer_asks_only and "source" in frame.columns:
         sources = frame["source"].astype(str).str.lower()
         label_mask = sources.isin(BUYER_LISTING_SOURCES)
         if "listing_kind" in frame.columns:

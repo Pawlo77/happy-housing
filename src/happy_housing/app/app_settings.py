@@ -257,7 +257,8 @@ class AppSettings:
     """Override GUNB zip URL; empty → YAML."""
     crime_panorama_7z_url: str = ""
     """Override Panorama crime .7z URL; empty → YAML."""
-    train_otodom_labels_only: bool = True
+    train_buyer_asks_only: bool = True
+    """Train on buyer ask sources (Otodom/OLX/fixture sales); RCN stays comps-only."""
     """Train LightGBM on Otodom/fixture asks; RCN used as comps only."""
     chat_enabled: bool = True
     """Show Explore Assistant popover and Chat tab."""
@@ -868,10 +869,13 @@ def load_app_settings(path: Path) -> AppSettings:
             )
             or ""
         ),
-        train_otodom_labels_only=bool(
+        train_buyer_asks_only=bool(
             payload.get(
-                "train_otodom_labels_only",
-                defaults.train_otodom_labels_only,
+                "train_buyer_asks_only",
+                payload.get(
+                    "train_otodom_labels_only",
+                    defaults.train_buyer_asks_only,
+                ),
             )
         ),
         chat_enabled=bool(payload.get("chat_enabled", defaults.chat_enabled)),

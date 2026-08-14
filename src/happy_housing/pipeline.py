@@ -87,7 +87,11 @@ from happy_housing.ingest.gios_aq import (
     enrich_stations_with_air_quality,
 )
 from happy_housing.ingest.gunb import download_gunb_mazowieckie, gunb_points_gdf
-from happy_housing.ingest.listing_common import LISTING_ACTIVE_COLUMN, listing_is_active
+from happy_housing.ingest.listing_common import (
+    LISTING_ACTIVE_COLUMN,
+    listing_is_active,
+    prepare_listings_for_model,
+)
 from happy_housing.ingest.listing_dedup import dedupe_cross_source_listings
 from happy_housing.ingest.market import ensure_market_primary
 from happy_housing.ingest.olx import scrape_olx_warsaw
@@ -506,6 +510,7 @@ def run_pipeline(
     listings = pd.concat(listings_parts, ignore_index=True, sort=False)
     listings = listings.drop_duplicates(subset=["listing_id"], keep="last")
     listings = dedupe_cross_source_listings(listings)
+    listings = prepare_listings_for_model(listings)
     listings = ensure_market_primary(listings)
     logger.info(
         "Training/scoring universe size=%s sources=%s",
@@ -725,10 +730,15 @@ def run_pipeline(
             )
             if aq_rasters:
                 enriched = attach_gios_aq_field_features(enriched, aq_rasters)
-        train_frame = pd.DataFrame(enriched.drop(columns=["geometry"], errors="ignore"))
+        train_frame = prepare_listings_for_model(
+            pd.DataFrame(enriched.drop(columns=["geometry"], errors="ignore"))
+        )
         if not passthrough.empty:
             train_frame = pd.concat(
-                [train_frame, passthrough.reset_index(drop=True)],
+                [
+                    train_frame,
+                    prepare_listings_for_model(passthrough.reset_index(drop=True)),
+                ],
                 ignore_index=True,
                 sort=False,
             )
@@ -798,7 +808,7 @@ def run_pipeline(
         use_neighborhood=bool(app_settings.model_use_neighborhood),
         use_engineered=bool(app_settings.model_use_engineered),
         random_state=int(config.model.random_state),
-        train_otodom_labels_only=bool(app_settings.train_otodom_labels_only),
+        train_buyer_asks_only=bool(app_settings.train_buyer_asks_only),
         log_target=bool(app_settings.model_log_target),
         district_calibration=bool(app_settings.model_district_calibration),
         early_stopping_rounds=int(app_settings.model_early_stopping_rounds),
@@ -814,7 +824,7 @@ def run_pipeline(
             "eng": train_settings.use_engineered,
             "early": train_settings.early_stopping_rounds,
             "seed": train_settings.random_state,
-            "oto_only": train_settings.train_otodom_labels_only,
+            "buyer_asks": train_settings.train_buyer_asks_only,
             "log": train_settings.log_target,
             "district_cal": train_settings.district_calibration,
             "n_features": len(FEATURE_COLUMNS),

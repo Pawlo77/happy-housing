@@ -131,7 +131,7 @@ def test_pipeline_ingest_settings_round_trip(tmp_path: Path) -> None:
             rcn_max_rows=1000,
             download_gtfs=False,
             gtfs_zip_url="https://example.test/gtfs.zip",
-            train_otodom_labels_only=False,
+            train_buyer_asks_only=False,
         ),
     )
     loaded = load_app_settings(path)
@@ -142,4 +142,4 @@ def test_pipeline_ingest_settings_round_trip(tmp_path: Path) -> None:
     assert loaded.rcn_max_rows == 1000
     assert loaded.download_gtfs is False
     assert loaded.gtfs_zip_url == "https://example.test/gtfs.zip"
-    assert loaded.train_otodom_labels_only is False
+    assert loaded.train_buyer_asks_only is False

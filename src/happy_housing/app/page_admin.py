@@ -1547,13 +1547,13 @@ def _panel_model(settings: AppSettings, settings_file: Path, proc: Path) -> None
         key="settings_photo_cv_model_id",
     )
     train_asks_only = st.checkbox(
-        "Train on Otodom/fixture asks only (RCN = comps, not labels)",
-        value=bool(settings.train_otodom_labels_only),
+        "Train on buyer asks only (Otodom + OLX + fixture; RCN = comps)",
+        value=bool(settings.train_buyer_asks_only),
         help=(
-            "Avoids mixing deed prices with asks and reduces RCN self-leak "
-            "when neighborhood features are on."
+            "Uses all live buyer portals equally as ask-price labels; excludes "
+            "RCN deed transactions and OLX/Otodom rentals."
         ),
-        key="settings_train_otodom_only",
+        key="settings_train_buyer_asks_only",
     )
     use_nbhd = st.checkbox(
         "Use RCN neighborhood historical prices",
@@ -1581,7 +1581,7 @@ def _panel_model(settings: AppSettings, settings_file: Path, proc: Path) -> None
         settings.model_use_neighborhood = bool(use_nbhd)
         settings.model_use_engineered = bool(use_eng)
         settings.model_nbhd_radius_m = float(radius)
-        settings.train_otodom_labels_only = bool(train_asks_only)
+        settings.train_buyer_asks_only = bool(train_asks_only)
         settings.model_log_target = bool(log_target)
         settings.model_district_calibration = bool(district_cal)
         settings.photo_cv_enabled = bool(photo_cv)
@@ -1595,7 +1595,7 @@ def _panel_model(settings: AppSettings, settings_file: Path, proc: Path) -> None
             f"({metric_direction(coerce_opt_metric(settings.model_opt_metric))}) "
             f"· {settings.model_hpo_trials} trials"
             f"{' · engineered' if use_eng else ''}"
-            f"{' · Otodom labels only' if train_asks_only else ''}."
+            f"{' · buyer asks only' if train_asks_only else ''}."
         )
 
 

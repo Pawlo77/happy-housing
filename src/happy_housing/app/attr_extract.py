@@ -13,6 +13,7 @@ import pandas as pd
 
 from happy_housing.app.llm_metrics import PURPOSE_ATTR_EXTRACT, record_timed_llm_call
 from happy_housing.app.lmstudio_models import get_lmstudio_llm
+from happy_housing.ingest.listing_common import listing_description
 from happy_housing.pipeline_progress import pipeline_tqdm
 
 logger = logging.getLogger(__name__)
@@ -395,9 +396,7 @@ def _pending_lm_jobs(
     llm_calls = 0
     for _, row in frame.iterrows():
         structured = row.to_dict()
-        desc = str(
-            structured.get("description") or structured.get("short_description") or ""
-        ).strip()
+        desc = listing_description(structured)
         if not desc:
             continue
         fp = description_fingerprint(desc[:max_chars])
@@ -471,8 +470,8 @@ def enrich_frame_listing_attrs(
 ) -> pd.DataFrame:
     """Attach merged listing attrs; optional LLM only when gaps remain.
 
-    Structured Otodom columns always win. LLM fills plumbing/wiring/year_renovated
-    and missing flags from a truncated description.
+    Structured listing columns always win. LLM fills plumbing/wiring/year_renovated
+    and missing flags from a truncated description on every source equally.
     """
     out = frame.copy()
     cache = cache if cache is not None else {}
@@ -506,9 +505,7 @@ def enrich_frame_listing_attrs(
     for _, row in out.iterrows():
         structured = row.to_dict()
         extract: ListingAttrExtract | None = None
-        desc = str(
-            structured.get("description") or structured.get("short_description") or ""
-        ).strip()
+        desc = listing_description(structured)
         fp = description_fingerprint(desc[:max_chars]) if desc else ""
         needs_llm = bool(
             use_llm

@@ -148,7 +148,7 @@ def test_train_otodom_only_excludes_rcn_labels() -> None:
         TrainSettings(
             hpo_trials=1,
             use_neighborhood=False,
-            train_otodom_labels_only=True,
+            train_buyer_asks_only=True,
             test_size=0.25,
             val_size=0.2,
             random_state=0,

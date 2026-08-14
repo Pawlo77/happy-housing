@@ -5,7 +5,11 @@ import logging
 
 import pandas as pd
 
-from happy_housing.ingest.otodom import flags_from_extras_and_tags
+from happy_housing.ingest.listing_common import (
+    extras_from_free_text,
+    flags_from_extras_and_tags,
+    listing_description,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +128,36 @@ def promote_listing_flags(frame: pd.DataFrame) -> pd.DataFrame:
                     out[col].to_numpy(), derived[col].to_numpy(), strict=True
                 )
             ]
+
+    if "description" in out.columns or "title" in out.columns:
+        for idx in out.index:
+            text = listing_description(out.loc[idx])
+            extras = extras_from_free_text(text)
+            if not extras:
+                continue
+            text_floor: int | None = None
+            if "floor_no" in out.columns:
+                raw_floor = out.at[idx, "floor_no"]
+                try:
+                    if raw_floor is not None and raw_floor == raw_floor:
+                        text_floor = int(float(raw_floor))
+                except (TypeError, ValueError):
+                    text_floor = None
+            floor_label = (
+                str(out.at[idx, "floor_label"])
+                if "floor_label" in out.columns
+                and out.at[idx, "floor_label"] is not None
+                and out.at[idx, "floor_label"] == out.at[idx, "floor_label"]
+                else None
+            )
+            derived = flags_from_extras_and_tags(
+                extras=extras,
+                tags=set(),
+                floor_label=floor_label,
+                floor_no=text_floor,
+            )
+            for col, value in derived.items():
+                out.at[idx, col] = _coalesce_flag(out.at[idx, col], int(value))
 
     if "object_type" not in out.columns:
         out["object_type"] = pd.NA
