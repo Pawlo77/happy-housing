@@ -64,6 +64,7 @@ from happy_housing.app.stats_insights import (
 )
 from happy_housing.app.stats_xai import booster_importance_table, mean_abs_shap_table
 from happy_housing.app.ui_help import STATS_FILTER_HELP
+from happy_housing.ingest.listing_common import append_inactive_otodom_asks
 from happy_housing.models.train import (
     FEATURE_COLUMNS,
     build_feature_matrix,
@@ -882,7 +883,10 @@ def render_stats() -> None:
     )
 
     try:
-        frame = drop_heavy_listing_columns(load_scored())
+        frame = append_inactive_otodom_asks(
+            drop_heavy_listing_columns(load_scored()),
+            processed_dir(),
+        )
     except FileNotFoundError as exc:
         logger.warning("Stats missing scored listings: %s", exc)
         st.error(str(exc))

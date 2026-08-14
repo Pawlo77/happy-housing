@@ -13,6 +13,7 @@ from happy_housing.app.commute_modes import (
     commute_tooltip_label,
 )
 from happy_housing.gis.traffic import diurnal_traffic_weight
+from happy_housing.ingest.listing_common import filter_active_listings
 
 _DELTA_COLOR_SCALE_ZL: float = 1_500.0
 """Δ zł/m² soft-saturation scale for offer pin colours (tanh)."""
@@ -644,6 +645,7 @@ def prepare_listings_for_map(
     stand out among standard offer pins. ``commute_mode`` selects which
     commute column appears on hover (default: public transport).
     """
+    frame = filter_active_listings(frame)
     if frame.empty:
         return pd.DataFrame()
     keep = [c for c in _LISTING_MAP_SOURCE_COLUMNS if c in frame.columns]

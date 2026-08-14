@@ -16,6 +16,7 @@ from sklearn.model_selection import ParameterSampler, train_test_split
 
 from happy_housing.config import ExperimentConfig, ModelConfig
 from happy_housing.gis.amenity_catalog import model_distance_feature_columns
+from happy_housing.ingest.listing_common import BUYER_LISTING_SOURCES, listing_is_active
 from happy_housing.models.feature_eng import (
     ENGINEERED_FEATURE_COLUMNS,
     ENGINEERED_TARGET_COLUMNS,
@@ -146,12 +147,6 @@ _HPO_SPACE: dict[str, list[Any]] = {
     "objective": ["regression", "mae", "huber"],
 }
 """Expanded LightGBM search space (deep trees + L1/Huber for MAPE-ish fits)."""
-
-_LABEL_SOURCES_OTODOM: frozenset[str] = frozenset({"otodom", "olx", "fixture"})
-"""Sources treated as ask-price labels when ``train_otodom_labels_only``."""
-
-_LABEL_SOURCES_BUYER: frozenset[str] = frozenset({"otodom", "olx", "fixture"})
-"""Buyer-facing ask sources for recommender default pool."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -717,10 +712,12 @@ def train_price_model(
     work = frame
     if settings.train_otodom_labels_only and "source" in frame.columns:
         sources = frame["source"].astype(str).str.lower()
-        work = frame.loc[sources.isin(_LABEL_SOURCES_OTODOM)].copy()
+        work = frame.loc[sources.isin(BUYER_LISTING_SOURCES)].copy()
         if "listing_kind" in work.columns:
             kinds = work["listing_kind"].astype(str).str.lower().fillna("sale")
             work = work.loc[kinds != "rent"].copy()
+        if "listing_active" in work.columns:
+            work = work.loc[work["listing_active"].map(listing_is_active)].copy()
         logger.info(
             "Train labels filtered to Otodom/OLX/fixture (sale): %s → %s rows",
             len(frame),
@@ -1079,10 +1076,12 @@ def oof_predict_price_per_m2(
     label_mask = pd.Series(True, index=frame.index)
     if settings.train_otodom_labels_only and "source" in frame.columns:
         sources = frame["source"].astype(str).str.lower()
-        label_mask = sources.isin(_LABEL_SOURCES_OTODOM)
+        label_mask = sources.isin(BUYER_LISTING_SOURCES)
         if "listing_kind" in frame.columns:
             kinds = frame["listing_kind"].astype(str).str.lower().fillna("sale")
             label_mask = label_mask & (kinds != "rent")
+        if "listing_active" in frame.columns:
+            label_mask = label_mask & frame["listing_active"].map(listing_is_active)
 
     labeled_idx = frame.index[label_mask].to_list()
 

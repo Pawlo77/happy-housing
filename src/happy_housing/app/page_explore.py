@@ -233,6 +233,7 @@ from happy_housing.gis.amenity_catalog import (
 )
 from happy_housing.gis.gios_aq_field import AQ_MAP_OVERLAYS, AqMapOverlay
 from happy_housing.gis.warsaw_noise import NOISE_MAP_OVERLAYS, NoiseMapOverlay
+from happy_housing.ingest.listing_common import filter_active_listings
 from happy_housing.ingest.otodom import fetch_listing_detail, otodom_session
 from happy_housing.ingest.proxy_pool import configure_http_proxies
 from happy_housing.models.train import (
@@ -3017,7 +3018,7 @@ def render_explore() -> None:
     """Render Explore with sidebar Filter/Map-layer tabs + main content tabs."""
     logger.info("Rendering Explore")
     try:
-        frame = load_scored()
+        frame = filter_active_listings(load_scored())
     except FileNotFoundError as exc:
         logger.warning("Explore missing scored listings: %s", exc)
         st.error(str(exc))

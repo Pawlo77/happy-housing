@@ -21,11 +21,12 @@ from happy_housing.gis.amenity_catalog import (
     amenity_keys,
     dist_column,
 )
+from happy_housing.ingest.listing_common import (
+    BUYER_LISTING_SOURCES,
+    filter_active_listings,
+)
 
 logger = logging.getLogger(__name__)
-
-_BUYER_SOURCES: frozenset[str] = frozenset({"otodom", "olx", "fixture"})
-"""Default candidate sources when prefs do not set sources."""
 
 
 def impressions_path(processed: Path) -> Path:
@@ -193,11 +194,13 @@ def score_offers(
     minutes column feeds the commute term (default: public transport).
     """
     work = frame
+    if "listing_active" in frame.columns:
+        work = filter_active_listings(frame)
     if prefs is not None and prefs.enabled:
         work = apply_preferences(frame, prefs, commute_mode=commute_mode)
     elif otodom_pool_default and "source" in frame.columns:
         sources = frame["source"].astype(str).str.lower()
-        work = frame.loc[sources.isin(_BUYER_SOURCES)].copy()
+        work = frame.loc[sources.isin(BUYER_LISTING_SOURCES)].copy()
     if work.empty or "listing_id" not in work.columns:
         return pd.DataFrame(
             columns=[
