@@ -33,5 +33,6 @@ IDs: `OLX-{offer_id}`. Parquet: `olx_listings.parquet`.
 ## Completeness
 
 Intentional subset: sale-first, district-tiled, rate-limited. Not a full
-historical dump. Overlap with Otodom is expected; universe dedupes on
-`listing_id` (different id namespaces, so no cross-portal collapse).
+historical dump. Overlap with Otodom is expected; the pipeline collapses
+cross-portal duplicates (shared geo fingerprint or cover photo) before enrich
+and scoring, preferring Otodom over OLX.

@@ -7,7 +7,6 @@ import pandas as pd
 import pytest
 
 from happy_housing.ingest.olx import (
-    merge_olx_frames,
     normalize_olx_offer,
     scrape_olx_warsaw,
 )
@@ -91,33 +90,6 @@ def test_normalize_skips_missing_coords() -> None:
     payload = _offer_payload()
     payload["map"] = {"lat": None, "lon": None}
     assert normalize_olx_offer(payload, listing_kind="sale") is None
-
-
-def test_merge_olx_frames_fresh_wins() -> None:
-    old = pd.DataFrame([
-        {
-            "listing_id": "OLX-1",
-            "price_pln": 100.0,
-            "listed_at": "2026-01-01T00:00:00+00:00",
-        }
-    ])
-    new = pd.DataFrame([
-        {
-            "listing_id": "OLX-1",
-            "price_pln": 200.0,
-            "listed_at": "2026-08-01T00:00:00+00:00",
-        },
-        {
-            "listing_id": "OLX-2",
-            "price_pln": 300.0,
-            "listed_at": "2026-08-02T00:00:00+00:00",
-        },
-    ])
-    merged = merge_olx_frames(old, new)
-    assert set(merged["listing_id"]) == {"OLX-1", "OLX-2"}
-    assert (
-        float(merged.loc[merged["listing_id"] == "OLX-1", "price_pln"].iloc[0]) == 200.0
-    )
 
 
 def test_scrape_olx_warsaw_incremental_with_fake_client(

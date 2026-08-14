@@ -19,6 +19,7 @@ from happy_housing.ingest.fx import apply_fx_to_listings_frame, fx_cache_path
 from happy_housing.ingest.http_client import resilient_get
 from happy_housing.ingest.limits import reached_cap, resolve_ingest_cap
 from happy_housing.ingest.listed_at import coalesce_listed_at
+from happy_housing.ingest.listing_common import merge_listing_frames
 from happy_housing.ingest.proxy_pool import bind_http_proxy
 
 logger = logging.getLogger(__name__)
@@ -368,18 +369,6 @@ def normalize_olx_offer(
     }
 
 
-def merge_olx_frames(existing: pd.DataFrame, fresh: pd.DataFrame) -> pd.DataFrame:
-    """Union existing + fresh; fresh wins on duplicate ``listing_id``."""
-    if existing.empty:
-        return fresh.copy()
-    if fresh.empty:
-        return existing.copy()
-    combined = pd.concat([existing, fresh], ignore_index=True, sort=False)
-    return combined.drop_duplicates(subset=["listing_id"], keep="last").reset_index(
-        drop=True
-    )
-
-
 def fetch_warsaw_district_ids(
     session: requests.Session | None = None,
     timeout_s: float = 30.0,
@@ -587,7 +576,7 @@ def scrape_olx_warsaw(
             fresh.loc[mask, "price_per_m2"] = (
                 fresh.loc[mask, "price_pln"] / fresh.loc[mask, "area_m2"]
             )
-    merged = merge_olx_frames(existing, fresh)
+    merged = merge_listing_frames(existing, fresh)
     output_parquet.parent.mkdir(parents=True, exist_ok=True)
     merged.to_parquet(output_parquet, index=False)
     logger.info(
