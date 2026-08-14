@@ -56,7 +56,10 @@ from happy_housing.app.data import (
     load_scored,
     processed_dir,
 )
-from happy_housing.app.detail_backfill_jobs import detail_backfill_command
+from happy_housing.app.detail_backfill_jobs import (
+    detail_backfill_command,
+    stop_auto_detail_backfill,
+)
 from happy_housing.app.filter_presets import (
     clear_filter_presets,
     filter_presets_path,
@@ -369,15 +372,32 @@ def _panel_ops(settings: AppSettings, settings_file: Path, proc: Path) -> None:
                 key="run_nol",
                 use_container_width=True,
             )
-        run_detail = st.button(
-            "Detail backfill batch",
-            key="run_detail_backfill",
-            help=(
-                "Fetch Otodom/NOL detail pages for listings missing coords/attrs "
-                "(one batch; auto-schedules while pending when enabled)."
-            ),
-            use_container_width=True,
+        auto_bf = "on" if settings.auto_detail_backfill_enabled else "off"
+        st.caption(
+            f"Auto detail backfill **{auto_bf}** "
+            "(Sources → Detail backfill; stop below halts schedule + running batch)."
         )
+        b1, b2 = st.columns(2)
+        with b1:
+            run_detail = st.button(
+                "Detail backfill batch",
+                key="run_detail_backfill",
+                help=(
+                    "Fetch Otodom/NOL detail pages for listings missing coords/attrs "
+                    "(one batch; auto-schedules while pending when enabled)."
+                ),
+                use_container_width=True,
+            )
+        with b2:
+            stop_auto_detail = st.button(
+                "Stop auto detail backfill",
+                key="stop_auto_detail_backfill",
+                help=(
+                    "Turn off auto-scheduled detail downloads and stop a running "
+                    "detail_backfill job. Re-enable under Sources → Detail backfill."
+                ),
+                use_container_width=True,
+            )
     with pipe_col, st.container(border=True):
         st.markdown("**Pipeline**")
         st.caption("Enrich → train → score → recommend.")
@@ -567,6 +587,23 @@ def _panel_ops(settings: AppSettings, settings_file: Path, proc: Path) -> None:
             processed=proc,
             log_level=level,
         )
+
+    if stop_auto_detail:
+        result = stop_auto_detail_backfill(proc)
+        parts: list[str] = []
+        if result.auto_disabled:
+            parts.append("auto-schedule off")
+        elif not result.auto_was_enabled:
+            parts.append("auto-schedule already off")
+        if result.job_stopped:
+            parts.append(f"stopped job `{result.job_id}`")
+        else:
+            parts.append("no running detail_backfill job")
+        set_admin_flash(
+            "success",
+            " · ".join(parts) + ". Re-enable under Sources → Detail backfill.",
+        )
+        st.rerun()
 
     if run_pipe:
         settings.scrape_otodom_in_pipeline = bool(scrape_in_pipe)
