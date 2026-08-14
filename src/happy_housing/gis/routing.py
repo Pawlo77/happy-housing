@@ -20,6 +20,83 @@ OSRM_CHUNK_SIZE: int = 200
 _OSRM_CHUNK_WORKERS: int = 4
 """Parallel OSRM chunk requests when the origin list is large."""
 
+_ACTIVE_MODE_PROXY_KMH: dict[str, float] = {
+    "foot": 5.0,
+    "walking": 5.0,
+    "bike": 15.0,
+    "bicycle": 15.0,
+    "cycling": 15.0,
+}
+"""Default urban speeds when foot/bike OSRM graphs are missing."""
+
+_ACTIVE_MODE_MAX_IMPLIED_KMH: dict[str, float] = {
+    "foot": 8.0,
+    "walking": 8.0,
+    "bike": 28.0,
+    "bicycle": 28.0,
+    "cycling": 28.0,
+}
+"""Implied speeds above this mean the car OSRM graph answered for foot/bike."""
+
+
+def duration_seconds_from_distance_m(distance_m: float, speed_kmh: float) -> float:
+    """Travel time (s) for ``distance_m`` at constant ``speed_kmh``."""
+    speed = float(speed_kmh) if float(speed_kmh) > 0 else 5.0
+    dist = max(0.0, float(distance_m))
+    return (dist / 1000.0) / speed * 3600.0
+
+
+def implied_speed_kmh(distance_m: float, duration_s: float) -> float:
+    """Average speed (km/h) implied by distance and duration; NaN if invalid."""
+    dist = float(distance_m)
+    dur = float(duration_s)
+    if dist <= 0 or dur <= 0:
+        return float("nan")
+    return (dist / 1000.0) / (dur / 3600.0)
+
+
+def correct_active_mode_duration_s(
+    distance_m: float,
+    duration_s: float,
+    *,
+    profile: str,
+    proxy_speed_kmh: float | None = None,
+) -> float:
+    """Replace car-graph foot/bike durations with a distance / speed estimate.
+
+    Local OSRM is prepared with ``car.lua`` only; ``/route/v1/foot`` and
+    ``/bike`` still return driving times. When implied speed exceeds a
+    plausible walk/bike cap, rescale using ``proxy_speed_kmh``.
+    """
+    key = str(profile or "").strip().casefold()
+    if key not in _ACTIVE_MODE_PROXY_KMH:
+        return float(duration_s)
+    proxy = (
+        float(proxy_speed_kmh)
+        if proxy_speed_kmh is not None and float(proxy_speed_kmh) > 0
+        else _ACTIVE_MODE_PROXY_KMH[key]
+    )
+    dist = float(distance_m)
+    dur = float(duration_s)
+    if dist <= 0:
+        return dur
+    speed = implied_speed_kmh(dist, dur)
+    max_speed = _ACTIVE_MODE_MAX_IMPLIED_KMH[key]
+    if speed != speed or speed > max_speed:
+        corrected = duration_seconds_from_distance_m(dist, proxy)
+        logger.warning(
+            "OSRM %s duration looks like car graph (%.1f km/h for %.0f m); "
+            "using %.0f km/h → %.0f s (was %.0f s)",
+            key,
+            speed if speed == speed else float("nan"),
+            dist,
+            proxy,
+            corrected,
+            dur,
+        )
+        return corrected
+    return dur
+
 
 def _osrm_table_chunk(
     origins: Sequence[tuple[float, float]],
@@ -151,7 +228,41 @@ def attach_commute_minutes(
         profile=profile,
     )
     if durations is not None and len(durations) == len(out):
-        out[out_col] = durations / 60.0
+        profile_key = str(profile or "driving").strip().casefold() or "driving"
+        if profile_key in _ACTIVE_MODE_PROXY_KMH and distance_col in out.columns:
+            dist_m = pd.to_numeric(out[distance_col], errors="coerce").to_numpy(
+                dtype=float
+            )
+            dur_s = np.asarray(durations, dtype=float)
+            proxy = (
+                float(proxy_speed_kmh)
+                if float(proxy_speed_kmh) > 0
+                else _ACTIVE_MODE_PROXY_KMH[profile_key]
+            )
+            max_speed = _ACTIVE_MODE_MAX_IMPLIED_KMH[profile_key]
+            with np.errstate(divide="ignore", invalid="ignore"):
+                speed = (dist_m / 1000.0) / (dur_s / 3600.0)
+            bad = (dist_m > 0) & ((~np.isfinite(speed)) | (speed > max_speed))
+            proxy_s = np.where(
+                dist_m > 0,
+                (dist_m / 1000.0) / proxy * 3600.0,
+                dur_s,
+            )
+            corrected = np.where(bad, proxy_s, dur_s)
+            n_fix = int(np.sum(bad))
+            if n_fix:
+                logger.warning(
+                    "OSRM %s returned car-like times for %s/%s rows; "
+                    "rescaled with %.0f km/h via %s",
+                    profile_key,
+                    n_fix,
+                    len(out),
+                    proxy,
+                    distance_col,
+                )
+            out[out_col] = corrected / 60.0
+        else:
+            out[out_col] = durations / 60.0
         logger.info(
             "OSRM %s filled %s/%s rows → %s",
             profile,
@@ -424,9 +535,16 @@ def osrm_route_geojson(
             path.append([float(point[0]), float(point[1])])
         if len(path) < 2:
             return None
+        distance_m = float(route.get("distance") or 0.0)
+        duration_s = float(route.get("duration") or 0.0)
+        duration_s = correct_active_mode_duration_s(
+            distance_m,
+            duration_s,
+            profile=profile_key,
+        )
         return {
-            "duration": float(route.get("duration") or 0.0),
-            "distance": float(route.get("distance") or 0.0),
+            "duration": duration_s,
+            "distance": distance_m,
             "coordinates": path,
         }
     except Exception as exc:

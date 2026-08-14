@@ -155,6 +155,67 @@ def test_osrm_route_geometry_parses_geojson() -> None:
     assert "/route/v1/driving/" in url
 
 
+def test_osrm_foot_route_rescales_car_graph_duration() -> None:
+    """Car-only OSRM accepts /foot/ but returns driving times — rescale to walk."""
+    payload = {
+        "code": "Ok",
+        "routes": [
+            {
+                "distance": 2182.0,
+                "duration": 240.0,  # ~33 km/h — car, not walk
+                "geometry": {
+                    "type": "LineString",
+                    "coordinates": [[21.0, 52.23], [20.98, 52.24]],
+                },
+            }
+        ],
+    }
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status = MagicMock()
+    mock_resp.json.return_value = payload
+    with patch("happy_housing.gis.routing.requests.get", return_value=mock_resp):
+        out = osrm_route_geojson(
+            (21.0, 52.23),
+            (20.98, 52.24),
+            base_url="http://osrm.test",
+            profile="foot",
+        )
+    assert out is not None
+    assert float(out["distance"]) == 2182.0
+    # 2.182 km at 5 km/h → 26.184 min → ~1571 s
+    assert abs(float(out["duration"]) - 1571.04) < 1.0
+
+
+def test_fetch_offer_commute_route_walk_uses_walk_pace() -> None:
+    from happy_housing.app.commute_route import fetch_offer_commute_route
+
+    with patch(
+        "happy_housing.app.commute_route.osrm_route_geojson",
+        return_value={
+            "duration": 1571.0,
+            "distance": 2182.0,
+            "coordinates": [[21.0, 52.23], [20.98, 52.24]],
+        },
+    ):
+        plan = fetch_offer_commute_route(
+            origin_lon=21.0,
+            origin_lat=52.23,
+            dest_lon=20.98,
+            dest_lat=52.24,
+            mode="walk",
+            hour=8,
+            osrm_url="http://osrm.test",
+            otp_url="http://otp.test",
+        )
+    assert plan is not None
+    assert plan.mode == "walk"
+    assert abs(plan.duration_s / 60.0 - 26.0) < 1.0
+    assert "26 min" in plan.summary
+    md = format_commute_route_markdown(plan)
+    assert "26 min" in md
+    assert "2,182 m" in md
+
+
 def test_fetch_offer_commute_route_car_builds_plan() -> None:
     from happy_housing.app.commute_route import fetch_offer_commute_route
 
