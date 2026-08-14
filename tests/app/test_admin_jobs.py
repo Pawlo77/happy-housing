@@ -133,6 +133,31 @@ def test_cursor_agent_sandbox_active_reads_env(monkeypatch) -> None:  # type: ig
     assert cursor_agent_sandbox_active() is True
 
 
+def test_spawn_retries_without_setsid_when_unimplemented() -> None:
+    """Linux CI: posix_spawnp(..., setsid=True) may raise NotImplementedError."""
+    from happy_housing.app import admin_jobs as mod
+
+    calls: list[bool | None] = []
+
+    def _fake_spawn(
+        exe: str, argv: list[str], env: dict[str, str], **kwargs: object
+    ) -> int:
+        _ = exe, argv, env
+        if "setsid" in kwargs:
+            calls.append(bool(kwargs.get("setsid")))
+            raise NotImplementedError(
+                "posix_spawnp: setsid unavailable on this platform"
+            )
+        calls.append(None)
+        return 4242
+
+    with patch.object(mod.os, "posix_spawnp", side_effect=_fake_spawn):
+        pid = mod._spawn_via_posix_spawn(["python", "runner.py"], {"PATH": "/usr/bin"})
+    assert pid == 4242
+    assert calls == [True, None]
+    mod._SPAWNED_PIDS.discard(4242)
+
+
 def test_start_admin_job_queues_when_posix_spawn_fails(tmp_path: Path) -> None:
     root = tmp_path / "processed"
     with patch(

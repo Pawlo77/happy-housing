@@ -354,7 +354,11 @@ def _write_runner_script(
 
 
 def _spawn_via_posix_spawn(launcher: list[str], env: dict[str, str]) -> int:
-    """Start ``launcher`` with ``posix_spawnp`` (safe from multithreaded parents)."""
+    """Start ``launcher`` with ``posix_spawnp`` (safe from multithreaded parents).
+
+    Prefer a new session (``setsid=True``) so Ops can signal the process group.
+    Linux builds may raise ``NotImplementedError`` for that flag — retry without.
+    """
     if not hasattr(os, "posix_spawnp"):
         raise OSError("posix_spawnp unavailable")
     exe = str(launcher[0])
@@ -362,7 +366,8 @@ def _spawn_via_posix_spawn(launcher: list[str], env: dict[str, str]) -> int:
     clean_env = {str(k): str(v) for k, v in env.items()}
     try:
         pid = int(os.posix_spawnp(exe, argv, clean_env, setsid=True))
-    except TypeError:
+    except (TypeError, NotImplementedError):
+        # CPython on some Linux CI images rejects setsid= for posix_spawnp.
         pid = int(os.posix_spawnp(exe, argv, clean_env))
     except OSError:
         raise
