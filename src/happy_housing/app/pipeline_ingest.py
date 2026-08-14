@@ -39,6 +39,7 @@ def resolve_ingest_limits(
         otodom_max_pages=settings.otodom_max_pages,
         otodom_max_listings=settings.otodom_max_listings,
         otodom_incremental=bool(settings.otodom_incremental),
+        otodom_fetch_details=bool(settings.otodom_fetch_details),
         olx_max_listings=settings.olx_max_listings,
         olx_incremental=bool(settings.olx_incremental),
         olx_include_rent=bool(settings.olx_include_rent),

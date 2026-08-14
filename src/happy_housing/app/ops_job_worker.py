@@ -11,6 +11,7 @@ from happy_housing.app.admin_jobs import (
     load_admin_job,
     run_queued_admin_job,
 )
+from happy_housing.app.detail_backfill_jobs import maybe_schedule_detail_backfill
 from happy_housing.logging_config import configure_logging
 
 logger = logging.getLogger(__name__)
@@ -26,6 +27,7 @@ def run_worker_loop(processed_dir: Path, poll_s: float = 0.5) -> None:
     root.mkdir(parents=True, exist_ok=True)
     logger.info("Ops job worker watching %s", root)
     while True:
+        ran_request = False
         for request in sorted(root.glob("*.request")):
             job_id = request.stem
             try:
@@ -36,10 +38,13 @@ def run_worker_loop(processed_dir: Path, poll_s: float = 0.5) -> None:
                 ran = run_queued_admin_job(processed_dir, job_id)
                 if ran:
                     logger.info("Worker started job %s", job_id)
+                ran_request = True
             except Exception:
                 logger.exception("Worker failed on job %s", job_id)
             finally:
                 request.unlink(missing_ok=True)
+        if not ran_request:
+            maybe_schedule_detail_backfill(processed_dir)
         time.sleep(poll_s)
 
 

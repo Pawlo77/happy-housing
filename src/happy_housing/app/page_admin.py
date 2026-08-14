@@ -56,6 +56,7 @@ from happy_housing.app.data import (
     load_scored,
     processed_dir,
 )
+from happy_housing.app.detail_backfill_jobs import detail_backfill_command
 from happy_housing.app.filter_presets import (
     clear_filter_presets,
     filter_presets_path,
@@ -102,6 +103,7 @@ from happy_housing.app.recommender import (
 )
 from happy_housing.app.star_news import clear_star_news_memory, load_news, news_path
 from happy_housing.app.stars import clear_stars, load_stars, stars_path
+from happy_housing.ingest.detail_backfill import count_pending_detail_backfill
 from happy_housing.ingest.fx import (
     clear_fx_cache,
     fx_cache_path,
@@ -304,9 +306,14 @@ def _panel_ops(settings: AppSettings, settings_file: Path, proc: Path) -> None:
     )
 
     st.subheader("Jobs")
+    pending = count_pending_detail_backfill(proc)
+    pending_otodom = int(pending.get("otodom", 0))
     st.caption(
         f"Caps from **Sources** · Otodom `{pages}` pages / `{listings}` listings "
         f"(incr `{'on' if limits.otodom_incremental else 'off'}`) · "
+        f"detail pending **{pending_otodom}** · "
+        f"proxies **`{'on' if settings.http_free_proxies_enabled else 'off'}`** "
+        f"(Sources → Detail backfill) · "
         f"OLX `{olx_listings}` "
         f"(incr `{'on' if limits.olx_incremental else 'off'}`, "
         f"rent `{'on' if limits.olx_include_rent else 'off'}`) · "
@@ -342,6 +349,15 @@ def _panel_ops(settings: AppSettings, settings_file: Path, proc: Path) -> None:
                 key="run_olx",
                 use_container_width=True,
             )
+        run_detail = st.button(
+            "Detail backfill batch",
+            key="run_detail_backfill",
+            help=(
+                "Fetch Otodom detail pages for listings missing coords/attrs "
+                "(one batch; auto-schedules while pending when enabled)."
+            ),
+            use_container_width=True,
+        )
     with pipe_col, st.container(border=True):
         st.markdown("**Pipeline**")
         st.caption("Enrich → train → score → recommend.")
@@ -409,7 +425,7 @@ def _panel_ops(settings: AppSettings, settings_file: Path, proc: Path) -> None:
                 f"configure_http_proxies(enabled={proxy_flag!r}); "
                 f"scrape_otodom_warsaw(Path({str(out_path)!r}), "
                 f"max_pages={pages_arg}, max_listings={listings_arg}, "
-                f"incremental={incr_arg})"
+                f"incremental={incr_arg}, fetch_details=False)"
             ),
         ]
         logger.info(
@@ -468,6 +484,15 @@ def _panel_ops(settings: AppSettings, settings_file: Path, proc: Path) -> None:
         _launch_ops_job(
             name="olx_scrape",
             command=cmd,
+            processed=proc,
+            log_level=level,
+        )
+
+    if run_detail:
+        level = str(settings.log_level)
+        _launch_ops_job(
+            name="detail_backfill",
+            command=detail_backfill_command(proc, settings),
             processed=proc,
             log_level=level,
         )
@@ -911,6 +936,11 @@ def _apply_pipeline_widgets(
     max_pages: int | None,
     max_listings: int | None,
     incremental: bool,
+    otodom_fetch_details: bool,
+    auto_detail_backfill_enabled: bool,
+    detail_backfill_batch_size: int,
+    detail_backfill_workers: int,
+    detail_backfill_sleep_s: float,
     olx_unlimited: bool,
     olx_max_listings: int | None,
     olx_incremental: bool,
@@ -943,6 +973,11 @@ def _apply_pipeline_widgets(
     settings.otodom_max_pages = None if otodom_unlimited else max_pages
     settings.otodom_max_listings = None if otodom_unlimited else max_listings
     settings.otodom_incremental = bool(incremental)
+    settings.otodom_fetch_details = bool(otodom_fetch_details)
+    settings.auto_detail_backfill_enabled = bool(auto_detail_backfill_enabled)
+    settings.detail_backfill_batch_size = max(1, int(detail_backfill_batch_size))
+    settings.detail_backfill_workers = max(1, int(detail_backfill_workers))
+    settings.detail_backfill_sleep_s = float(detail_backfill_sleep_s)
     settings.olx_max_listings = None if olx_unlimited else olx_max_listings
     settings.olx_incremental = bool(olx_incremental)
     settings.olx_include_rent = bool(olx_include_rent)
@@ -1025,6 +1060,69 @@ def _panel_sources(settings: AppSettings, settings_file: Path, proc: Path) -> No
         ),
         key="pipe_otodom_incremental",
     )
+    otodom_fetch_details = st.checkbox(
+        "Fetch Otodom details during scrape/pipeline",
+        value=bool(limits.otodom_fetch_details),
+        help=(
+            "Off (default): search cards only; background detail-backfill job "
+            "fills coords and rich attrs in batches."
+        ),
+        key="pipe_otodom_fetch_details",
+    )
+
+    st.subheader("Detail backfill")
+    auto_detail_backfill_enabled = st.checkbox(
+        "Auto-schedule detail backfill",
+        value=bool(settings.auto_detail_backfill_enabled),
+        help=(
+            "Ops worker queues detail-backfill batches while Otodom rows lack "
+            "coords/attrs or search price changed."
+        ),
+        key="pipe_auto_detail_backfill",
+    )
+    db1, db2, db3 = st.columns(3)
+    with db1:
+        detail_backfill_batch_size = int(
+            st.number_input(
+                "Batch size",
+                min_value=1,
+                max_value=5000,
+                value=int(settings.detail_backfill_batch_size),
+                key="pipe_detail_backfill_batch",
+            )
+        )
+    with db2:
+        detail_backfill_workers = int(
+            st.number_input(
+                "Detail workers",
+                min_value=1,
+                max_value=8,
+                value=int(settings.detail_backfill_workers),
+                key="pipe_detail_backfill_workers",
+            )
+        )
+    with db3:
+        detail_backfill_sleep_s = float(
+            st.number_input(
+                "Detail sleep (s)",
+                min_value=0.0,
+                max_value=10.0,
+                value=float(settings.detail_backfill_sleep_s),
+                step=0.25,
+                key="pipe_detail_backfill_sleep",
+            )
+        )
+
+    http_free_proxies_enabled = st.checkbox(
+        "Use free HTTP proxies on 403/429",
+        value=bool(settings.http_free_proxies_enabled),
+        help=(
+            "When off (default), Otodom/OLX/detail jobs use direct HTTP. Turn on "
+            "only if your IP is blocked — free proxy lists are slow and often "
+            "fail on Otodom."
+        ),
+        key="pipe_http_free_proxies",
+    )
 
     st.subheader("OLX")
     scrape_olx_in_pipe = st.checkbox(
@@ -1064,17 +1162,6 @@ def _panel_sources(settings: AppSettings, settings_file: Path, proc: Path) -> No
         value=bool(limits.olx_include_rent),
         help="Rent rows stay in Explore; price-model labels use sale only.",
         key="pipe_olx_include_rent",
-    )
-    http_free_proxies_enabled = st.checkbox(
-        "Rotate free HTTP proxies on 403/429",
-        value=bool(settings.http_free_proxies_enabled),
-        help=(
-            "On Otodom 403/429, switch to free proxies (free-proxy / ProxyScrape / "
-            "Proxifly / HProxy). Candidates get a short HTTPS CONNECT probe; dead "
-            "tunnels rotate without burning the detail retry budget. Keep on if "
-            "direct IP is blocked."
-        ),
-        key="pipe_http_free_proxies",
     )
 
     st.subheader("FX (NBP → PLN)")
@@ -1266,6 +1353,11 @@ def _panel_sources(settings: AppSettings, settings_file: Path, proc: Path) -> No
             max_pages=max_pages,
             max_listings=max_listings,
             incremental=incremental,
+            otodom_fetch_details=otodom_fetch_details,
+            auto_detail_backfill_enabled=auto_detail_backfill_enabled,
+            detail_backfill_batch_size=detail_backfill_batch_size,
+            detail_backfill_workers=detail_backfill_workers,
+            detail_backfill_sleep_s=detail_backfill_sleep_s,
             olx_unlimited=olx_unlimited,
             olx_max_listings=olx_max_listings,
             olx_incremental=olx_incremental,

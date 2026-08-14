@@ -199,14 +199,24 @@ class AppSettings:
     """Otodom listing cap; None = unlimited (when overrides enabled)."""
     otodom_incremental: bool = True
     """Merge Otodom scrape into existing parquet."""
+    otodom_fetch_details: bool = False
+    """Fetch Otodom detail pages during pipeline scrape (else background job)."""
     olx_max_listings: int | None = None
     """OLX listing cap; None = unlimited (when overrides enabled)."""
     olx_incremental: bool = True
     """Merge OLX scrape into existing parquet."""
     olx_include_rent: bool = True
     """Include Warsaw flat rentals from OLX (not used as price-model labels)."""
-    http_free_proxies_enabled: bool = True
+    http_free_proxies_enabled: bool = False
     """Rotate free HTTP proxies on 403/429 for Otodom + other ingest downloads."""
+    auto_detail_backfill_enabled: bool = True
+    """Auto-queue detail-backfill Ops jobs while listings lack coords/attrs."""
+    detail_backfill_batch_size: int = 100
+    """Max listings per detail-backfill batch."""
+    detail_backfill_workers: int = 1
+    """Parallel detail workers for background backfill."""
+    detail_backfill_sleep_s: float = 1.0
+    """Pause between detail requests during background backfill."""
     rcn_max_rows: int | None = None
     """RCN extract row cap; None = full GML (when overrides enabled)."""
     scrape_otodom_in_pipeline: bool = True
@@ -748,6 +758,9 @@ def load_app_settings(path: Path) -> AppSettings:
         otodom_incremental=bool(
             payload.get("otodom_incremental", defaults.otodom_incremental)
         ),
+        otodom_fetch_details=bool(
+            payload.get("otodom_fetch_details", defaults.otodom_fetch_details)
+        ),
         olx_max_listings=_opt_positive_int(payload.get("olx_max_listings")),
         olx_incremental=bool(payload.get("olx_incremental", defaults.olx_incremental)),
         olx_include_rent=bool(
@@ -757,6 +770,36 @@ def load_app_settings(path: Path) -> AppSettings:
             payload.get(
                 "http_free_proxies_enabled",
                 defaults.http_free_proxies_enabled,
+            )
+        ),
+        auto_detail_backfill_enabled=bool(
+            payload.get(
+                "auto_detail_backfill_enabled",
+                defaults.auto_detail_backfill_enabled,
+            )
+        ),
+        detail_backfill_batch_size=max(
+            1,
+            int(
+                payload.get(
+                    "detail_backfill_batch_size",
+                    defaults.detail_backfill_batch_size,
+                )
+            ),
+        ),
+        detail_backfill_workers=max(
+            1,
+            int(
+                payload.get(
+                    "detail_backfill_workers",
+                    defaults.detail_backfill_workers,
+                )
+            ),
+        ),
+        detail_backfill_sleep_s=float(
+            payload.get(
+                "detail_backfill_sleep_s",
+                defaults.detail_backfill_sleep_s,
             )
         ),
         rcn_max_rows=_opt_positive_int(payload.get("rcn_max_rows")),

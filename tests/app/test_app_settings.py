@@ -26,6 +26,7 @@ def test_load_missing_returns_defaults(tmp_path: Path) -> None:
     assert settings.download_gunb is True
     assert settings.olx_max_listings is None
     assert settings.otodom_max_listings is None
+    assert settings.http_free_proxies_enabled is False
 
 
 def test_round_trip_settings(tmp_path: Path) -> None:
