@@ -50,6 +50,8 @@ ingest:
   otodom_max_listings: null
   # true = newest-first merge into existing parquet (skip unchanged details)
   otodom_incremental: true
+  # false = search cards only; detail backfill runs as background Ops job
+  otodom_fetch_details: false
   olx_max_listings: null
   olx_incremental: true
   olx_include_rent: true

@@ -262,6 +262,8 @@ class IngestLimitsConfig:
     """Geocoded Otodom listings; ``None`` keeps every successful detail."""
     otodom_incremental: bool = True
     """Merge into existing Otodom parquet; fetch only new/updated cards."""
+    otodom_fetch_details: bool = False
+    """When true, pipeline / scrape fetches Otodom detail pages inline."""
     olx_max_listings: int | None = None
     """Geocoded OLX listings; ``None`` keeps every normalized offer."""
     olx_incremental: bool = True
@@ -301,6 +303,7 @@ class IngestLimitsConfig:
             otodom_max_pages=_opt_int("otodom_max_pages"),
             otodom_max_listings=_opt_int("otodom_max_listings"),
             otodom_incremental=bool(mapping.get("otodom_incremental", True)),
+            otodom_fetch_details=bool(mapping.get("otodom_fetch_details", False)),
             olx_max_listings=_opt_int("olx_max_listings"),
             olx_incremental=bool(mapping.get("olx_incremental", True)),
             olx_include_rent=bool(mapping.get("olx_include_rent", True)),

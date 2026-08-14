@@ -24,6 +24,11 @@ from happy_housing.ingest.http_client import (
 )
 from happy_housing.ingest.limits import reached_cap, resolve_ingest_cap
 from happy_housing.ingest.listed_at import coalesce_listed_at
+from happy_housing.ingest.listing_common import (
+    LISTING_ACTIVE_COLUMN,
+    listing_is_active,
+    merge_listing_frames,
+)
 from happy_housing.ingest.proxy_pool import bind_http_proxy
 
 logger = logging.getLogger(__name__)
@@ -567,6 +572,7 @@ def _normalize_search_item(item: dict[str, Any]) -> dict[str, Any]:
         "lat": None,
         "lon": None,
         "year_built": None,
+        LISTING_ACTIVE_COLUMN: 1,
     }
 
 
@@ -754,6 +760,253 @@ def card_needs_detail_refresh(
         return True
 
 
+_SEARCH_AMENITY_FLAGS: Final[tuple[str, ...]] = (
+    "has_balcony",
+    "has_garage",
+    "has_outdoor_parking",
+    "has_lift",
+    "has_terrace",
+    "has_garden",
+    "has_basement",
+    "is_attic",
+)
+"""Amenity booleans merged with max() when updating search cards."""
+
+
+_DETAIL_PRESERVE_KEYS: Final[frozenset[str]] = frozenset({
+    *_DETAIL_FILL_COLUMNS,
+    "detail_price_pln",
+})
+"""Columns kept from prior detail merge when applying a search-card update."""
+
+
+def merge_otodom_search_cards(
+    existing: pd.DataFrame,
+    cards: list[dict[str, Any]],
+) -> pd.DataFrame:
+    """Merge search-card snapshots into a parquet frame without wiping detail fields."""
+    existing_by_id = _existing_by_id(existing)
+    merged_by_id: dict[str, dict[str, Any]] = {}
+    for card in cards:
+        lid = str(card.get("listing_id") or "")
+        if not lid:
+            continue
+        prior = existing_by_id.get(lid)
+        if prior is None:
+            merged_by_id[lid] = dict(card)
+            continue
+        out = dict(prior)
+        for key, value in card.items():
+            if key in _DETAIL_PRESERVE_KEYS and not _cell_empty(prior.get(key)):
+                continue
+            out[key] = value
+        for flag in _SEARCH_AMENITY_FLAGS:
+            out[flag] = max(int(prior.get(flag) or 0), int(card.get(flag) or 0))
+        out[LISTING_ACTIVE_COLUMN] = 1
+        merged_by_id[lid] = out
+    for lid, prior in existing_by_id.items():
+        if lid not in merged_by_id:
+            merged_by_id[lid] = dict(prior)
+    if not merged_by_id:
+        return pd.DataFrame()
+    return pd.DataFrame(list(merged_by_id.values()))
+
+
+def _coords_missing(row: dict[str, Any] | pd.Series) -> bool:
+    lat = row.get("lat")
+    lon = row.get("lon")
+    if lat is None or lon is None:
+        return True
+    if isinstance(lat, float) and lat != lat:
+        return True
+    return bool(isinstance(lon, float) and lon != lon)
+
+
+def mark_otodom_listing_closed(row: dict[str, Any]) -> dict[str, Any]:
+    """Mark a search row as withdrawn while keeping last-known ask economics."""
+    out = dict(row)
+    out[LISTING_ACTIVE_COLUMN] = 0
+    price = out.get("price_pln")
+    if price is not None:
+        out["detail_price_pln"] = price
+    if (
+        not isinstance(out.get("characteristics_json"), str)
+        or not str(out.get("characteristics_json")).strip()
+    ):
+        out["characteristics_json"] = "{}"
+    if not isinstance(out.get("image_urls_json"), str):
+        out["image_urls_json"] = "[]"
+    if not isinstance(out.get("floor_plan_urls_json"), str):
+        out["floor_plan_urls_json"] = "[]"
+    return out
+
+
+def _detail_http_status(exc: BaseException) -> int | None:
+    if isinstance(exc, requests.HTTPError) and exc.response is not None:
+        return int(exc.response.status_code)
+    return None
+
+
+def row_needs_detail_backfill(row: dict[str, Any] | pd.Series) -> bool:
+    """True when a stored row still needs an Otodom detail-page fetch."""
+    if not listing_is_active(row.get(LISTING_ACTIVE_COLUMN)):
+        return False
+    if _coords_missing(row):
+        return True
+    if listing_needs_media_backfill(row):
+        return True
+    if listing_needs_attr_backfill(row):
+        return True
+    detail_price = row.get("detail_price_pln")
+    price = row.get("price_pln")
+    if detail_price is not None and price is not None:
+        try:
+            return abs(float(price) - float(detail_price)) > 0.5
+        except (TypeError, ValueError):
+            return False
+    return False
+
+
+def enrich_otodom_listing_row(
+    row: dict[str, Any],
+    *,
+    timeout_s: float | tuple[float, float] = DEFAULT_TIMEOUT,
+    session: requests.Session | None = None,
+) -> dict[str, Any] | None:
+    """Fetch Otodom detail for one search row; return merged row or ``None``."""
+    slug = row.get("slug")
+    if not slug:
+        return None
+    detail_session = session or _session()
+    try:
+        detail = fetch_listing_detail(detail_session, str(slug), timeout_s=timeout_s)
+    except requests.HTTPError as exc:
+        if _detail_http_status(exc) in {404, 410}:
+            return mark_otodom_listing_closed(row)
+        logger.warning("Detail failed for %s: %s", slug, exc)
+        return None
+    except Exception as exc:
+        logger.warning("Detail failed for %s: %s", slug, exc)
+        return None
+    if detail["lat"] is None or detail["lon"] is None:
+        return None
+    out = dict(row)
+    for key, value in detail.items():
+        if value is not None:
+            out[key] = value
+    for flag in _SEARCH_AMENITY_FLAGS:
+        out[flag] = max(int(row.get(flag) or 0), int(detail.get(flag) or 0))
+    chars_raw = out.get("characteristics_json")
+    chars: object = None
+    if isinstance(chars_raw, str) and chars_raw.strip():
+        try:
+            chars = json.loads(chars_raw)
+        except json.JSONDecodeError:
+            chars = None
+    char_currency = currency_from_characteristics(chars)
+    char_price = price_value_from_characteristics(chars)
+    if char_currency:
+        out["price_currency"] = char_currency
+    if char_price is not None:
+        out["price_original"] = char_price
+        if char_currency in {None, "PLN"}:
+            out["price_pln"] = char_price
+    if (
+        out.get("price_per_m2") is None
+        and out.get("price_pln")
+        and out.get("area_m2")
+        and str(out.get("price_currency") or "PLN").upper() == "PLN"
+    ):
+        out["price_per_m2"] = out["price_pln"] / out["area_m2"]
+    if out.get("year_built") is None:
+        out["year_built"] = 1990
+    if out.get("listed_at") is None:
+        out["listed_at"] = coalesce_listed_at(None)
+    if out.get("rooms") is None:
+        out["rooms"] = 2
+    if out.get("price_pln") is not None:
+        out["detail_price_pln"] = out["price_pln"]
+    return out
+
+
+def backfill_otodom_details(
+    output_parquet: Path,
+    *,
+    max_listings: int | None = 100,
+    detail_workers: int = 1,
+    sleep_s: float = 1.0,
+    timeout_s: float | tuple[float, float] = DEFAULT_TIMEOUT,
+    checkpoint_every: int = 25,
+) -> pd.DataFrame:
+    """Fetch Otodom detail pages for pending rows in ``output_parquet``."""
+    if not output_parquet.exists():
+        return pd.DataFrame()
+    out = pd.read_parquet(output_parquet)
+    if out.empty:
+        return out
+
+    pending_idx: list[Any] = []
+    for idx, row in out.iterrows():
+        if row_needs_detail_backfill(row.to_dict()):
+            pending_idx.append(idx)
+    cap = resolve_ingest_cap(max_listings)
+    if cap is not None:
+        pending_idx = pending_idx[:cap]
+    if not pending_idx:
+        logger.info("Otodom detail backfill: nothing pending")
+        return out
+
+    logger.info(
+        "Otodom detail backfill: %s pending (batch=%s workers=%s)",
+        len(pending_idx),
+        len(pending_idx),
+        detail_workers,
+    )
+
+    updated = 0
+    closed_gone = 0
+    since_checkpoint = 0
+    workers = max(1, int(detail_workers))
+
+    def _apply(idx: Any) -> tuple[Any, dict[str, Any] | None]:
+        payload = out.loc[idx].to_dict()
+        merged = enrich_otodom_listing_row(payload, timeout_s=timeout_s)
+        if (
+            sleep_s > 0
+            and merged is not None
+            and listing_is_active(merged.get(LISTING_ACTIVE_COLUMN))
+        ):
+            time.sleep(float(sleep_s))
+        return idx, merged
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(_apply, idx) for idx in pending_idx]
+        for fut in as_completed(futures):
+            idx, merged = fut.result()
+            if merged is None:
+                continue
+            for key, value in merged.items():
+                out.at[idx, key] = value
+            if not listing_is_active(merged.get(LISTING_ACTIVE_COLUMN)):
+                closed_gone += 1
+            updated += 1
+            since_checkpoint += 1
+            if since_checkpoint >= max(1, int(checkpoint_every)):
+                output_parquet.parent.mkdir(parents=True, exist_ok=True)
+                out.to_parquet(output_parquet, index=False)
+                since_checkpoint = 0
+
+    if since_checkpoint > 0 or updated:
+        output_parquet.parent.mkdir(parents=True, exist_ok=True)
+        out.to_parquet(output_parquet, index=False)
+    logger.info(
+        "Otodom detail backfill updated=%s closed_gone=%s",
+        updated,
+        closed_gone,
+    )
+    return out
+
+
 def backfill_otodom_media(
     frame: pd.DataFrame,
     *,
@@ -904,21 +1157,6 @@ def backfill_otodom_media(
     return out
 
 
-def merge_otodom_frames(
-    existing: pd.DataFrame,
-    fresh: pd.DataFrame,
-) -> pd.DataFrame:
-    """Union existing + fresh rows; fresh wins on duplicate ``listing_id``."""
-    if existing.empty:
-        return fresh.copy()
-    if fresh.empty:
-        return existing.copy()
-    combined = pd.concat([existing, fresh], ignore_index=True, sort=False)
-    return combined.drop_duplicates(subset=["listing_id"], keep="last").reset_index(
-        drop=True
-    )
-
-
 def max_existing_listed_at(existing: pd.DataFrame) -> pd.Timestamp | None:
     """Newest parseable ``listed_at`` in a prior Otodom frame, else ``None``."""
     if existing.empty or "listed_at" not in existing.columns:
@@ -956,26 +1194,32 @@ def scrape_otodom_warsaw(
     sleep_s: float = 0.25,
     page_size: int = 72,
     incremental: bool = True,
+    fetch_details: bool = False,
     stop_after_known_pages: int = _DEFAULT_STOP_AFTER_KNOWN_PAGES,
     timeout_s: float | tuple[float, float] = DEFAULT_TIMEOUT,
 ) -> pd.DataFrame:
     """Scrape Warsaw flat-sale listings from Otodom into a parquet file.
 
     Search-page HTTP failures are skipped after retries (run continues). Detail
-    failures drop that listing only.     When ``incremental`` and an existing
+    failures drop that listing only. When ``incremental`` and an existing
     parquet is present, search is sorted newest-first (``by=LATEST`` +
     ``direction=DESC``) and stops after ``stop_after_known_pages`` fully-known
     pages; only new/price-changed cards hit the detail endpoint; results merge
     into the prior file.
 
+    When ``fetch_details`` is false (default), only search cards are persisted;
+    use ``backfill_otodom_details`` or the Admin detail-backfill job for coords
+    and rich attrs.
+
     Args:
         output_parquet: Destination path.
         max_pages: Max search pages; ``None`` walks every page Otodom reports.
-        max_listings: Hard cap on geocoded listings; ``None`` keeps all.
-        detail_workers: Parallel detail-page workers.
+        max_listings: Hard cap on listings written; ``None`` keeps all.
+        detail_workers: Parallel detail-page workers when ``fetch_details``.
         sleep_s: Pause between search page requests.
         page_size: Search page size requested from Otodom.
         incremental: Prefer newest-first + merge when prior parquet exists.
+        fetch_details: When true, fetch detail pages during this scrape.
         stop_after_known_pages: Incremental early-stop after N known pages.
         timeout_s: Connect/read timeout(s) for HTTP calls.
 
@@ -1109,6 +1353,33 @@ def scrape_otodom_warsaw(
         cards = cards[:listing_cap]
     logger.info("Otodom unique search cards: %s", len(cards))
 
+    if not fetch_details:
+        search_frame = merge_otodom_search_cards(existing, cards)
+        if search_frame.empty:
+            raise ValueError("Otodom search produced zero listings.")
+        cache = fx_cache_path(output_parquet.parent)
+        search_frame = apply_fx_to_listings_frame(search_frame, cache)
+        if "price_pln" in search_frame.columns and "area_m2" in search_frame.columns:
+            mask = search_frame["price_pln"].notna() & search_frame["area_m2"].gt(0)
+            search_frame.loc[mask, "price_per_m2"] = (
+                search_frame.loc[mask, "price_pln"] / search_frame.loc[mask, "area_m2"]
+            )
+        output_parquet.parent.mkdir(parents=True, exist_ok=True)
+        search_frame.to_parquet(output_parquet, index=False)
+        detail_pending = sum(
+            1
+            for row in search_frame.to_dict(orient="records")
+            if row_needs_detail_backfill(row)
+        )
+        logger.info(
+            "Wrote %s Otodom search rows to %s (detail pending=%s · %.1f rows/min)",
+            len(search_frame),
+            output_parquet,
+            detail_pending,
+            len(search_frame) / max(0.001, (time.perf_counter() - scrape_t0) / 60.0),
+        )
+        return search_frame
+
     to_enrich = [
         card
         for card in cards
@@ -1121,63 +1392,7 @@ def scrape_otodom_warsaw(
     enriched: list[dict[str, Any]] = []
 
     def _enrich(row: dict[str, Any]) -> dict[str, Any] | None:
-        slug = row.get("slug")
-        if not slug:
-            return None
-        detail_session = _session()
-        try:
-            detail = fetch_listing_detail(
-                detail_session, str(slug), timeout_s=timeout_s
-            )
-        except Exception as exc:
-            logger.warning("Detail failed for %s: %s", slug, exc)
-            return None
-        if detail["lat"] is None or detail["lon"] is None:
-            return None
-        out = dict(row)
-        for key, value in detail.items():
-            if value is not None:
-                out[key] = value
-        for flag in (
-            "has_balcony",
-            "has_garage",
-            "has_outdoor_parking",
-            "has_lift",
-            "has_terrace",
-            "has_garden",
-            "has_basement",
-            "is_attic",
-        ):
-            out[flag] = max(int(row.get(flag) or 0), int(detail.get(flag) or 0))
-        chars_raw = out.get("characteristics_json")
-        chars: object = None
-        if isinstance(chars_raw, str) and chars_raw.strip():
-            try:
-                chars = json.loads(chars_raw)
-            except json.JSONDecodeError:
-                chars = None
-        char_currency = currency_from_characteristics(chars)
-        char_price = price_value_from_characteristics(chars)
-        if char_currency:
-            out["price_currency"] = char_currency
-        if char_price is not None:
-            out["price_original"] = char_price
-            if char_currency in {None, "PLN"}:
-                out["price_pln"] = char_price
-        if (
-            out.get("price_per_m2") is None
-            and out.get("price_pln")
-            and out.get("area_m2")
-            and str(out.get("price_currency") or "PLN").upper() == "PLN"
-        ):
-            out["price_per_m2"] = out["price_pln"] / out["area_m2"]
-        if out.get("year_built") is None:
-            out["year_built"] = 1990
-        if out.get("listed_at") is None:
-            out["listed_at"] = coalesce_listed_at(None)
-        if out.get("rooms") is None:
-            out["rooms"] = 2
-        return out
+        return enrich_otodom_listing_row(row, timeout_s=timeout_s)
 
     with ThreadPoolExecutor(max_workers=detail_workers) as pool:
         futures = [pool.submit(_enrich, card) for card in to_enrich]
@@ -1191,12 +1406,12 @@ def scrape_otodom_warsaw(
                 continue
             enriched.append(detail_row)
             if reached_cap(len(enriched), listing_cap):
-                for pending in futures:
-                    pending.cancel()
+                for unfinished in futures:
+                    unfinished.cancel()
                 break
 
     fresh = pd.DataFrame(enriched)
-    frame = merge_otodom_frames(existing, fresh) if use_incremental else fresh
+    frame = merge_listing_frames(existing, fresh) if use_incremental else fresh
     required = [
         "listing_id",
         "lat",

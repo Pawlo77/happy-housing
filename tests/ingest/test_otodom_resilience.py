@@ -13,7 +13,6 @@ from happy_housing.ingest.http_client import is_retryable_http_error
 from happy_housing.ingest.otodom import (
     card_needs_detail_refresh,
     fetch_search_page,
-    merge_otodom_frames,
     scrape_otodom_warsaw,
 )
 
@@ -79,63 +78,6 @@ def test_fetch_search_page_returns_none_after_retries(
     ads = fetch_search_page(BoomSession(), page=201, retries=3)  # type: ignore[arg-type]
     assert ads is None
     assert len(sleeps) == 2
-
-
-def test_merge_otodom_frames_keeps_fresh_and_prior() -> None:
-    existing = pd.DataFrame([
-        {
-            "listing_id": "OTO-1",
-            "price_pln": 100_000.0,
-            "lat": 52.1,
-            "lon": 21.0,
-            "area_m2": 40.0,
-            "rooms": 2,
-            "year_built": 2000,
-            "district": "wola",
-            "listed_at": "2026-01-01",
-        },
-        {
-            "listing_id": "OTO-2",
-            "price_pln": 200_000.0,
-            "lat": 52.2,
-            "lon": 21.1,
-            "area_m2": 50.0,
-            "rooms": 3,
-            "year_built": 2010,
-            "district": "mokotow",
-            "listed_at": "2026-01-02",
-        },
-    ])
-    fresh = pd.DataFrame([
-        {
-            "listing_id": "OTO-1",
-            "price_pln": 110_000.0,
-            "lat": 52.1,
-            "lon": 21.0,
-            "area_m2": 40.0,
-            "rooms": 2,
-            "year_built": 2000,
-            "district": "wola",
-            "listed_at": "2026-02-01",
-        },
-        {
-            "listing_id": "OTO-3",
-            "price_pln": 300_000.0,
-            "lat": 52.3,
-            "lon": 21.2,
-            "area_m2": 60.0,
-            "rooms": 3,
-            "year_built": 2015,
-            "district": "bemowo",
-            "listed_at": "2026-03-01",
-        },
-    ])
-    merged = merge_otodom_frames(existing, fresh)
-    assert set(merged["listing_id"]) == {"OTO-1", "OTO-2", "OTO-3"}
-    assert (
-        float(merged.loc[merged["listing_id"] == "OTO-1", "price_pln"].iloc[0])
-        == 110_000.0
-    )
 
 
 def test_card_needs_detail_refresh_for_new_or_price_change() -> None:
@@ -254,6 +196,7 @@ def test_scrape_skips_failed_search_page_and_merges(
         detail_workers=2,
         sleep_s=0.0,
         incremental=False,
+        fetch_details=True,
     )
     assert set(frame["listing_id"]) == {"OTO-1", "OTO-3"}
     assert out.exists()
@@ -375,6 +318,7 @@ def test_scrape_incremental_skips_unchanged_detail(
         detail_workers=2,
         sleep_s=0.0,
         incremental=True,
+        fetch_details=True,
     )
     assert search_sorts == ["LATEST"]
     assert search_directions == ["DESC"]
@@ -541,6 +485,7 @@ def test_scrape_incremental_early_stops_after_known_streak(
         sleep_s=0.0,
         incremental=True,
         stop_after_known_pages=2,
+        fetch_details=True,
     )
     assert pages_hit == [1, 2]
     assert "OTO-99" in set(frame["listing_id"])
