@@ -25,6 +25,7 @@ from happy_housing.app.commute_target import (
     mark_commute_features_applied,
     resolve_commute_target,
 )
+from happy_housing.app.detail_backfill_jobs import maybe_schedule_detail_backfill
 from happy_housing.app.listing_attrs import promote_listing_flags
 from happy_housing.app.llm_metrics import llm_metrics_path
 from happy_housing.app.metadata import (
@@ -86,6 +87,8 @@ from happy_housing.ingest.gios_aq import (
     enrich_stations_with_air_quality,
 )
 from happy_housing.ingest.gunb import download_gunb_mazowieckie, gunb_points_gdf
+from happy_housing.ingest.listing_common import LISTING_ACTIVE_COLUMN, listing_is_active
+from happy_housing.ingest.listing_dedup import dedupe_cross_source_listings
 from happy_housing.ingest.market import ensure_market_primary
 from happy_housing.ingest.olx import scrape_olx_warsaw
 from happy_housing.ingest.otodom import scrape_otodom_warsaw
@@ -208,6 +211,83 @@ def _rcn_as_listings(rcn: pd.DataFrame) -> pd.DataFrame:
     return out.reset_index(drop=True)
 
 
+def _reload_fx_listings_parquet(path: Path, processed: Path) -> pd.DataFrame:
+    """Re-read a listings parquet, refresh FX columns, and persist."""
+    frame = apply_fx_to_listings_frame(
+        pd.read_parquet(path),
+        fx_cache_path(processed),
+    )
+    frame.to_parquet(path, index=False)
+    return frame
+
+
+def _geocoded_otodom(frame: pd.DataFrame) -> pd.DataFrame:
+    """Rows with both coordinates (empty when none)."""
+    if frame.empty or not {"lat", "lon"} <= set(frame.columns):
+        return frame.iloc[0:0].copy()
+    return frame.dropna(subset=["lat", "lon"])
+
+
+def _inactive_otodom_asks(frame: pd.DataFrame) -> pd.DataFrame:
+    """Closed Otodom search rows kept for historical ask-price context."""
+    if frame.empty or LISTING_ACTIVE_COLUMN not in frame.columns:
+        return frame.iloc[0:0].copy()
+    mask = ~frame[LISTING_ACTIVE_COLUMN].map(listing_is_active)
+    return frame.loc[mask].copy()
+
+
+def _split_listings_for_enrich(
+    listings: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Split rows with coordinates from passthrough historical asks without pins."""
+    if listings.empty or not {"lat", "lon"} <= set(listings.columns):
+        return listings.copy(), listings.iloc[0:0].copy()
+    has_coords = listings["lat"].notna() & listings["lon"].notna()
+    return listings.loc[has_coords].copy(), listings.loc[~has_coords].copy()
+
+
+def _ingest_otodom_into_parts(
+    parts: list[pd.DataFrame],
+    otodom: pd.DataFrame,
+    processed: Path,
+    *,
+    log_search_only_pending: bool = False,
+) -> None:
+    """Append geocoded + closed Otodom rows and maybe queue detail backfill."""
+    maybe_schedule_detail_backfill(processed)
+    geocoded = _geocoded_otodom(otodom)
+    closed = _inactive_otodom_asks(otodom)
+    to_add = pd.concat([geocoded, closed], ignore_index=True, sort=False)
+    if to_add.empty:
+        if log_search_only_pending and not otodom.empty:
+            logger.info(
+                "Otodom scrape produced no geocoded rows yet "
+                "(search-only or detail backfill pending)"
+            )
+        return
+    tagged = to_add.copy()
+    tagged["source"] = "otodom"
+    parts.append(tagged)
+    if not closed.empty:
+        logger.info(
+            "Including %s closed Otodom asks for historical stats (map hidden)",
+            len(closed),
+        )
+
+
+def _append_sourced_listings(
+    parts: list[pd.DataFrame],
+    frame: pd.DataFrame,
+    source: str,
+) -> None:
+    """Tag and append a non-empty listings frame."""
+    if frame.empty:
+        return
+    tagged = frame.copy()
+    tagged["source"] = source
+    parts.append(tagged)
+
+
 def run_pipeline(
     config_path: Path | str = Path("configs/experiment.yaml"),
     *,
@@ -303,27 +383,22 @@ def run_pipeline(
                     max_pages=page_cap,
                     max_listings=listing_cap,
                     incremental=limits.otodom_incremental,
+                    fetch_details=limits.otodom_fetch_details,
                 )
-            otodom["source"] = "otodom"
-            listings_parts.append(otodom)
+            _ingest_otodom_into_parts(
+                listings_parts,
+                otodom,
+                processed,
+                log_search_only_pending=True,
+            )
         except Exception as exc:
             logger.warning("Otodom scrape failed: %s", exc)
             if otodom_parquet.exists():
-                otodom = apply_fx_to_listings_frame(
-                    pd.read_parquet(otodom_parquet),
-                    fx_cache_path(processed),
-                )
-                otodom.to_parquet(otodom_parquet, index=False)
-                otodom["source"] = "otodom"
-                listings_parts.append(otodom)
+                otodom = _reload_fx_listings_parquet(otodom_parquet, processed)
+                _ingest_otodom_into_parts(listings_parts, otodom, processed)
     elif otodom_parquet.exists():
-        otodom = apply_fx_to_listings_frame(
-            pd.read_parquet(otodom_parquet),
-            fx_cache_path(processed),
-        )
-        otodom.to_parquet(otodom_parquet, index=False)
-        otodom["source"] = "otodom"
-        listings_parts.append(otodom)
+        otodom = _reload_fx_listings_parquet(otodom_parquet, processed)
+        _ingest_otodom_into_parts(listings_parts, otodom, processed)
 
     olx_parquet = processed / "olx_listings.parquet"
     if flags.scrape_olx:
@@ -335,26 +410,15 @@ def run_pipeline(
                     incremental=limits.olx_incremental,
                     include_rent=limits.olx_include_rent,
                 )
-            olx["source"] = "olx"
-            listings_parts.append(olx)
+            _append_sourced_listings(listings_parts, olx, "olx")
         except Exception as exc:
             logger.warning("OLX scrape failed: %s", exc)
             if olx_parquet.exists():
-                olx = apply_fx_to_listings_frame(
-                    pd.read_parquet(olx_parquet),
-                    fx_cache_path(processed),
-                )
-                olx.to_parquet(olx_parquet, index=False)
-                olx["source"] = "olx"
-                listings_parts.append(olx)
+                olx = _reload_fx_listings_parquet(olx_parquet, processed)
+                _append_sourced_listings(listings_parts, olx, "olx")
     elif olx_parquet.exists():
-        olx = apply_fx_to_listings_frame(
-            pd.read_parquet(olx_parquet),
-            fx_cache_path(processed),
-        )
-        olx.to_parquet(olx_parquet, index=False)
-        olx["source"] = "olx"
-        listings_parts.append(olx)
+        olx = _reload_fx_listings_parquet(olx_parquet, processed)
+        _append_sourced_listings(listings_parts, olx, "olx")
 
     gtfs_parquet = processed / "gtfs_stops.parquet"
     gios_parquet = processed / "gios_stations.parquet"
@@ -441,6 +505,7 @@ def run_pipeline(
 
     listings = pd.concat(listings_parts, ignore_index=True, sort=False)
     listings = listings.drop_duplicates(subset=["listing_id"], keep="last")
+    listings = dedupe_cross_source_listings(listings)
     listings = ensure_market_primary(listings)
     logger.info(
         "Training/scoring universe size=%s sources=%s",
@@ -590,55 +655,67 @@ def run_pipeline(
     else:
         logger.info("STEP start enrich")
         _enrich_t0 = time.perf_counter()
+        to_enrich, passthrough = _split_listings_for_enrich(listings)
         if app_settings.snap_listings_out_of_parks:
-            listings = snap_listings_out_of_parks(
-                listings,
+            to_enrich = snap_listings_out_of_parks(
+                to_enrich,
                 parks=parks,
                 cache_dir=cache,
                 bbox=config.bbox.as_tuple(),
                 force_refresh_buildings=force_gis_refresh,
             )
 
-        listings = attach_street_frontage_hints(listings)
+        to_enrich = attach_street_frontage_hints(to_enrich)
 
         road_lden_path = fixtures / "road_lden.geojson"
         rail_lden_path = fixtures / "rail_lden.geojson"
-        enriched = enrich_listings(
-            listings,
-            projected_crs=config.bbox.projected_crs,
-            amenities=amenities,
-            gios_stations=gios_stations,
-            gtfs_stops=gtfs_stops,
-            commute_lon=commute.lon,
-            commute_lat=commute.lat,
-            gunb_points=gunb,
-            parks=parks,
-            schools=schools,
-            shops=shops,
-            city_pois=city_pois,
-            bike_paths=bike_paths,
-            bike_path_coverage_radius_m=float(app_settings.bike_path_coverage_radius_m),
-            bike_path_sample=bike_path_sample if not bike_path_sample.empty else None,
-            rail_areas=rail_areas,
-            military=military,
-            airport_areas=airport_areas,
-            traffic_sample=traffic_sample,
-            traffic_neighbourhood_radius_m=float(
-                app_settings.traffic_neighbourhood_radius_m
-            ),
-            aircraft_lden_path=fixtures / "chopin_aircraft_lden.geojson",
-            aircraft_lnight_path=fixtures / "chopin_aircraft_lnight.geojson",
-            road_lden_path=road_lden_path if road_lden_path.exists() else None,
-            rail_lden_path=rail_lden_path if rail_lden_path.exists() else None,
-        )
+        if to_enrich.empty:
+            enriched = gpd.GeoDataFrame(to_enrich, geometry=[], crs="EPSG:4326")
+        else:
+            enriched = enrich_listings(
+                to_enrich,
+                projected_crs=config.bbox.projected_crs,
+                amenities=amenities,
+                gios_stations=gios_stations,
+                gtfs_stops=gtfs_stops,
+                commute_lon=commute.lon,
+                commute_lat=commute.lat,
+                gunb_points=gunb,
+                parks=parks,
+                schools=schools,
+                shops=shops,
+                city_pois=city_pois,
+                bike_paths=bike_paths,
+                bike_path_coverage_radius_m=float(
+                    app_settings.bike_path_coverage_radius_m
+                ),
+                bike_path_sample=bike_path_sample
+                if not bike_path_sample.empty
+                else None,
+                rail_areas=rail_areas,
+                military=military,
+                airport_areas=airport_areas,
+                traffic_sample=traffic_sample,
+                traffic_neighbourhood_radius_m=float(
+                    app_settings.traffic_neighbourhood_radius_m
+                ),
+                aircraft_lden_path=fixtures / "chopin_aircraft_lden.geojson",
+                aircraft_lnight_path=fixtures / "chopin_aircraft_lnight.geojson",
+                road_lden_path=road_lden_path if road_lden_path.exists() else None,
+                rail_lden_path=rail_lden_path if rail_lden_path.exists() else None,
+            )
         noise_rasters = fetch_warsaw_noise_rasters(
             cache,
             bbox=config.bbox.as_tuple(),
             force_refresh=force_gis_refresh,
         )
-        if noise_rasters:
+        if noise_rasters and not enriched.empty:
             enriched = attach_warsaw_noise_features(enriched, noise_rasters)
-        if app_settings.aq_field_enabled and not gios_stations.empty:
+        if (
+            app_settings.aq_field_enabled
+            and not gios_stations.empty
+            and not enriched.empty
+        ):
             aq_rasters = fetch_gios_aq_field_rasters(
                 cache,
                 gios_stations,
@@ -649,6 +726,12 @@ def run_pipeline(
             if aq_rasters:
                 enriched = attach_gios_aq_field_features(enriched, aq_rasters)
         train_frame = pd.DataFrame(enriched.drop(columns=["geometry"], errors="ignore"))
+        if not passthrough.empty:
+            train_frame = pd.concat(
+                [train_frame, passthrough.reset_index(drop=True)],
+                ignore_index=True,
+                sort=False,
+            )
         train_frame = promote_listing_flags(train_frame)
         train_frame = attach_crime_features(train_frame, crime_by_district)
         if app_settings.extract_attrs_enabled:
