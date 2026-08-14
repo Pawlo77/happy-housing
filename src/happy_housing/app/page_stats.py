@@ -35,6 +35,7 @@ from happy_housing.app.stats_insights import (
     air_quality_ladder,
     aircraft_noise_ladder,
     ask_vs_ink,
+    ask_vs_ink_monthly,
     chopin_surcharge,
     commute_cost_curve,
     delta_volcano,
@@ -47,6 +48,7 @@ from happy_housing.app.stats_insights import (
     market_segment_mix,
     market_temperature,
     metro_price_curve,
+    monthly_spread,
     monthly_trends,
     noise_source_premiums,
     noise_total_ladder,
@@ -56,10 +58,12 @@ from happy_housing.app.stats_insights import (
     rooms_inventory,
     safety_radius,
     size_sweet_spot,
+    sliced_monthly_trends,
     source_mix_summary,
     top_value_offers,
     transit_gravity,
     transit_price_curve,
+    warsaw_vs_district_monthly,
     year_paradox,
 )
 from happy_housing.app.stats_xai import booster_importance_table, mean_abs_shap_table
@@ -311,7 +315,15 @@ def _tab_overview(frame: pd.DataFrame) -> None:
         )
 
 
-def _tab_market(frame: pd.DataFrame, *, min_offers: int, top_n: int) -> None:
+def _tab_market(
+    frame: pd.DataFrame,
+    *,
+    universe: pd.DataFrame,
+    districts: list[str],
+    min_offers: int,
+    top_n: int,
+    trend_min_n: int,
+) -> None:
     _section(
         "1 · Price & fair-value trends",
         "Listing vs model medians month-to-month in the current lens.",
@@ -358,6 +370,133 @@ def _tab_market(frame: pd.DataFrame, *, min_offers: int, top_n: int) -> None:
                 color=PRIMARY,
                 y_title="Offers",
             )
+
+    overlay_districts = [d for d in districts if str(d).strip()]
+    if not overlay_districts and "district" in frame.columns:
+        uniq = sorted({
+            normalize_district(v) for v in frame["district"].dropna() if str(v).strip()
+        })
+        if len(uniq) == 1:
+            overlay_districts = uniq
+    city_vs = warsaw_vs_district_monthly(
+        universe,
+        districts=overlay_districts,
+        min_n=trend_min_n,
+    )
+    _section(
+        "Warsaw vs district",
+        "Citywide ask median overlaid on the lens district(s). "
+        "Warsaw rollup uses the unfiltered scored frame.",
+    )
+    if city_vs.empty or city_vs["listed_month"].nunique() < 2:
+        st.info("Need at least two months of asks for a Warsaw overlay.")
+    else:
+        multi_line_chart(
+            city_vs.rename(columns={"median_price_per_m2": "value_ppm"}),
+            x="listed_month",
+            y="value_ppm",
+            color="series",
+            title="Median ask zł/m² — Warsaw vs district",
+            y_title="zł/m²",
+        )
+
+    _section(
+        "Rooms over time",
+        "Buyer asks only (Otodom / NOL / OLX / fixture). RCN has no rooms.",
+    )
+    rooms_ts = sliced_monthly_trends(frame, "rooms", min_n=trend_min_n)
+    if rooms_ts.empty or rooms_ts["listed_month"].nunique() < 2:
+        st.info(f"Need months with at least {trend_min_n} asks per room slice.")
+    else:
+        multi_line_chart(
+            rooms_ts.rename(columns={"median_price_per_m2": "value_ppm"}),
+            x="listed_month",
+            y="value_ppm",
+            color="slice",
+            title="Median ask zł/m² by rooms",
+            y_title="zł/m²",
+        )
+
+    _section(
+        "Build era over time",
+        "Buyer asks only. RCN year_built is a pipeline stub — not used here.",
+    )
+    era_ts = sliced_monthly_trends(frame, "era", min_n=trend_min_n)
+    if era_ts.empty or era_ts["listed_month"].nunique() < 2:
+        st.info(f"Need months with at least {trend_min_n} asks per era slice.")
+    else:
+        multi_line_chart(
+            era_ts.rename(columns={"median_price_per_m2": "value_ppm"}),
+            x="listed_month",
+            y="value_ppm",
+            color="slice",
+            title="Median ask zł/m² by build era",
+            y_title="zł/m²",
+        )
+
+    _section(
+        "Ask vs ink over time",
+        "Monthly buyer-ask median vs RCN deed median. City grain; district "
+        "when the lens is a single dzielnica and both sides clear min n.",
+    )
+    ink_city = ask_vs_ink_monthly(universe, min_n=trend_min_n)
+    if ink_city.empty or ink_city["listed_month"].nunique() < 2:
+        st.info("Need overlapping ask + RCN months citywide.")
+    else:
+        multi_line_chart(
+            ink_city.rename(columns={"median_price_per_m2": "value_ppm"}),
+            x="listed_month",
+            y="value_ppm",
+            color="series",
+            title="Ask vs RCN ink — Warsaw",
+            color_domain=["Ask", "Ink"],
+            color_range=[ASK_COLOR, INK_COLOR],
+            y_title="zł/m²",
+        )
+    if len(overlay_districts) == 1:
+        ink_dist = ask_vs_ink_monthly(
+            universe, min_n=trend_min_n, district=overlay_districts[0]
+        )
+        if ink_dist.empty or ink_dist["listed_month"].nunique() < 2:
+            st.caption(f"Not enough months in {overlay_districts[0]} for ask vs ink.")
+        else:
+            multi_line_chart(
+                ink_dist.rename(columns={"median_price_per_m2": "value_ppm"}),
+                x="listed_month",
+                y="value_ppm",
+                color="series",
+                title=f"Ask vs RCN ink — {overlay_districts[0]}",
+                color_domain=["Ask", "Ink"],
+                color_range=[ASK_COLOR, INK_COLOR],
+                y_title="zł/m²",
+            )
+
+    chop = monthly_spread(frame, min_n=trend_min_n)
+    _section(
+        "Price-level choppiness",
+        "Ask IQR by month and 3-month rolling IQR — sticky vs noisy local level.",
+    )
+    if chop.empty or len(chop) < 2:
+        st.info("Need enough monthly asks to plot IQR.")
+    else:
+        melt_iqr = chop.melt(
+            id_vars=["listed_month"],
+            value_vars=["iqr_ppm", "rolling_iqr_3"],
+            var_name="series",
+            value_name="value_ppm",
+        )
+        melt_iqr["series"] = melt_iqr["series"].map({
+            "iqr_ppm": "Monthly IQR",
+            "rolling_iqr_3": "Rolling 3-month IQR",
+        })
+        multi_line_chart(
+            melt_iqr,
+            x="listed_month",
+            y="value_ppm",
+            color="series",
+            title="Ask zł/m² IQR over months",
+            y_title="IQR zł/m²",
+        )
 
     _section(
         "2 · Residual pressure",
@@ -420,7 +559,7 @@ def _tab_market(frame: pd.DataFrame, *, min_offers: int, top_n: int) -> None:
 
     _section(
         "4 · Ask vs ink",
-        "Otodom asking medians versus RCN transaction medians.",
+        "Buyer-ask medians versus RCN transaction medians (snapshot).",
     )
     gap = ask_vs_ink(frame, min_offers=max(2, min_offers // 2))
     if gap.empty:
@@ -433,7 +572,7 @@ def _tab_market(frame: pd.DataFrame, *, min_offers: int, top_n: int) -> None:
             value_name="median_ppm",
         )
         melt["kind"] = melt["kind"].map({
-            "ask_median": "Otodom ask",
+            "ask_median": "Ask",
             "ink_median": "RCN ink",
         })
         grouped_bar_chart(
@@ -442,7 +581,7 @@ def _tab_market(frame: pd.DataFrame, *, min_offers: int, top_n: int) -> None:
             y="district",
             color="kind",
             title="Ask vs transaction medians",
-            color_domain=["Otodom ask", "RCN ink"],
+            color_domain=["Ask", "RCN ink"],
             color_range=[ASK_COLOR, INK_COLOR],
             x_title="Median zł/m²",
         )
@@ -925,8 +1064,11 @@ def render_stats() -> None:
         if tab_market.open:
             _tab_market(
                 filtered,
+                universe=frame,
+                districts=list(state.districts),
                 min_offers=settings.stats_min_district_offers,
                 top_n=settings.stats_top_n,
+                trend_min_n=settings.stats_trend_min_n,
             )
     with tab_live:
         if tab_live.open:

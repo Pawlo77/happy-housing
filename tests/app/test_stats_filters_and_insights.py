@@ -135,6 +135,48 @@ def test_monthly_trends_orders_months() -> None:
     )
 
 
+def test_monthly_trends_drops_nan_month_placeholder() -> None:
+    frame = _frame()
+    frame.loc[0, "listed_month"] = "nan"
+    out = monthly_trends(frame)
+    assert "nan" not in set(out["listed_month"])
+
+
+def test_sliced_monthly_trends_drops_rcn_room_stubs() -> None:
+    from happy_housing.app.stats_insights import sliced_monthly_trends
+
+    out = sliced_monthly_trends(_frame(), "rooms", min_n=1)
+    assert not out.empty
+    slices = set(out["slice"].astype(str))
+    assert "4" not in slices
+    assert "4+" not in slices
+    assert {"1", "2", "3"}.issubset(slices)
+
+
+def test_sliced_monthly_trends_era_drops_rcn_year_stubs() -> None:
+    from happy_housing.app.stats_insights import sliced_monthly_trends
+
+    out = sliced_monthly_trends(_frame(), "era", min_n=1)
+    assert not out.empty
+    eras = set(out["slice"].astype(str))
+    assert "1990-2005" not in eras
+
+
+def test_ask_vs_ink_monthly_has_both_series() -> None:
+    from happy_housing.app.stats_insights import ask_vs_ink_monthly
+
+    out = ask_vs_ink_monthly(_frame(), min_n=1)
+    assert {"Ask", "Ink"}.issubset(set(out["series"]))
+
+
+def test_warsaw_vs_district_monthly_overlays_city() -> None:
+    from happy_housing.app.stats_insights import warsaw_vs_district_monthly
+
+    out = warsaw_vs_district_monthly(_frame(), districts=["Wola"], min_n=1)
+    assert "Warsaw" in set(out["series"])
+    assert "wola" in set(out["series"])
+
+
 def test_district_scoreboard_merges_case_variants() -> None:
     out = district_scoreboard(_frame(), min_offers=2)
     assert "wola" in set(out["district"])

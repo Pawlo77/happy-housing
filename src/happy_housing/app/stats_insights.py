@@ -5,7 +5,49 @@ import unicodedata
 import numpy as np
 import pandas as pd
 
+from happy_housing.ingest.listing_common import BUYER_LISTING_SOURCES
 from happy_housing.ingest.market import ensure_market_primary
+
+BUILD_ERA_BINS: list[int] = [1900, 1945, 1970, 1990, 2005, 2015, 2035]
+"""Year-built edges for vintage / era slices."""
+
+BUILD_ERA_LABELS: list[str] = [
+    "pre-war-ish <1945",
+    "1945-1970",
+    "1970-1990",
+    "1990-2005",
+    "2005-2015",
+    "2015+",
+]
+"""Labels matching ``BUILD_ERA_BINS``."""
+
+
+def assign_build_era(year: pd.Series) -> pd.Series:
+    """Bin ``year_built`` into the Stats vintage labels."""
+    numeric = pd.to_numeric(year, errors="coerce")
+    return pd.cut(
+        numeric,
+        bins=BUILD_ERA_BINS,
+        labels=BUILD_ERA_LABELS,
+        include_lowest=True,
+        right=False,
+    )
+
+
+def assign_room_slice(rooms: pd.Series) -> pd.Series:
+    """Map room counts to 1 / 2 / 3 / 4+ labels."""
+    numeric = pd.to_numeric(rooms, errors="coerce").round()
+    labels = numeric.astype("Int64").astype(str)
+    labels = labels.where(numeric < 4, "4+")
+    labels = labels.where(numeric >= 1, pd.NA)
+    return labels
+
+
+def _buyer_asks(frame: pd.DataFrame) -> pd.DataFrame:
+    if frame.empty or "source" not in frame.columns:
+        return frame.iloc[0:0].copy() if not frame.empty else frame
+    sources = frame["source"].astype(str).str.casefold()
+    return frame.loc[sources.isin(BUYER_LISTING_SOURCES)].copy()
 
 
 def normalize_district(value: object) -> str:
@@ -130,6 +172,12 @@ def district_scoreboard(frame: pd.DataFrame, min_offers: int = 5) -> pd.DataFram
     return out.sort_values("median_delta", ascending=True).reset_index(drop=True)
 
 
+def _known_listed_month(series: pd.Series) -> pd.Series:
+    """True for YYYY-MM tokens; drop unknown / nan placeholders."""
+    text = series.astype(str).str.strip()
+    return text.str.match(r"^\d{4}-\d{2}$", na=False)
+
+
 def monthly_trends(frame: pd.DataFrame) -> pd.DataFrame:
     """Median listing/model/delta and volume by listed month."""
     empty = pd.DataFrame(
@@ -149,7 +197,7 @@ def monthly_trends(frame: pd.DataFrame) -> pd.DataFrame:
         "model": _num(frame, "model_price_per_m2"),
         "delta": _num(frame, "delta_price_per_m2"),
     })
-    table = table.loc[table["listed_month"].ne("unknown")].copy()
+    table = table.loc[_known_listed_month(table["listed_month"])].copy()
     if table.empty:
         return empty
     return (
@@ -274,7 +322,7 @@ def ask_vs_ink(frame: pd.DataFrame, min_offers: int = 3) -> pd.DataFrame:
     }).dropna(subset=["ppm"])
     ask = (
         table
-        .loc[table["source"].eq("otodom")]
+        .loc[table["source"].isin(BUYER_LISTING_SOURCES)]
         .groupby("district", dropna=True)["ppm"]
         .agg(ask_median="median", n_ask="size")
     )
@@ -355,18 +403,7 @@ def year_paradox(frame: pd.DataFrame) -> pd.DataFrame:
     }).dropna()
     if work.empty:
         return pd.DataFrame(columns=["era", "n", "median_price_per_m2"])
-    bins = [1900, 1945, 1970, 1990, 2005, 2015, 2035]
-    labels = [
-        "pre-war-ish <1945",
-        "1945-1970",
-        "1970-1990",
-        "1990-2005",
-        "2005-2015",
-        "2015+",
-    ]
-    work["era"] = pd.cut(
-        work["year"], bins=bins, labels=labels, include_lowest=True, right=False
-    )
+    work["era"] = assign_build_era(work["year"])
     return (
         work
         .groupby("era", observed=False)
@@ -918,3 +955,167 @@ def market_segment_mix(frame: pd.DataFrame) -> pd.DataFrame:
     total = float(grouped["n"].sum()) or 1.0
     grouped["share"] = grouped["n"] / total
     return grouped.sort_values("segment").reset_index(drop=True)
+
+
+def sliced_monthly_trends(
+    frame: pd.DataFrame,
+    slice_kind: str,
+    *,
+    min_n: int = 8,
+) -> pd.DataFrame:
+    """Monthly median zł/m² by rooms or build era (buyer asks only)."""
+    empty = pd.DataFrame(columns=["listed_month", "slice", "n", "median_price_per_m2"])
+    asks = _buyer_asks(frame)
+    if asks.empty or "listed_month" not in asks.columns:
+        return empty
+    work = asks.copy()
+    if slice_kind == "rooms":
+        if "rooms" not in work.columns:
+            return empty
+        work["slice"] = assign_room_slice(work["rooms"])
+    elif slice_kind == "era":
+        if "year_built" not in work.columns:
+            return empty
+        work["slice"] = assign_build_era(work["year_built"])
+        work = work.loc[work["slice"].notna()].copy()
+        work["slice"] = work["slice"].astype(str)
+    else:
+        return empty
+    table = pd.DataFrame({
+        "listed_month": work["listed_month"].astype(str),
+        "slice": work["slice"],
+        "ppm": _num(work, "price_per_m2"),
+    }).dropna()
+    table = table.loc[_known_listed_month(table["listed_month"])]
+    if table.empty:
+        return empty
+    grouped = (
+        table
+        .groupby(["listed_month", "slice"], dropna=True)
+        .agg(n=("ppm", "size"), median_price_per_m2=("ppm", "median"))
+        .reset_index()
+    )
+    return (
+        grouped
+        .loc[grouped["n"] >= max(1, int(min_n))]
+        .sort_values(["listed_month", "slice"])
+        .reset_index(drop=True)
+    )
+
+
+def warsaw_vs_district_monthly(
+    universe: pd.DataFrame,
+    *,
+    districts: list[str] | None = None,
+    min_n: int = 8,
+) -> pd.DataFrame:
+    """Citywide ask median plus selected district series."""
+    empty = pd.DataFrame(columns=["listed_month", "series", "n", "median_price_per_m2"])
+    asks = _buyer_asks(universe)
+    city = monthly_trends(asks)
+    if city.empty:
+        return empty
+    floor = max(1, int(min_n))
+    parts: list[pd.DataFrame] = [
+        city.loc[
+            city["n"] >= floor, ["listed_month", "n", "median_price_per_m2"]
+        ].assign(series="Warsaw")
+    ]
+    names = [normalize_district(d) for d in (districts or []) if str(d).strip()]
+    if not names and "district" in asks.columns:
+        counts = _with_district(asks)["district"].value_counts().head(3)
+        names = [str(x) for x in counts.index.tolist()]
+    if names and "district" in asks.columns:
+        tagged = _with_district(asks)
+        for name in names:
+            sub = tagged.loc[tagged["district"].eq(name)]
+            month = monthly_trends(sub)
+            month = month.loc[month["n"] >= floor]
+            if month.empty:
+                continue
+            parts.append(
+                month[["listed_month", "n", "median_price_per_m2"]].assign(
+                    series=str(name)
+                )
+            )
+    out = pd.concat(parts, ignore_index=True, sort=False)
+    if out.empty:
+        return empty
+    return out.sort_values(["listed_month", "series"]).reset_index(drop=True)
+
+
+def ask_vs_ink_monthly(
+    frame: pd.DataFrame,
+    *,
+    min_n: int = 8,
+    district: str | None = None,
+) -> pd.DataFrame:
+    """Monthly ask vs RCN ink medians (city, or one district)."""
+    empty = pd.DataFrame(columns=["listed_month", "series", "n", "median_price_per_m2"])
+    if (
+        frame.empty
+        or "listed_month" not in frame.columns
+        or "source" not in frame.columns
+    ):
+        return empty
+    work = frame
+    if district and "district" in frame.columns:
+        work = _with_district(frame)
+        work = work.loc[work["district"].eq(normalize_district(district))]
+    asks = monthly_trends(_buyer_asks(work))
+    ink_src = work.loc[work["source"].astype(str).str.casefold().eq("rcn")]
+    ink = monthly_trends(ink_src)
+    floor = max(1, int(min_n))
+    parts: list[pd.DataFrame] = []
+    if not asks.empty:
+        parts.append(
+            asks.loc[
+                asks["n"] >= floor, ["listed_month", "n", "median_price_per_m2"]
+            ].assign(series="Ask")
+        )
+    if not ink.empty:
+        parts.append(
+            ink.loc[
+                ink["n"] >= floor, ["listed_month", "n", "median_price_per_m2"]
+            ].assign(series="Ink")
+        )
+    if not parts:
+        return empty
+    return (
+        pd
+        .concat(parts, ignore_index=True, sort=False)
+        .sort_values(["listed_month", "series"])
+        .reset_index(drop=True)
+    )
+
+
+def monthly_spread(frame: pd.DataFrame, *, min_n: int = 8) -> pd.DataFrame:
+    """Monthly IQR of ask zł/m² plus a 3-month rolling IQR."""
+    empty = pd.DataFrame(columns=["listed_month", "n", "iqr_ppm", "rolling_iqr_3"])
+    asks = _buyer_asks(frame)
+    if asks.empty or "listed_month" not in asks.columns:
+        return empty
+    table = pd.DataFrame({
+        "listed_month": asks["listed_month"].astype(str),
+        "ppm": _num(asks, "price_per_m2"),
+    }).dropna()
+    table = table.loc[_known_listed_month(table["listed_month"])]
+    if table.empty:
+        return empty
+
+    def _iqr(s: pd.Series) -> float:
+        return float(s.quantile(0.75) - s.quantile(0.25))
+
+    grouped = (
+        table
+        .groupby("listed_month", dropna=True)
+        .agg(n=("ppm", "size"), iqr_ppm=("ppm", _iqr))
+        .reset_index()
+        .sort_values("listed_month")
+        .reset_index(drop=True)
+    )
+    grouped = grouped.loc[grouped["n"] >= max(1, int(min_n))].copy()
+    if grouped.empty:
+        return empty
+    grouped["rolling_iqr_3"] = grouped["iqr_ppm"].rolling(3, min_periods=1).median()
+    return grouped.reset_index(drop=True)
