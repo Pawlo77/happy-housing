@@ -1,7 +1,9 @@
 """End-to-end pipeline: ingest → GIS enrich → train → score → recommend.
 
 Expensive steps (RCN extract, enrich, train/score, recommender) skip when
-input fingerprints match ``pipeline_steps.json`` unless force refresh is set.
+input fingerprints match ``pipeline_steps.json`` unless ``force_pipeline``
+is set. Remote GIS / open-data archives re-download only with
+``force_gis_refresh`` (not with full recompute alone).
 """
 
 import argparse
@@ -296,6 +298,22 @@ def _append_sourced_listings(
     parts.append(tagged)
 
 
+def resolve_pipeline_force_flags(
+    *,
+    force_pipeline: bool | None,
+    settings_force: bool,
+    force_gis_refresh: bool,
+) -> tuple[bool, bool]:
+    """Split step recompute from remote GIS/archive refresh.
+
+    Returns:
+        ``(force_steps, force_remote)``. Full recompute does **not** imply
+        re-downloading GUNB / RCN / GTFS / OSM; check Force GIS for that.
+    """
+    force_steps = bool(force_pipeline if force_pipeline is not None else settings_force)
+    return force_steps, bool(force_gis_refresh)
+
+
 def run_pipeline(
     config_path: Path | str = Path("configs/experiment.yaml"),
     *,
@@ -317,9 +335,11 @@ def run_pipeline(
     ``download_remote`` True/False forces all remote sources on/off; ``None``
     uses Admin Pipeline overrides when saved, else downloads everything.
     Explicit listing / RCN kwargs override resolved caps.
-    ``force_gis_refresh`` ignores OSM / Warsaw map caches and re-downloads.
+    ``force_gis_refresh`` re-downloads remote GIS / open-data archives
+    (GUNB zip+WFS, RCN, GTFS, GIOŚ, OSM / Warsaw map caches, …).
     ``force_pipeline`` (or Admin ``pipeline_force_refresh``) ignores step
-    fingerprints and re-exports GTFS/GIOŚ/RCN plus enrich/train/score/recommend.
+    fingerprints for enrich / train / score / recommend only — not remote
+    archives unless ``force_gis_refresh`` is also set.
     """
     from happy_housing.logging_config import configure_logging
 
@@ -329,11 +349,11 @@ def run_pipeline(
     processed = config.data.processed_path()
     app_settings = load_app_settings(settings_path(processed))
     configure_http_proxies(enabled=bool(app_settings.http_free_proxies_enabled))
-    force = bool(
-        force_pipeline
-        if force_pipeline is not None
-        else app_settings.pipeline_force_refresh
-    ) or bool(force_gis_refresh)
+    force, force_remote = resolve_pipeline_force_flags(
+        force_pipeline=force_pipeline,
+        settings_force=bool(app_settings.pipeline_force_refresh),
+        force_gis_refresh=force_gis_refresh,
+    )
     manifest = StepManifest.load(pipeline_steps_path(processed))
     skipped_steps: list[str] = []
     limits = resolve_ingest_limits(app_settings, config)
@@ -349,7 +369,7 @@ def run_pipeline(
     )
     logger.info(
         "Pipeline start (gtfs=%s gios=%s rcn=%s gunb=%s crime=%s osm=%s "
-        "otodom=%s olx=%s nol=%s force=%s)",
+        "otodom=%s olx=%s nol=%s force_steps=%s force_remote=%s)",
         flags.download_gtfs,
         flags.download_gios,
         flags.download_rcn,
@@ -360,6 +380,7 @@ def run_pipeline(
         flags.scrape_olx,
         flags.scrape_nol,
         force,
+        force_remote,
     )
     page_cap = (
         otodom_max_pages if otodom_max_pages is not None else limits.otodom_max_pages
@@ -477,9 +498,7 @@ def run_pipeline(
             pd.DataFrame(columns=cols).to_parquet(path, index=False)
 
     if flags.download_gtfs:
-        download_gtfs_stops(
-            urls.gtfs_zip, raw, gtfs_parquet, force=force_gis_refresh or force
-        )
+        download_gtfs_stops(urls.gtfs_zip, raw, gtfs_parquet, force=force_remote)
     else:
         _ensure_empty(gtfs_parquet, ["stop_id", "stop_lat", "stop_lon"])
 
@@ -487,7 +506,7 @@ def run_pipeline(
         fetch_gios_stations(
             urls.gios_stations,
             gios_parquet,
-            force=force_gis_refresh or force,
+            force=force_remote,
         )
     else:
         _ensure_empty(gios_parquet, ["station_id", "lat", "lon", "name", "city"])
@@ -497,11 +516,11 @@ def run_pipeline(
             urls.rcn_zip,
             raw / "rcn_warsaw.zip",
             timeout_s=1800.0,
-            force=bool(force_gis_refresh or force),
+            force=bool(force_remote),
         )
         rcn_fp = fingerprint(file_token(zip_path), f"max_rows={rcn_cap}")
         if manifest.should_skip(
-            "extract_rcn", rcn_fp, [rcn_parquet], force=force_gis_refresh or force
+            "extract_rcn", rcn_fp, [rcn_parquet], force=force_remote
         ):
             logger.info("Skip RCN extract (unchanged zip / max_rows)")
             skipped_steps.append("extract_rcn")
@@ -523,7 +542,7 @@ def run_pipeline(
             gunb_parquet,
             url=urls.gunb_zip,
             fixture_path=fixtures / "gunb_points.json",
-            refresh_wfs_cache=bool(force_gis_refresh or force),
+            refresh_wfs_cache=bool(force_remote),
             wfs_full_history=bool(app_settings.gunb_wfs_full_history),
         )
     else:
@@ -535,7 +554,7 @@ def run_pipeline(
             raw,
             crime_parquet,
             fixture_path=fixtures / "crime_by_district.json",
-            force=force_gis_refresh,
+            force=force_remote,
         )
     else:
         load_crime_by_district(
@@ -580,13 +599,13 @@ def run_pipeline(
             config.bbox.as_tuple(),
             cache,
             fixture_path=fixtures / "amenities.json",
-            force_refresh=force_gis_refresh,
+            force_refresh=force_remote,
         )
         shops = fetch_osm_shops(
             config.bbox.as_tuple(),
             cache,
             fixture_path=fixtures / "shops.json",
-            force_refresh=force_gis_refresh,
+            force_refresh=force_remote,
         )
     else:
         amenities = load_amenity_points(fixtures / "amenities.json")
@@ -604,20 +623,20 @@ def run_pipeline(
             fetch_warsaw_parks,
             cache,
             fixture_path=fixtures / "parks.geojson",
-            force_refresh=force_gis_refresh,
+            force_refresh=force_remote,
             bbox=config.bbox.as_tuple(),
         )
         fut_schools = pool.submit(
             fetch_warsaw_schools,
             cache,
             fixture_path=fixtures / "schools.geojson",
-            force_refresh=force_gis_refresh,
+            force_refresh=force_remote,
         )
         fut_pois = pool.submit(
             fetch_warsaw_city_pois,
             cache,
             fixture_path=fixtures / "city_pois.geojson",
-            force_refresh=force_gis_refresh,
+            force_refresh=force_remote,
             bbox=config.bbox.as_tuple(),
         )
         parks = fut_parks.result()
@@ -634,13 +653,13 @@ def run_pipeline(
         cache,
         bbox=config.bbox.as_tuple(),
         fixture_path=fixtures / "traffic_sample.json",
-        force_refresh=force_gis_refresh,
+        force_refresh=force_remote,
     )
     bike_paths = fetch_bike_paths(
         cache,
         bbox=config.bbox.as_tuple(),
         fixture_path=fixtures / "bike_paths.geojson",
-        force_refresh=force_gis_refresh,
+        force_refresh=force_remote,
     )
     bike_path_sample = load_bike_path_sample(cache)
 
@@ -709,7 +728,7 @@ def run_pipeline(
                 parks=parks,
                 cache_dir=cache,
                 bbox=config.bbox.as_tuple(),
-                force_refresh_buildings=force_gis_refresh,
+                force_refresh_buildings=force_remote,
             )
 
         to_enrich = attach_street_frontage_hints(to_enrich)
@@ -754,7 +773,7 @@ def run_pipeline(
         noise_rasters = fetch_warsaw_noise_rasters(
             cache,
             bbox=config.bbox.as_tuple(),
-            force_refresh=force_gis_refresh,
+            force_refresh=force_remote,
         )
         if noise_rasters and not enriched.empty:
             enriched = attach_warsaw_noise_features(enriched, noise_rasters)
@@ -768,7 +787,7 @@ def run_pipeline(
                 gios_stations,
                 bbox_wgs84=config.bbox.as_tuple(),
                 power=float(app_settings.aq_idw_power),
-                force_refresh=force_gis_refresh,
+                force_refresh=force_remote,
             )
             if aq_rasters:
                 enriched = attach_gios_aq_field_features(enriched, aq_rasters)
@@ -1045,15 +1064,19 @@ def parse_pipeline_cli_args(argv: list[str] | None = None) -> argparse.Namespace
         dest="force_pipeline",
         action="store_true",
         help=(
-            "Ignore step fingerprints and re-run GTFS/GIOŚ/RCN export, "
-            "enrich, train/score, and recommender."
+            "Ignore step fingerprints and re-run enrich, train/score, and "
+            "recommender. Does not re-download remote GIS archives "
+            "(use --force-gis)."
         ),
     )
     parser.add_argument(
         "--force-gis",
         dest="force_gis_refresh",
         action="store_true",
-        help="Re-download OSM / Warsaw map GIS caches.",
+        help=(
+            "Re-download remote GIS / open-data archives "
+            "(GUNB, RCN, GTFS, GIOŚ, OSM / Warsaw map caches, …)."
+        ),
     )
     parser.add_argument(
         "--config",

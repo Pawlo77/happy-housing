@@ -405,8 +405,9 @@ def _panel_ops(settings: AppSettings, settings_file: Path, proc: Path) -> None:
             "Force full recompute",
             value=bool(settings.pipeline_force_refresh),
             help=(
-                "Re-run enrich, train, score, and recommender even when "
-                "inputs are unchanged."
+                "Re-run enrich → train → score → recommend even when step "
+                "fingerprints match. Does not re-download GUNB / RCN / GTFS / "
+                "OSM — tick Force GIS / remote refresh for that."
             ),
             key="pipe_force_refresh",
         )
@@ -414,7 +415,9 @@ def _panel_ops(settings: AppSettings, settings_file: Path, proc: Path) -> None:
             "Force GIS / remote refresh",
             value=False,
             help=(
-                "Ignore OSM / Warsaw map / GUNB WFS caches on the next pipeline run."
+                "Re-download open-data archives and map caches: GUNB zip + WFS, "
+                "RCN zip, GTFS, GIOŚ, crime, OSM / Warsaw layers. Leave off for "
+                "day-to-day listing + model runs (reuse local files)."
             ),
             key="pipe_force_gis",
         )
