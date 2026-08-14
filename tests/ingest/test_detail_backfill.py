@@ -125,6 +125,7 @@ def test_count_pending_detail_backfill(tmp_path: Path) -> None:
     ]).to_parquet(out, index=False)
     counts = count_pending_detail_backfill(tmp_path)
     assert counts["otodom"] == 1
+    assert counts["nol"] == 0
     pending = pending_detail_backfill_rows(out, source="otodom", limit=10)
     assert len(pending) == 1
     assert pending[0]["listing_id"] == "a"
@@ -218,3 +219,24 @@ def test_backfill_otodom_details_updates_coords(
     assert float(row["lat"]) == 52.2
     assert float(row["detail_price_pln"]) == 500_000.0
     assert count_pending_detail_backfill(tmp_path)["otodom"] == 0
+
+
+def test_count_pending_detail_backfill_nol(tmp_path: Path) -> None:
+    out = tmp_path / "nol_listings.parquet"
+    pd.DataFrame([
+        {
+            "listing_id": "NOL-1",
+            "url": "https://warszawa.nieruchomosci-online.pl/x/1.html",
+            "price_pln": 500_000.0,
+            "area_m2": 50.0,
+            "lat": None,
+            "lon": None,
+            "listing_active": 1,
+        }
+    ]).to_parquet(out, index=False)
+    counts = count_pending_detail_backfill(tmp_path)
+    assert counts["nol"] == 1
+    assert counts["otodom"] == 0
+    pending = pending_detail_backfill_rows(out, source="nol", limit=10)
+    assert len(pending) == 1
+    assert pending[0]["listing_id"] == "NOL-1"

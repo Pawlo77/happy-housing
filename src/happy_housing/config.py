@@ -270,6 +270,16 @@ class IngestLimitsConfig:
     """Merge into existing OLX parquet; early-stop on known newest pages."""
     olx_include_rent: bool = True
     """Also harvest Warsaw flat rentals (excluded from price-model labels)."""
+    nol_max_pages: int | None = None
+    """Nieruchomości Online search pages; ``None`` walks until empty/early-stop."""
+    nol_max_listings: int | None = None
+    """NOL listings; ``None`` keeps every normalized offer."""
+    nol_incremental: bool = True
+    """Merge into existing NOL parquet; early-stop on known newest pages."""
+    nol_include_rent: bool = False
+    """Also harvest Warsaw NOL rentals (excluded from price-model labels)."""
+    nol_fetch_details: bool = False
+    """When true, pipeline / scrape fetches NOL detail JSON-LD inline."""
     rcn_max_rows: int | None = None
     """RCN joined Warsaw rows; ``None`` parses the full GML."""
 
@@ -278,6 +288,8 @@ class IngestLimitsConfig:
             "otodom_max_pages",
             "otodom_max_listings",
             "olx_max_listings",
+            "nol_max_pages",
+            "nol_max_listings",
             "rcn_max_rows",
         ):
             value = getattr(self, name)
@@ -307,6 +319,11 @@ class IngestLimitsConfig:
             olx_max_listings=_opt_int("olx_max_listings"),
             olx_incremental=bool(mapping.get("olx_incremental", True)),
             olx_include_rent=bool(mapping.get("olx_include_rent", True)),
+            nol_max_pages=_opt_int("nol_max_pages"),
+            nol_max_listings=_opt_int("nol_max_listings"),
+            nol_incremental=bool(mapping.get("nol_incremental", True)),
+            nol_include_rent=bool(mapping.get("nol_include_rent", False)),
+            nol_fetch_details=bool(mapping.get("nol_fetch_details", False)),
             rcn_max_rows=_opt_int("rcn_max_rows"),
         )
 

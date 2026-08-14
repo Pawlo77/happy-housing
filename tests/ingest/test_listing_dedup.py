@@ -44,6 +44,27 @@ def test_dedupe_same_geo_price_area_rooms_keeps_otodom() -> None:
     assert out.iloc[0]["listing_id"] == "OTO-1"
 
 
+def test_dedupe_keeps_nol_over_olx() -> None:
+    """NOL wins over OLX when geo + economics match."""
+    frame = pd.DataFrame([
+        _row(
+            listing_id="NOL-1",
+            source="nol",
+            title="NOL Mokotów",
+        ),
+        _row(
+            listing_id="OLX-9",
+            source="olx",
+            title="OLX copy",
+            lat=52.22991,
+            lon=21.01231,
+        ),
+    ])
+    out = dedupe_cross_source_listings(frame)
+    assert len(out) == 1
+    assert out.iloc[0]["listing_id"] == "NOL-1"
+
+
 def test_dedupe_same_image_url_without_coords() -> None:
     """Shared cover photo links search-only Otodom to geocoded OLX."""
     image = "https://ireland.apollo.olxcdn.com/v1/files/abc/image.jpg"

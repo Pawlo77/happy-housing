@@ -8,7 +8,7 @@ export OMP_NUM_THREADS=1
 
 .DEFAULT_GOAL := help
 
-.PHONY: help install update clean prek prek-all check tests coverage mlflow mlflow-stop datasets otodom olx pipeline app ingest-gtfs ingest-gios ingest-rcn ingest-gunb ingest-otodom ingest-olx osrm-prepare
+.PHONY: help install update clean prek prek-all check tests coverage mlflow mlflow-stop datasets otodom olx nol pipeline app ingest-gtfs ingest-gios ingest-rcn ingest-gunb ingest-otodom ingest-olx ingest-nol osrm-prepare
 
 MLFLOW_HOST ?= 127.0.0.1
 MLFLOW_PORT ?= 5005
@@ -69,11 +69,17 @@ ingest-otodom: ## Alias for otodom scrape
 ingest-olx: ## Alias for olx scrape
 	$(MAKE) olx
 
+ingest-nol: ## Alias for NOL scrape
+	$(MAKE) nol
+
 otodom: ## Scrape all Otodom Warsaw flats (rate-limited; uses config ingest caps)
 	uv run python -c "from pathlib import Path; from happy_housing.config import load_experiment_config; from happy_housing.ingest.otodom import scrape_otodom_warsaw; c=load_experiment_config(Path('configs/experiment.yaml')); scrape_otodom_warsaw(Path('data/processed/otodom_listings.parquet'), max_pages=c.ingest.otodom_max_pages, max_listings=c.ingest.otodom_max_listings)"
 
 olx: ## Scrape OLX Warsaw flats via public API (district-tiled; uses config ingest caps)
 	uv run python -c "from pathlib import Path; from happy_housing.config import load_experiment_config; from happy_housing.ingest.olx import scrape_olx_warsaw; c=load_experiment_config(Path('configs/experiment.yaml')); scrape_olx_warsaw(Path('data/processed/olx_listings.parquet'), max_listings=c.ingest.olx_max_listings, incremental=c.ingest.olx_incremental, include_rent=c.ingest.olx_include_rent)"
+
+nol: ## Scrape Nieruchomości Online Warsaw flats (JSON-LD; uses config ingest caps)
+	uv run python -c "from pathlib import Path; from happy_housing.config import load_experiment_config; from happy_housing.ingest.nol import scrape_nol_warsaw; c=load_experiment_config(Path('configs/experiment.yaml')); scrape_nol_warsaw(Path('data/processed/nol_listings.parquet'), max_pages=c.ingest.nol_max_pages, max_listings=c.ingest.nol_max_listings, incremental=c.ingest.nol_incremental, include_rent=c.ingest.nol_include_rent, fetch_details=c.ingest.nol_fetch_details)"
 
 osrm-prepare: ## Download Mazowieckie PBF and build OSRM MLD graph into docker/data/osrm
 	@mkdir -p docker/data/osrm

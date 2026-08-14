@@ -13,6 +13,7 @@ def test_source_catalog_has_names_and_https_urls() -> None:
     assert names == DEFAULT_SOURCES
     keys = {s.key for s in DEFAULT_SOURCE_CATALOG}
     assert "otodom" in keys
+    assert "nol" in keys
     assert "olx" in keys
     for src in DEFAULT_SOURCE_CATALOG:
         assert src.name

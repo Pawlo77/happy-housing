@@ -207,6 +207,16 @@ class AppSettings:
     """Merge OLX scrape into existing parquet."""
     olx_include_rent: bool = True
     """Include Warsaw flat rentals from OLX (not used as price-model labels)."""
+    nol_max_pages: int | None = None
+    """NOL search-page cap; None = unlimited (when overrides enabled)."""
+    nol_max_listings: int | None = None
+    """NOL listing cap; None = unlimited (when overrides enabled)."""
+    nol_incremental: bool = True
+    """Merge NOL scrape into existing parquet."""
+    nol_include_rent: bool = False
+    """Include Warsaw flat rentals from NOL (not used as price-model labels)."""
+    nol_fetch_details: bool = False
+    """Fetch NOL detail JSON-LD during pipeline scrape (else background job)."""
     http_free_proxies_enabled: bool = False
     """Rotate free HTTP proxies on 403/429 for Otodom + other ingest downloads."""
     auto_detail_backfill_enabled: bool = True
@@ -223,6 +233,8 @@ class AppSettings:
     """Scrape Otodom when running the full pipeline."""
     scrape_olx_in_pipeline: bool = True
     """Scrape OLX when running the full pipeline."""
+    scrape_nol_in_pipeline: bool = True
+    """Scrape Nieruchomości Online when running the full pipeline."""
     use_osm: bool = True
     """Fetch OSM amenities + shops during pipeline."""
     snap_listings_out_of_parks: bool = True
@@ -767,6 +779,15 @@ def load_app_settings(path: Path) -> AppSettings:
         olx_include_rent=bool(
             payload.get("olx_include_rent", defaults.olx_include_rent)
         ),
+        nol_max_pages=_opt_positive_int(payload.get("nol_max_pages")),
+        nol_max_listings=_opt_positive_int(payload.get("nol_max_listings")),
+        nol_incremental=bool(payload.get("nol_incremental", defaults.nol_incremental)),
+        nol_include_rent=bool(
+            payload.get("nol_include_rent", defaults.nol_include_rent)
+        ),
+        nol_fetch_details=bool(
+            payload.get("nol_fetch_details", defaults.nol_fetch_details)
+        ),
         http_free_proxies_enabled=bool(
             payload.get(
                 "http_free_proxies_enabled",
@@ -814,6 +835,12 @@ def load_app_settings(path: Path) -> AppSettings:
             payload.get(
                 "scrape_olx_in_pipeline",
                 defaults.scrape_olx_in_pipeline,
+            )
+        ),
+        scrape_nol_in_pipeline=bool(
+            payload.get(
+                "scrape_nol_in_pipeline",
+                defaults.scrape_nol_in_pipeline,
             )
         ),
         use_osm=bool(payload.get("use_osm", defaults.use_osm)),

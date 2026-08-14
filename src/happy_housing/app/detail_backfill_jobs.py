@@ -57,8 +57,9 @@ def maybe_schedule_detail_backfill(processed_dir: Path) -> bool:
         active = refresh_admin_job(processed_dir, active.job_id)
         if active.status == "running":
             return False
-    pending = count_pending_detail_backfill(processed_dir).get("otodom", 0)
-    if pending <= 0:
+    pending = count_pending_detail_backfill(processed_dir)
+    total = sum(int(v) for v in pending.values())
+    if total <= 0:
         return False
     start_admin_job(
         name="detail_backfill",

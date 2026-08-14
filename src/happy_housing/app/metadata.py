@@ -104,6 +104,13 @@ DEFAULT_SOURCE_CATALOG: tuple[DataSource, ...] = (
         unit="listings",
     ),
     DataSource(
+        name="Nieruchomości Online (JSON-LD)",
+        url="https://www.nieruchomosci-online.pl/",
+        role="Warsaw flat asks via search JSON-LD + tilesData (detail backfill).",
+        key="nol",
+        unit="listings",
+    ),
+    DataSource(
         name="OLX (public offers API)",
         url="https://www.olx.pl/",
         role="Warsaw flat asks via public OLX offers API (district-tiled).",

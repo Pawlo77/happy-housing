@@ -113,7 +113,8 @@ def dedupe_cross_source_listings(frame: pd.DataFrame) -> pd.DataFrame:
     """Drop cross-portal duplicates among buyer sources; keep RCN / other rows.
 
     Rows match when they share a geo fingerprint (coords + economics) or the
-    same normalized cover photo URL. Otodom is preferred over OLX over fixtures.
+    same normalized cover photo URL. Otodom is preferred over NOL over OLX
+    over fixtures.
     """
     if frame.empty or "listing_id" not in frame.columns:
         return frame

@@ -168,7 +168,7 @@ class TrainSettings:
     random_state: int = 42
     """RNG seed for splits and HPO sampling."""
     train_buyer_asks_only: bool = True
-    """Train on buyer asks (Otodom/OLX/fixture sales); RCN stays comps-only."""
+    """Train on buyer asks (Otodom/NOL/OLX/fixture sales); RCN stays comps-only."""
     log_target: bool = True
     """Train on ``log1p(price_per_m2)``; report metrics in zł/m²."""
     district_calibration: bool = True
@@ -719,7 +719,7 @@ def train_price_model(
         if "listing_active" in work.columns:
             work = work.loc[work["listing_active"].map(listing_is_active)].copy()
         logger.info(
-            "Train labels: buyer asks (Otodom/OLX/fixture, sale) %s → %s rows",
+            "Train labels: buyer asks (Otodom/NOL/OLX/fixture, sale) %s → %s rows",
             len(frame),
             len(work),
         )

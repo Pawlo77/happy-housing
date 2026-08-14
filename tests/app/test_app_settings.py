@@ -20,7 +20,11 @@ def test_load_missing_returns_defaults(tmp_path: Path) -> None:
     assert settings.recommender_top_n == 15
     assert settings.olx_include_rent is True
     assert settings.scrape_olx_in_pipeline is True
+    assert settings.scrape_nol_in_pipeline is True
     assert settings.scrape_otodom_in_pipeline is True
+    assert settings.nol_include_rent is False
+    assert settings.nol_incremental is True
+    assert settings.nol_max_listings is None
     assert settings.gunb_wfs_full_history is True
     assert settings.download_rcn is True
     assert settings.download_gunb is True

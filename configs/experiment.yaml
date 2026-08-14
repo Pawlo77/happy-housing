@@ -55,6 +55,11 @@ ingest:
   olx_max_listings: null
   olx_incremental: true
   olx_include_rent: true
+  nol_max_pages: null
+  nol_max_listings: null
+  nol_incremental: true
+  nol_include_rent: false
+  nol_fetch_details: false
   rcn_max_rows: null
 
 logging:

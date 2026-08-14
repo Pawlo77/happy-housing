@@ -26,6 +26,8 @@ class IngestFlags:
     """Scrape Otodom inside the pipeline."""
     scrape_olx: bool
     """Scrape OLX inside the pipeline."""
+    scrape_nol: bool
+    """Scrape Nieruchomości Online inside the pipeline."""
 
 
 def resolve_ingest_limits(
@@ -43,6 +45,11 @@ def resolve_ingest_limits(
         olx_max_listings=settings.olx_max_listings,
         olx_incremental=bool(settings.olx_incremental),
         olx_include_rent=bool(settings.olx_include_rent),
+        nol_max_pages=settings.nol_max_pages,
+        nol_max_listings=settings.nol_max_listings,
+        nol_incremental=bool(settings.nol_incremental),
+        nol_include_rent=bool(settings.nol_include_rent),
+        nol_fetch_details=bool(settings.nol_fetch_details),
         rcn_max_rows=settings.rcn_max_rows,
     )
 
@@ -80,6 +87,7 @@ def resolve_ingest_flags(
     use_osm: bool | None = None,
     scrape_otodom: bool | None = None,
     scrape_olx: bool | None = None,
+    scrape_nol: bool | None = None,
 ) -> IngestFlags:
     """Resolve per-source download flags.
 
@@ -122,6 +130,13 @@ def resolve_ingest_flags(
     else:
         scrape_olx_flag = True
 
+    if scrape_nol is not None:
+        scrape_nol_flag = bool(scrape_nol)
+    elif settings.pipeline_overrides_enabled:
+        scrape_nol_flag = bool(settings.scrape_nol_in_pipeline)
+    else:
+        scrape_nol_flag = True
+
     return IngestFlags(
         download_gtfs=base_gtfs,
         download_gios=base_gios,
@@ -131,4 +146,5 @@ def resolve_ingest_flags(
         use_osm=osm,
         scrape_otodom=scrape,
         scrape_olx=scrape_olx_flag,
+        scrape_nol=scrape_nol_flag,
     )

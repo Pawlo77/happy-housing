@@ -6,11 +6,22 @@ from typing import Any
 
 import pandas as pd
 
-BUYER_LISTING_SOURCES: frozenset[str] = frozenset({"otodom", "olx", "fixture"})
+BUYER_LISTING_SOURCES: frozenset[str] = frozenset({"otodom", "nol", "olx", "fixture"})
 """Buyer-facing ask sources (Explore / train labels / cross-portal dedup)."""
 
-BUYER_SOURCE_KEEP_PRIORITY: dict[str, int] = {"otodom": 0, "olx": 1, "fixture": 2}
+BUYER_SOURCE_KEEP_PRIORITY: dict[str, int] = {
+    "otodom": 0,
+    "nol": 1,
+    "olx": 2,
+    "fixture": 3,
+}
 """Lower rank wins when collapsing cross-portal duplicate groups."""
+
+_INACTIVE_ASK_PARQUETS: tuple[tuple[str, str], ...] = (
+    ("otodom", "otodom_listings.parquet"),
+    ("nol", "nol_listings.parquet"),
+)
+"""Closed search-card artifacts unioned into Stats (map still hides them)."""
 
 LISTING_ACTIVE_COLUMN: str = "listing_active"
 """1 = live ask shown on map; 0 = withdrawn/closed but kept for history."""
@@ -189,24 +200,33 @@ def append_inactive_otodom_asks(
     frame: pd.DataFrame,
     processed_dir: Path,
 ) -> pd.DataFrame:
-    """Union closed Otodom search rows for Stats historical ask-price context."""
-    oto_path = processed_dir / "otodom_listings.parquet"
-    if not oto_path.exists():
+    """Union closed Otodom/NOL search rows for Stats historical ask-price context."""
+    extras: list[pd.DataFrame] = []
+    known: set[str] = (
+        set(frame["listing_id"].astype(str)) if "listing_id" in frame.columns else set()
+    )
+    for source, filename in _INACTIVE_ASK_PARQUETS:
+        path = processed_dir / filename
+        if not path.exists():
+            continue
+        stored = pd.read_parquet(path)
+        if stored.empty or LISTING_ACTIVE_COLUMN not in stored.columns:
+            continue
+        inactive = stored.loc[
+            ~stored[LISTING_ACTIVE_COLUMN].map(listing_is_active)
+        ].copy()
+        if inactive.empty:
+            continue
+        inactive["source"] = source
+        if known:
+            inactive = inactive.loc[~inactive["listing_id"].astype(str).isin(known)]
+        if inactive.empty:
+            continue
+        extras.append(inactive)
+        known.update(inactive["listing_id"].astype(str))
+    if not extras:
         return frame
-    oto = pd.read_parquet(oto_path)
-    if oto.empty or LISTING_ACTIVE_COLUMN not in oto.columns:
-        return frame
-    inactive = oto.loc[~oto[LISTING_ACTIVE_COLUMN].map(listing_is_active)].copy()
-    if inactive.empty:
-        return frame
-    inactive["source"] = "otodom"
-    if "listing_id" not in frame.columns:
-        return pd.concat([frame, inactive], ignore_index=True, sort=False)
-    known = set(frame["listing_id"].astype(str))
-    extra = inactive.loc[~inactive["listing_id"].astype(str).isin(known)]
-    if extra.empty:
-        return frame
-    return pd.concat([frame, extra], ignore_index=True, sort=False)
+    return pd.concat([frame, *extras], ignore_index=True, sort=False)
 
 
 def merge_listing_frames(existing: pd.DataFrame, fresh: pd.DataFrame) -> pd.DataFrame:

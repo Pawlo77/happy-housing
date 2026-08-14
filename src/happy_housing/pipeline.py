@@ -94,6 +94,7 @@ from happy_housing.ingest.listing_common import (
 )
 from happy_housing.ingest.listing_dedup import dedupe_cross_source_listings
 from happy_housing.ingest.market import ensure_market_primary
+from happy_housing.ingest.nol import scrape_nol_warsaw
 from happy_housing.ingest.olx import scrape_olx_warsaw
 from happy_housing.ingest.otodom import scrape_otodom_warsaw
 from happy_housing.ingest.proxy_pool import configure_http_proxies
@@ -250,32 +251,35 @@ def _split_listings_for_enrich(
     return listings.loc[has_coords].copy(), listings.loc[~has_coords].copy()
 
 
-def _ingest_otodom_into_parts(
+def _ingest_buyer_source_into_parts(
     parts: list[pd.DataFrame],
-    otodom: pd.DataFrame,
+    frame: pd.DataFrame,
     processed: Path,
+    source: str,
     *,
     log_search_only_pending: bool = False,
 ) -> None:
-    """Append geocoded + closed Otodom rows and maybe queue detail backfill."""
+    """Append geocoded + closed search-source rows and maybe queue detail backfill."""
     maybe_schedule_detail_backfill(processed)
-    geocoded = _geocoded_otodom(otodom)
-    closed = _inactive_otodom_asks(otodom)
+    geocoded = _geocoded_otodom(frame)
+    closed = _inactive_otodom_asks(frame)
     to_add = pd.concat([geocoded, closed], ignore_index=True, sort=False)
     if to_add.empty:
-        if log_search_only_pending and not otodom.empty:
+        if log_search_only_pending and not frame.empty:
             logger.info(
-                "Otodom scrape produced no geocoded rows yet "
-                "(search-only or detail backfill pending)"
+                "%s scrape produced no geocoded rows yet "
+                "(search-only or detail backfill pending)",
+                source,
             )
         return
     tagged = to_add.copy()
-    tagged["source"] = "otodom"
+    tagged["source"] = source
     parts.append(tagged)
     if not closed.empty:
         logger.info(
-            "Including %s closed Otodom asks for historical stats (map hidden)",
+            "Including %s closed %s asks for historical stats (map hidden)",
             len(closed),
+            source,
         )
 
 
@@ -299,9 +303,11 @@ def run_pipeline(
     use_osm: bool | None = None,
     scrape_otodom: bool | None = None,
     scrape_olx: bool | None = None,
+    scrape_nol: bool | None = None,
     otodom_max_pages: int | None = None,
     otodom_max_listings: int | None = None,
     olx_max_listings: int | None = None,
+    nol_max_listings: int | None = None,
     rcn_max_rows: int | None = None,
     force_gis_refresh: bool = False,
     force_pipeline: bool | None = None,
@@ -339,10 +345,11 @@ def run_pipeline(
         use_osm=use_osm,
         scrape_otodom=scrape_otodom,
         scrape_olx=scrape_olx,
+        scrape_nol=scrape_nol,
     )
     logger.info(
         "Pipeline start (gtfs=%s gios=%s rcn=%s gunb=%s crime=%s osm=%s "
-        "otodom=%s olx=%s force=%s)",
+        "otodom=%s olx=%s nol=%s force=%s)",
         flags.download_gtfs,
         flags.download_gios,
         flags.download_rcn,
@@ -351,6 +358,7 @@ def run_pipeline(
         flags.use_osm,
         flags.scrape_otodom,
         flags.scrape_olx,
+        flags.scrape_nol,
         force,
     )
     page_cap = (
@@ -363,6 +371,9 @@ def run_pipeline(
     )
     olx_listing_cap = (
         olx_max_listings if olx_max_listings is not None else limits.olx_max_listings
+    )
+    nol_listing_cap = (
+        nol_max_listings if nol_max_listings is not None else limits.nol_max_listings
     )
     rcn_cap = rcn_max_rows if rcn_max_rows is not None else limits.rcn_max_rows
     raw = config.data.raw_path()
@@ -389,20 +400,23 @@ def run_pipeline(
                     incremental=limits.otodom_incremental,
                     fetch_details=limits.otodom_fetch_details,
                 )
-            _ingest_otodom_into_parts(
+            _ingest_buyer_source_into_parts(
                 listings_parts,
                 otodom,
                 processed,
+                "otodom",
                 log_search_only_pending=True,
             )
         except Exception as exc:
             logger.warning("Otodom scrape failed: %s", exc)
             if otodom_parquet.exists():
                 otodom = _reload_fx_listings_parquet(otodom_parquet, processed)
-                _ingest_otodom_into_parts(listings_parts, otodom, processed)
+                _ingest_buyer_source_into_parts(
+                    listings_parts, otodom, processed, "otodom"
+                )
     elif otodom_parquet.exists():
         otodom = _reload_fx_listings_parquet(otodom_parquet, processed)
-        _ingest_otodom_into_parts(listings_parts, otodom, processed)
+        _ingest_buyer_source_into_parts(listings_parts, otodom, processed, "otodom")
 
     olx_parquet = processed / "olx_listings.parquet"
     if flags.scrape_olx:
@@ -423,6 +437,34 @@ def run_pipeline(
     elif olx_parquet.exists():
         olx = _reload_fx_listings_parquet(olx_parquet, processed)
         _append_sourced_listings(listings_parts, olx, "olx")
+
+    nol_parquet = processed / "nol_listings.parquet"
+    if flags.scrape_nol:
+        try:
+            with log_step(logger, "nol_scrape"):
+                nol = scrape_nol_warsaw(
+                    nol_parquet,
+                    max_pages=limits.nol_max_pages,
+                    max_listings=nol_listing_cap,
+                    incremental=limits.nol_incremental,
+                    include_rent=limits.nol_include_rent,
+                    fetch_details=limits.nol_fetch_details,
+                )
+            _ingest_buyer_source_into_parts(
+                listings_parts,
+                nol,
+                processed,
+                "nol",
+                log_search_only_pending=True,
+            )
+        except Exception as exc:
+            logger.warning("NOL scrape failed: %s", exc)
+            if nol_parquet.exists():
+                nol = _reload_fx_listings_parquet(nol_parquet, processed)
+                _ingest_buyer_source_into_parts(listings_parts, nol, processed, "nol")
+    elif nol_parquet.exists():
+        nol = _reload_fx_listings_parquet(nol_parquet, processed)
+        _ingest_buyer_source_into_parts(listings_parts, nol, processed, "nol")
 
     gtfs_parquet = processed / "gtfs_stops.parquet"
     gios_parquet = processed / "gios_stations.parquet"

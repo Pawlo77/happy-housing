@@ -26,6 +26,11 @@ def test_load_default_experiment_yaml() -> None:
     assert config.ingest.olx_max_listings is None
     assert config.ingest.olx_incremental is True
     assert config.ingest.olx_include_rent is True
+    assert config.ingest.nol_max_pages is None
+    assert config.ingest.nol_max_listings is None
+    assert config.ingest.nol_incremental is True
+    assert config.ingest.nol_include_rent is False
+    assert config.ingest.nol_fetch_details is False
     assert config.ingest.rcn_max_rows is None
     assert "wynik_mazowieckie.zip" in config.ingest_urls.gunb_zip
     assert config.logging.level == "INFO"

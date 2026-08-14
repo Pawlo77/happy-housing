@@ -111,3 +111,19 @@ def test_append_inactive_otodom_asks_for_stats(tmp_path: Path) -> None:
     out = append_inactive_otodom_asks(scored, tmp_path)
     assert len(out) == 2
     assert "OTO-9" in set(out["listing_id"].astype(str))
+
+
+def test_append_inactive_asks_includes_closed_nol(tmp_path: Path) -> None:
+    scored = pd.DataFrame([
+        {"listing_id": "OTO-1", "price_pln": 700_000.0, LISTING_ACTIVE_COLUMN: 1},
+    ])
+    pd.DataFrame([
+        {
+            "listing_id": "NOL-9",
+            "price_pln": 610_000.0,
+            LISTING_ACTIVE_COLUMN: 0,
+            "source": "nol",
+        }
+    ]).to_parquet(tmp_path / "nol_listings.parquet", index=False)
+    out = append_inactive_otodom_asks(scored, tmp_path)
+    assert "NOL-9" in set(out["listing_id"].astype(str))

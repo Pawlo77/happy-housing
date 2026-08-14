@@ -304,16 +304,23 @@ def _panel_ops(settings: AppSettings, settings_file: Path, proc: Path) -> None:
     olx_listings = (
         "∞" if limits.olx_max_listings is None else f"{limits.olx_max_listings:,}"
     )
+    nol_listings = (
+        "∞" if limits.nol_max_listings is None else f"{limits.nol_max_listings:,}"
+    )
 
     st.subheader("Jobs")
     pending = count_pending_detail_backfill(proc)
     pending_otodom = int(pending.get("otodom", 0))
+    pending_nol = int(pending.get("nol", 0))
     st.caption(
         f"Caps from **Sources** · Otodom `{pages}` pages / `{listings}` listings "
         f"(incr `{'on' if limits.otodom_incremental else 'off'}`) · "
-        f"detail pending **{pending_otodom}** · "
+        f"detail pending **{pending_otodom}** Otodom / **{pending_nol}** NOL · "
         f"proxies **`{'on' if settings.http_free_proxies_enabled else 'off'}`** "
         f"(Sources → Detail backfill) · "
+        f"NOL `{nol_listings}` "
+        f"(incr `{'on' if limits.nol_incremental else 'off'}`, "
+        f"rent `{'on' if limits.nol_include_rent else 'off'}`) · "
         f"OLX `{olx_listings}` "
         f"(incr `{'on' if limits.olx_incremental else 'off'}`, "
         f"rent `{'on' if limits.olx_include_rent else 'off'}`) · "
@@ -334,7 +341,12 @@ def _panel_ops(settings: AppSettings, settings_file: Path, proc: Path) -> None:
             value=bool(flags.scrape_olx),
             key="pipe_scrape_olx",
         )
-        s1, s2 = st.columns(2)
+        scrape_nol_in_pipe = st.checkbox(
+            "Include NOL in pipeline",
+            value=bool(flags.scrape_nol),
+            key="pipe_scrape_nol",
+        )
+        s1, s2, s3 = st.columns(3)
         with s1:
             run_otodom = st.button(
                 "Otodom scrape",
@@ -349,11 +361,18 @@ def _panel_ops(settings: AppSettings, settings_file: Path, proc: Path) -> None:
                 key="run_olx",
                 use_container_width=True,
             )
+        with s3:
+            run_nol = st.button(
+                "NOL scrape",
+                type="primary",
+                key="run_nol",
+                use_container_width=True,
+            )
         run_detail = st.button(
             "Detail backfill batch",
             key="run_detail_backfill",
             help=(
-                "Fetch Otodom detail pages for listings missing coords/attrs "
+                "Fetch Otodom/NOL detail pages for listings missing coords/attrs "
                 "(one batch; auto-schedules while pending when enabled)."
             ),
             use_container_width=True,
@@ -488,6 +507,57 @@ def _panel_ops(settings: AppSettings, settings_file: Path, proc: Path) -> None:
             log_level=level,
         )
 
+    if run_nol:
+        if scrape_nol_in_pipe != bool(settings.scrape_nol_in_pipeline):
+            settings.scrape_nol_in_pipeline = bool(scrape_nol_in_pipe)
+            settings.pipeline_overrides_enabled = True
+            save_app_settings(settings_file, settings)
+        out_path = processed_dir() / "nol_listings.parquet"
+        pages_arg = (
+            "None" if limits.nol_max_pages is None else str(int(limits.nol_max_pages))
+        )
+        listings_arg = (
+            "None"
+            if limits.nol_max_listings is None
+            else str(int(limits.nol_max_listings))
+        )
+        incr_arg = "True" if limits.nol_incremental else "False"
+        rent_arg = "True" if limits.nol_include_rent else "False"
+        proxy_flag = bool(settings.http_free_proxies_enabled)
+        level = str(settings.log_level)
+        cmd = [
+            sys.executable,
+            "-c",
+            (
+                "from pathlib import Path; "
+                "from happy_housing.logging_config import configure_logging; "
+                "from happy_housing.ingest.proxy_pool import "
+                "configure_http_proxies; "
+                "from happy_housing.ingest.nol import scrape_nol_warsaw; "
+                f"configure_logging({level!r}, force=True); "
+                f"configure_http_proxies(enabled={proxy_flag!r}); "
+                f"scrape_nol_warsaw(Path({str(out_path)!r}), "
+                f"max_pages={pages_arg}, max_listings={listings_arg}, "
+                f"incremental={incr_arg}, include_rent={rent_arg}, "
+                f"fetch_details=False)"
+            ),
+        ]
+        logger.info(
+            "Admin starting NOL scrape → %s (max_pages=%s max_listings=%s "
+            "incremental=%s rent=%s)",
+            out_path,
+            pages_arg,
+            listings_arg,
+            incr_arg,
+            rent_arg,
+        )
+        _launch_ops_job(
+            name="nol_scrape",
+            command=cmd,
+            processed=proc,
+            log_level=level,
+        )
+
     if run_detail:
         level = str(settings.log_level)
         _launch_ops_job(
@@ -500,6 +570,7 @@ def _panel_ops(settings: AppSettings, settings_file: Path, proc: Path) -> None:
     if run_pipe:
         settings.scrape_otodom_in_pipeline = bool(scrape_in_pipe)
         settings.scrape_olx_in_pipeline = bool(scrape_olx_in_pipe)
+        settings.scrape_nol_in_pipeline = bool(scrape_nol_in_pipe)
         settings.pipeline_force_refresh = bool(force_refresh)
         settings.pipeline_overrides_enabled = True
         save_app_settings(settings_file, settings)
@@ -945,6 +1016,12 @@ def _apply_pipeline_widgets(
     olx_max_listings: int | None,
     olx_incremental: bool,
     olx_include_rent: bool,
+    nol_unlimited: bool,
+    nol_max_pages: int | None,
+    nol_max_listings: int | None,
+    nol_incremental: bool,
+    nol_include_rent: bool,
+    nol_fetch_details: bool,
     http_free_proxies_enabled: bool,
     download_rcn: bool,
     rcn_unlimited: bool,
@@ -964,6 +1041,7 @@ def _apply_pipeline_widgets(
     use_osm: bool,
     scrape_in_pipe: bool,
     scrape_olx_in_pipe: bool,
+    scrape_nol_in_pipe: bool,
     snap_out_of_parks: bool,
     bike_path_coverage_radius_m: float,
     traffic_neighbourhood_radius_m: float,
@@ -981,6 +1059,11 @@ def _apply_pipeline_widgets(
     settings.olx_max_listings = None if olx_unlimited else olx_max_listings
     settings.olx_incremental = bool(olx_incremental)
     settings.olx_include_rent = bool(olx_include_rent)
+    settings.nol_max_pages = None if nol_unlimited else nol_max_pages
+    settings.nol_max_listings = None if nol_unlimited else nol_max_listings
+    settings.nol_incremental = bool(nol_incremental)
+    settings.nol_include_rent = bool(nol_include_rent)
+    settings.nol_fetch_details = bool(nol_fetch_details)
     settings.http_free_proxies_enabled = bool(http_free_proxies_enabled)
     settings.download_rcn = bool(download_rcn)
     settings.rcn_max_rows = None if rcn_unlimited else rcn_max_rows
@@ -999,6 +1082,7 @@ def _apply_pipeline_widgets(
     settings.use_osm = bool(use_osm)
     settings.scrape_otodom_in_pipeline = bool(scrape_in_pipe)
     settings.scrape_olx_in_pipeline = bool(scrape_olx_in_pipe)
+    settings.scrape_nol_in_pipeline = bool(scrape_nol_in_pipe)
     settings.snap_listings_out_of_parks = bool(snap_out_of_parks)
     settings.bike_path_coverage_radius_m = float(bike_path_coverage_radius_m)
     settings.traffic_neighbourhood_radius_m = float(traffic_neighbourhood_radius_m)
@@ -1070,12 +1154,71 @@ def _panel_sources(settings: AppSettings, settings_file: Path, proc: Path) -> No
         key="pipe_otodom_fetch_details",
     )
 
+    st.subheader("Nieruchomości Online")
+    scrape_nol_in_pipe = st.checkbox(
+        "Scrape NOL in pipeline",
+        value=bool(flags.scrape_nol),
+        help="JSON-LD Warsaw sale listings during full pipeline runs.",
+        key="pipe_scrape_nol",
+    )
+    nol_unlimited = st.checkbox(
+        "Unlimited (ignore NOL page/listing caps)",
+        value=limits.nol_max_pages is None and limits.nol_max_listings is None,
+        help="Walks every search page until empty or incremental early-stop.",
+        key="pipe_nol_unlimited",
+    )
+    nol_max_pages: int | None = None
+    nol_max_listings: int | None = None
+    if not nol_unlimited:
+        nol_max_pages = int(
+            st.number_input(
+                "Max NOL search pages",
+                min_value=1,
+                max_value=5000,
+                value=int(limits.nol_max_pages or 50),
+                key="pipe_nol_max_pages",
+            )
+        )
+        nol_max_listings = int(
+            st.number_input(
+                "Max NOL listings",
+                min_value=10,
+                max_value=100_000,
+                value=int(limits.nol_max_listings or 2000),
+                key="pipe_nol_max_listings",
+            )
+        )
+    nol_incremental = st.checkbox(
+        "NOL incremental (new/updated only)",
+        value=bool(limits.nol_incremental),
+        help=(
+            "Newest-first search; stop after known newest pages; merge into "
+            "existing parquet. Uncheck only for a full rebuild."
+        ),
+        key="pipe_nol_incremental",
+    )
+    nol_include_rent = st.checkbox(
+        "Include NOL rentals",
+        value=bool(limits.nol_include_rent),
+        help="Rent rows stay in Explore; price-model labels use sale only.",
+        key="pipe_nol_include_rent",
+    )
+    nol_fetch_details = st.checkbox(
+        "Fetch NOL details during scrape/pipeline",
+        value=bool(limits.nol_fetch_details),
+        help=(
+            "Off (default): search JSON-LD + tilesData; background detail "
+            "backfill fills remaining attrs."
+        ),
+        key="pipe_nol_fetch_details",
+    )
+
     st.subheader("Detail backfill")
     auto_detail_backfill_enabled = st.checkbox(
         "Auto-schedule detail backfill",
         value=bool(settings.auto_detail_backfill_enabled),
         help=(
-            "Ops worker queues detail-backfill batches while Otodom rows lack "
+            "Ops worker queues detail-backfill batches while Otodom/NOL rows lack "
             "coords/attrs or search price changed."
         ),
         key="pipe_auto_detail_backfill",
@@ -1117,9 +1260,9 @@ def _panel_sources(settings: AppSettings, settings_file: Path, proc: Path) -> No
         "Use free HTTP proxies on 403/429",
         value=bool(settings.http_free_proxies_enabled),
         help=(
-            "When off (default), Otodom/OLX/detail jobs use direct HTTP. Turn on "
+            "When off (default), Otodom/OLX/NOL/detail jobs use direct HTTP. Turn on "
             "only if your IP is blocked — free proxy lists are slow and often "
-            "fail on Otodom."
+            "fail on listing portals."
         ),
         key="pipe_http_free_proxies",
     )
@@ -1362,6 +1505,12 @@ def _panel_sources(settings: AppSettings, settings_file: Path, proc: Path) -> No
             olx_max_listings=olx_max_listings,
             olx_incremental=olx_incremental,
             olx_include_rent=olx_include_rent,
+            nol_unlimited=nol_unlimited,
+            nol_max_pages=nol_max_pages,
+            nol_max_listings=nol_max_listings,
+            nol_incremental=nol_incremental,
+            nol_include_rent=nol_include_rent,
+            nol_fetch_details=nol_fetch_details,
             http_free_proxies_enabled=http_free_proxies_enabled,
             download_rcn=download_rcn,
             rcn_unlimited=rcn_unlimited,
@@ -1381,6 +1530,7 @@ def _panel_sources(settings: AppSettings, settings_file: Path, proc: Path) -> No
             use_osm=use_osm,
             scrape_in_pipe=scrape_in_pipe,
             scrape_olx_in_pipe=scrape_olx_in_pipe,
+            scrape_nol_in_pipe=scrape_nol_in_pipe,
             snap_out_of_parks=snap_out_of_parks,
             bike_path_coverage_radius_m=bike_path_coverage_radius_m,
             traffic_neighbourhood_radius_m=traffic_neighbourhood_radius_m,
@@ -1547,11 +1697,11 @@ def _panel_model(settings: AppSettings, settings_file: Path, proc: Path) -> None
         key="settings_photo_cv_model_id",
     )
     train_asks_only = st.checkbox(
-        "Train on buyer asks only (Otodom + OLX + fixture; RCN = comps)",
+        "Train on buyer asks only (Otodom + NOL + OLX + fixture; RCN = comps)",
         value=bool(settings.train_buyer_asks_only),
         help=(
             "Uses all live buyer portals equally as ask-price labels; excludes "
-            "RCN deed transactions and OLX/Otodom rentals."
+            "RCN deed transactions and rental rows."
         ),
         key="settings_train_buyer_asks_only",
     )

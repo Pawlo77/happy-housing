@@ -58,6 +58,41 @@ def test_maybe_schedule_detail_backfill_when_pending(tmp_path: Path) -> None:
         jobs_mod.start_admin_job = real_start  # type: ignore[method-assign]
 
 
+def test_maybe_schedule_detail_backfill_when_nol_pending(tmp_path: Path) -> None:
+    proc = tmp_path / "processed"
+    proc.mkdir()
+    jobs = proc / "admin_jobs"
+    jobs.mkdir()
+    pd.DataFrame([_search_card("NOL-1")]).to_parquet(
+        proc / "nol_listings.parquet",
+        index=False,
+    )
+    settings = AppSettings(auto_detail_backfill_enabled=True)
+    save_app_settings(settings_path(proc), settings)
+
+    import happy_housing.app.detail_backfill_jobs as jobs_mod
+
+    calls: list[str] = []
+    real_start = jobs_mod.start_admin_job
+
+    def _fake_start(
+        name: str,
+        command: list[str],
+        processed_dir: Path,
+        env: dict[str, str] | None = None,
+    ) -> MagicMock:
+        _ = command, processed_dir, env
+        calls.append(name)
+        return MagicMock()
+
+    jobs_mod.start_admin_job = _fake_start  # type: ignore[method-assign]
+    try:
+        assert maybe_schedule_detail_backfill(proc) is True
+        assert calls == ["detail_backfill"]
+    finally:
+        jobs_mod.start_admin_job = real_start  # type: ignore[method-assign]
+
+
 def test_maybe_schedule_skips_when_disabled(tmp_path: Path) -> None:
     proc = tmp_path / "processed"
     proc.mkdir()

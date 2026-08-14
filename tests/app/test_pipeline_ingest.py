@@ -60,6 +60,9 @@ def test_resolve_limits_prefers_app_settings_when_enabled() -> None:
         olx_max_listings=250,
         olx_incremental=False,
         olx_include_rent=True,
+        nol_max_listings=80,
+        nol_incremental=False,
+        nol_include_rent=True,
         rcn_max_rows=None,
         otodom_incremental=True,
     )
@@ -69,6 +72,9 @@ def test_resolve_limits_prefers_app_settings_when_enabled() -> None:
     assert limits.olx_max_listings == 250
     assert limits.olx_incremental is False
     assert limits.olx_include_rent is True
+    assert limits.nol_max_listings == 80
+    assert limits.nol_incremental is False
+    assert limits.nol_include_rent is True
     assert limits.rcn_max_rows is None
     assert limits.otodom_incremental is True
 
@@ -102,6 +108,7 @@ def test_resolve_flags_defaults_and_overrides() -> None:
     assert off.use_osm is True
     assert off.scrape_otodom is True
     assert off.scrape_olx is True
+    assert off.scrape_nol is True
 
     custom = resolve_ingest_flags(
         AppSettings(
@@ -114,6 +121,7 @@ def test_resolve_flags_defaults_and_overrides() -> None:
             use_osm=False,
             scrape_otodom_in_pipeline=False,
             scrape_olx_in_pipeline=False,
+            scrape_nol_in_pipeline=False,
         ),
         yaml_cfg,
         download_remote=None,
@@ -125,6 +133,7 @@ def test_resolve_flags_defaults_and_overrides() -> None:
     assert custom.use_osm is False
     assert custom.scrape_otodom is False
     assert custom.scrape_olx is False
+    assert custom.scrape_nol is False
 
     shorthand = resolve_ingest_flags(
         AppSettings(pipeline_overrides_enabled=True, download_gtfs=False),
