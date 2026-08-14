@@ -35,3 +35,5 @@ def test_explore_filters_grouped_with_section_headers() -> None:
     assert "Max total price (PLN)" in source
     assert "explore_max_price_pln" in source
     assert "max_price_pln=" in source
+    assert "Listing kind" in source
+    assert "explore_listing_kind" in source

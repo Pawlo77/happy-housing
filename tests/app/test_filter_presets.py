@@ -38,6 +38,7 @@ def test_filter_state_round_trip() -> None:
     assert restored.floor_max == 5
     assert restored.year_built_min == 1990
     assert restored.source == "(all)"
+    assert restored.listing_kind == "(all)"
 
 
 def test_filter_state_from_dict_ignores_unknown_and_coerces() -> None:
@@ -77,6 +78,11 @@ def test_suggest_filter_preset_name_meaningful() -> None:
     assert "star" in lower
     assert "17" in name or "zł" in lower
     assert "950" in name or "pln" in lower
+
+
+def test_suggest_filter_preset_name_includes_rent() -> None:
+    name = suggest_filter_preset_name(FilterState(listing_kind="rent"))
+    assert "rent" in name.lower()
 
 
 def test_suggest_filter_preset_name_defaults() -> None:
@@ -172,6 +178,7 @@ def test_apply_filter_preset_to_session() -> None:
         price_max=2_500_000,
     )
     assert session["explore_district"] == "wola"
+    assert session["explore_listing_kind"] == "(all)"
     assert session["explore_oou"] == "outside"
     assert session["explore_max_noise_total"] == 55.0
     assert session["explore_max_price_pln"] == 900_000
@@ -191,6 +198,7 @@ def test_snapshot_filter_preset_from_session_round_trip() -> None:
         starred_only=True,
         filters=FilterState(
             district="wola",
+            listing_kind="rent",
             frontage="quiet",
             max_price_pln=1_100_000.0,
             max_price_per_m2=16000.0,
@@ -218,6 +226,7 @@ def test_snapshot_filter_preset_from_session_round_trip() -> None:
     assert snap.name == "Quiet Wola"
     assert snap.starred_only is True
     assert snap.filters.district == "wola"
+    assert snap.filters.listing_kind == "rent"
     assert snap.filters.frontage == "quiet"
     assert snap.filters.max_price_pln == 1_100_000.0
     assert snap.filters.max_price_per_m2 == 16000.0

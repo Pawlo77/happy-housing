@@ -8,6 +8,7 @@ from happy_housing.app.filters import (
     FilterState,
     apply_filters,
     apply_starred_only,
+    coerce_listing_kind,
     offer_age_months,
 )
 
@@ -70,6 +71,43 @@ def test_apply_filters_district_source_oou() -> None:
     )
     out = apply_filters(frame, state, as_of=date(2026, 8, 8))
     assert list(out["listing_id"]) == ["c"]
+
+
+def test_apply_filters_listing_kind_rent_vs_sale() -> None:
+    frame = pd.DataFrame({
+        "listing_id": ["ask", "let", "deed"],
+        "district": ["wola", "wola", "wola"],
+        "source": ["olx", "olx", "rcn"],
+        "listing_kind": ["sale", "rent", None],
+        "price_per_m2": [15000.0, 80.0, 14000.0],
+        "listed_at": ["2026-07-01", "2026-07-01", "2026-07-01"],
+    })
+    rent = apply_filters(frame, FilterState(listing_kind="rent"))
+    assert list(rent["listing_id"]) == ["let"]
+    sale = apply_filters(frame, FilterState(listing_kind="sale"))
+    assert list(sale["listing_id"]) == ["ask", "deed"]
+    both = apply_filters(frame, FilterState(listing_kind="(all)"))
+    assert list(both["listing_id"]) == ["ask", "let", "deed"]
+
+
+def test_apply_filters_listing_kind_missing_column_rent_empty() -> None:
+    frame = pd.DataFrame({
+        "listing_id": ["ask", "deed"],
+        "district": ["wola", "wola"],
+        "source": ["otodom", "rcn"],
+        "price_per_m2": [15000.0, 14000.0],
+    })
+    rent = apply_filters(frame, FilterState(listing_kind="rent"))
+    assert rent.empty
+    sale = apply_filters(frame, FilterState(listing_kind="sale"))
+    assert list(sale["listing_id"]) == ["ask", "deed"]
+
+
+def test_coerce_listing_kind_and_from_dict() -> None:
+    assert coerce_listing_kind("RENT") == "rent"
+    assert coerce_listing_kind("lease") == "(all)"
+    restored = FilterState.from_dict({"listing_kind": "Sale"})
+    assert restored.listing_kind == "sale"
 
 
 def test_apply_filters_max_total_noise() -> None:

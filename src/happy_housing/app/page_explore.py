@@ -108,9 +108,11 @@ from happy_housing.app.filter_presets import (
     upsert_filter_preset,
 )
 from happy_housing.app.filters import (
+    LISTING_KIND_OPTIONS,
     FilterState,
     apply_filters,
     apply_starred_only,
+    coerce_listing_kind,
     offer_age_months,
 )
 from happy_housing.app.geocode import (
@@ -805,6 +807,17 @@ def _sidebar_filters(frame: pd.DataFrame) -> tuple[FilterState, bool]:
         help=FILTER_HELP["source"],
         key="explore_source",
     )
+    if "explore_listing_kind" not in st.session_state:
+        settings = load_app_settings(settings_path(processed_dir()))
+        st.session_state["explore_listing_kind"] = coerce_listing_kind(
+            settings.filter_default_listing_kind
+        )
+    listing_kind = st.selectbox(
+        "Listing kind",
+        list(LISTING_KIND_OPTIONS),
+        help=FILTER_HELP["listing_kind"],
+        key="explore_listing_kind",
+    )
     starred_only = st.checkbox(
         "Starred only",
         value=False,
@@ -901,6 +914,7 @@ def _sidebar_filters(frame: pd.DataFrame) -> tuple[FilterState, bool]:
         FilterState(
             district=district,
             source=source,
+            listing_kind=coerce_listing_kind(listing_kind),
             oou=oou,
             high_noise=high_noise,
             poor_air=poor_air,

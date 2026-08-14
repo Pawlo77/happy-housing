@@ -27,6 +27,7 @@ from happy_housing.app.explore_nav import (
     listing_id_from_board_selection,
     open_explore_offer,
 )
+from happy_housing.app.filters import LISTING_KIND_OPTIONS, coerce_listing_kind
 from happy_housing.app.property_filter_ui import render_property_attr_filters
 from happy_housing.app.scored_views import drop_heavy_listing_columns
 from happy_housing.app.stats_filters import StatsFilterState, apply_stats_filters
@@ -127,6 +128,17 @@ def _sidebar_filters(frame: pd.DataFrame) -> StatsFilterState:
         key="stats_sources",
         help=STATS_FILTER_HELP["sources"],
     )
+    if "stats_listing_kind" not in st.session_state:
+        settings = load_app_settings(settings_path(processed_dir()))
+        st.session_state["stats_listing_kind"] = coerce_listing_kind(
+            settings.filter_default_listing_kind
+        )
+    listing_kind = st.sidebar.selectbox(
+        "Listing kind",
+        options=list(LISTING_KIND_OPTIONS),
+        key="stats_listing_kind",
+        help=STATS_FILTER_HELP["listing_kind"],
+    )
     picked_months = st.sidebar.multiselect(
         "Listed months",
         options=months,
@@ -183,6 +195,7 @@ def _sidebar_filters(frame: pd.DataFrame) -> StatsFilterState:
     return StatsFilterState(
         districts=list(picked_districts),
         sources=list(picked_sources),
+        listing_kind=coerce_listing_kind(listing_kind),
         months=list(picked_months),
         oou=str(oou),
         high_noise=str(high_noise),

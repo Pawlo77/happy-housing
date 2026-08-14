@@ -113,6 +113,25 @@ def test_apply_stats_filters_overpriced_excludes_zero_delta() -> None:
     assert (filtered["delta_price_per_m2"] > 0).all()
 
 
+def test_apply_stats_filters_listing_kind_rent() -> None:
+    frame = _frame()
+    frame["listing_kind"] = [
+        "sale",
+        "sale",
+        "rent",
+        "sale",
+        "rent",
+        "sale",
+        "sale",
+        "sale",
+    ]
+    rent = apply_stats_filters(frame, StatsFilterState(listing_kind="rent"))
+    assert set(rent["listing_id"]) == {"L2", "L4"}
+    sale = apply_stats_filters(frame, StatsFilterState(listing_kind="sale"))
+    assert "L2" not in set(sale["listing_id"])
+    assert "L4" not in set(sale["listing_id"])
+
+
 def test_apply_stats_filters_price_area_bounds() -> None:
     filtered = apply_stats_filters(
         _frame(),

@@ -179,6 +179,10 @@ FILTER_HELP: dict[str, str] = {
         "Otodom asks vs RCN closed sales. Mix of sources changes what "
         "'price' means (asking vs transaction)."
     ),
+    "listing_kind": (
+        "Sale vs rent. Missing kind counts as sale (RCN deeds, older asks). "
+        "Rent zł/m² is monthly; do not mix with sale prices."
+    ),
     "oou": (
         "Filter by aircraft Lden ≥55 dB (UM strategic map / legacy END). "
         "Inside = noisier aircraft exposure."
@@ -230,6 +234,10 @@ STATS_FILTER_HELP: dict[str, str] = {
         "District mix drives local price and amenity patterns."
     ),
     "sources": ("Otodom asks vs RCN sales in Stats. Empty = all sources."),
+    "listing_kind": (
+        "Sale vs rent for Stats charts. Missing kind counts as sale. "
+        "Rent zł/m² is monthly — keep it off sale price series."
+    ),
     "months": ("Restrict Stats to listed months. Empty = all months in the frame."),
     "valuation": (
         "Underpriced = listing - model < 0 (bargain heat); overpriced = "

@@ -127,6 +127,8 @@ class AppSettings:
     """Default Explore Map time-of-day slider (0-23)."""
     explore_default_basemap: str = "Streets"
     """Default Explore basemap: Streets or Satellite."""
+    filter_default_listing_kind: str = "(all)"
+    """Default Explore/Stats sale vs rent when session widgets are empty."""
     map_max_gunb_points: int = 3000
     """Max GUNB permit pins drawn on Explore Map."""
     map_max_shop_points: int = 5000
@@ -330,6 +332,7 @@ def _opt_positive_int(value: object) -> int | None:
 def load_app_settings(path: Path) -> AppSettings:
     """Load settings; missing/invalid → defaults."""
     from happy_housing.app.commute_modes import coerce_commute_display_mode
+    from happy_housing.app.filters import coerce_listing_kind
     from happy_housing.app.io_cache import read_json
     from happy_housing.gis.amenity_catalog import coerce_amenity_weights
     from happy_housing.models.metrics import coerce_opt_metric
@@ -596,6 +599,12 @@ def load_app_settings(path: Path) -> AppSettings:
             ).strip()
             == "Satellite"
             else "Streets"
+        ),
+        filter_default_listing_kind=coerce_listing_kind(
+            payload.get(
+                "filter_default_listing_kind",
+                defaults.filter_default_listing_kind,
+            )
         ),
         map_max_gunb_points=max(
             100,

@@ -12,6 +12,7 @@ from happy_housing.app.listing_attrs import apply_property_attr_filters
 _STR_FIELDS: frozenset[str] = frozenset({
     "district",
     "source",
+    "listing_kind",
     "oou",
     "high_noise",
     "poor_air",
@@ -50,6 +51,33 @@ _INT_FIELDS: frozenset[str] = frozenset({
 })
 """Optional int filter fields."""
 
+LISTING_KIND_OPTIONS: tuple[str, ...] = ("(all)", "sale", "rent")
+"""Sale vs rent filter choices."""
+
+
+def coerce_listing_kind(value: object, fallback: str = "(all)") -> str:
+    """Normalize a listing-kind filter to ``sale``, ``rent``, or ``(all)``."""
+    allowed = set(LISTING_KIND_OPTIONS)
+    text = str(value or "").strip().casefold()
+    if text in {"sale", "rent"}:
+        return text
+    if text in {"(all)", "all", ""}:
+        return "(all)"
+    if fallback in allowed:
+        return fallback
+    return "(all)"
+
+
+def listing_kind_labels(frame: pd.DataFrame) -> pd.Series:
+    """Per-row ``sale``/``rent``; missing or unknown kind counts as sale."""
+    if frame.empty:
+        return pd.Series(dtype=str)
+    if "listing_kind" not in frame.columns:
+        return pd.Series("sale", index=frame.index)
+    kinds = frame["listing_kind"].astype("string").str.strip().str.casefold()
+    known = kinds.isin(["sale", "rent"])
+    return kinds.where(known, "sale").astype(str)
+
 
 @dataclass(slots=True)
 class FilterState:
@@ -59,6 +87,8 @@ class FilterState:
     """District name or ``(all)``."""
     source: str = "(all)"
     """Listing source or ``(all)``."""
+    listing_kind: str = "(all)"
+    """``sale`` / ``rent`` / ``(all)``. Missing kind treated as sale."""
     oou: str = "(all)"
     """Aircraft Lden ≥55 dB: ``(all)``, ``inside``, or ``outside``."""
     high_noise: str = "(all)"
@@ -119,6 +149,8 @@ class FilterState:
             if str_key in data:
                 text = str(data[str_key] if data[str_key] is not None else "(all)")
                 data[str_key] = text.strip() or "(all)"
+        if "listing_kind" in data:
+            data["listing_kind"] = coerce_listing_kind(data["listing_kind"])
         for float_key in _FLOAT_FIELDS:
             if float_key in data:
                 data[float_key] = _opt_float(data[float_key])
@@ -206,6 +238,9 @@ def apply_filters(
         mask &= frame["district"].astype(str).eq(state.district)
     if state.source != "(all)" and "source" in frame.columns:
         mask &= frame["source"].astype(str).eq(state.source)
+    kind = coerce_listing_kind(state.listing_kind)
+    if kind != "(all)":
+        mask &= listing_kind_labels(frame).eq(kind)
     if state.oou == "inside" and "in_oou" in frame.columns:
         mask &= pd.to_numeric(frame["in_oou"], errors="coerce").eq(1)
     elif state.oou == "outside" and "in_oou" in frame.columns:

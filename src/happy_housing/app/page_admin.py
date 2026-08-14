@@ -62,6 +62,7 @@ from happy_housing.app.filter_presets import (
     filter_presets_path,
     load_filter_presets,
 )
+from happy_housing.app.filters import LISTING_KIND_OPTIONS, coerce_listing_kind
 from happy_housing.app.freshness import (
     build_freshness_report,
     derived_to_frame,
@@ -1567,6 +1568,17 @@ def _panel_explore(settings: AppSettings, settings_file: Path, proc: Path) -> No
         )
         or "Streets"
     )
+    kind_default = coerce_listing_kind(settings.filter_default_listing_kind)
+    listing_kind = st.selectbox(
+        "Default listing kind",
+        options=list(LISTING_KIND_OPTIONS),
+        index=list(LISTING_KIND_OPTIONS).index(kind_default),
+        key="settings_filter_default_listing_kind",
+        help=(
+            "Seed Explore and Stats sale/rent filters when the session "
+            "widget is empty. Missing listing_kind still counts as sale."
+        ),
+    )
     delta_scale = st.number_input(
         "Listing pin Δ colour scale (zł/m²)",
         min_value=100.0,
@@ -1634,6 +1646,7 @@ def _panel_explore(settings: AppSettings, settings_file: Path, proc: Path) -> No
         settings.explore_default_basemap = (
             "Satellite" if str(basemap) == "Satellite" else "Streets"
         )
+        settings.filter_default_listing_kind = coerce_listing_kind(listing_kind)
         settings.map_delta_color_scale_zl = float(delta_scale)
         settings.map_max_gunb_points = int(max_gunb)
         settings.map_max_shop_points = int(max_shop)

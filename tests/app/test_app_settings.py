@@ -31,6 +31,7 @@ def test_load_missing_returns_defaults(tmp_path: Path) -> None:
     assert settings.olx_max_listings is None
     assert settings.otodom_max_listings is None
     assert settings.http_free_proxies_enabled is False
+    assert settings.filter_default_listing_kind == "(all)"
     assert settings.offer_comps_max_pins == 200
     assert settings.offer_comps_months == 0
     assert settings.offer_comps_include_metro is True
@@ -68,6 +69,7 @@ def test_round_trip_settings(tmp_path: Path) -> None:
             offer_comps_include_metro=False,
             offer_comps_show_nearby_asks=False,
             stats_trend_min_n=12,
+            filter_default_listing_kind="rent",
         ),
     )
     loaded = load_app_settings(path)
@@ -96,6 +98,7 @@ def test_round_trip_settings(tmp_path: Path) -> None:
     assert loaded.offer_comps_include_metro is False
     assert loaded.offer_comps_show_nearby_asks is False
     assert loaded.stats_trend_min_n == 12
+    assert loaded.filter_default_listing_kind == "rent"
 
 
 def test_freshness_warn_settings_round_trip(tmp_path: Path) -> None:

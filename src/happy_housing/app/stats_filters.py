@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
+from happy_housing.app.filters import coerce_listing_kind, listing_kind_labels
 from happy_housing.app.listing_attrs import apply_property_attr_filters
 from happy_housing.app.stats_insights import normalize_district
 
@@ -16,6 +17,8 @@ class StatsFilterState:
     """Normalized district names; empty means all."""
     sources: list[str] = field(default_factory=list)
     """Source labels as stored; empty means all."""
+    listing_kind: str = "(all)"
+    """``sale`` / ``rent`` / ``(all)``. Missing kind treated as sale."""
     months: list[str] = field(default_factory=list)
     """Listed months ``YYYY-MM``; empty means all."""
     oou: str = "(all)"
@@ -66,6 +69,9 @@ def apply_stats_filters(frame: pd.DataFrame, state: StatsFilterState) -> pd.Data
     if state.sources and "source" in frame.columns:
         wanted_src = {str(s) for s in state.sources}
         mask &= frame["source"].astype(str).isin(wanted_src)
+    kind = coerce_listing_kind(state.listing_kind)
+    if kind != "(all)":
+        mask &= listing_kind_labels(frame).eq(kind)
     if state.months and "listed_month" in frame.columns:
         wanted_m = {str(m) for m in state.months}
         mask &= frame["listed_month"].astype(str).isin(wanted_m)
