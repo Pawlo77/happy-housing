@@ -35,7 +35,7 @@ Sidebar filters + map overlays. **Map / Spatial / Offer / Board / News / Chat / 
 
 - **Map** — underpriced (green) vs overpriced (red) pins, OOU/noise, continuous
   GIOŚ air-quality IDW field, transit, amenities
-- **Offer** — deep dive (Overview · Context · Map · Explain · AI review), star watching
+- **Offer** — deep dive (Overview · Context · Comps · Map · Explain · AI review), star watching
 - **Board** — filterable table; row click opens Offer
 - **News** — field changes on starred offers
 - **Chat** — LMS Assistant (also **Assistant** popover): search/recommend, prefs, stars, web opinions, open offers; conversations persist and reload
@@ -48,6 +48,8 @@ Sidebar filters + map overlays. **Map / Spatial / Offer / Board / News / Chat / 
 
 ![Explore — Offer context](docs/screenshots/06-explore-offer-context.png)
 
+![Explore — Offer comps](docs/screenshots/06c-explore-offer-comps.png)
+
 ![Explore — Chat](docs/screenshots/07-explore-chat.png)
 
 ### Stats
@@ -56,7 +58,7 @@ Filterable market analytics for decisions — not a vanity dashboard:
 
 - **Sidebar filters** — districts, sources, months, valuation, aircraft / total noise ≥55 dB, price / area / rooms
 - **Overview** — inventory mix, primary vs secondary, budget ladder
-- **Market** — trends, residual pressure, district value board, ask vs RCN ink, hunt / watch
+- **Market** — trends, Warsaw vs district, rooms/era (asks), ask vs RCN ink, hunt / watch
 - **Livability** — UM noise premiums (total + sources), commute / transit / metro / bike, parks / traffic / zones / AQI
 - **Stock** — size / rooms / build-era mix
 - **Model** — LightGBM gain importance, global mean |SHAP|, example offer explanation

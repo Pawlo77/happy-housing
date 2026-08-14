@@ -53,17 +53,33 @@ def main() -> None:
         _shot(page, "03-home-sources.png")
 
         _nav(page, "Explore")
-        page.wait_for_timeout(4000)
+        page.wait_for_timeout(8000)
         _shot(page, "04-explore-map.png")
-        _tab(page, "Board")
-        _shot(page, "05-explore-board.png")
-        _tab(page, "Offer")
-        _shot(page, "06-explore-offer.png")
         try:
-            _tab(page, "Context")
-            _shot(page, "06-explore-offer-context.png")
+            _tab(page, "Board")
+            _shot(page, "05-explore-board.png")
         except Exception as exc:
-            print(f"skip offer Context: {exc}")
+            print(f"skip Explore Board: {exc}")
+        try:
+            _tab(page, "Offer")
+            page.wait_for_timeout(3000)
+            _shot(page, "06-explore-offer.png")
+            try:
+                _tab(page, "Context")
+                _shot(page, "06-explore-offer-context.png")
+            except Exception as exc:
+                print(f"skip offer Context: {exc}")
+            try:
+                _tab(page, "Comps")
+                page.get_by_text("Local RCN median", exact=False).first.wait_for(
+                    timeout=30_000
+                )
+                page.wait_for_timeout(2500)
+                _shot(page, "06c-explore-offer-comps.png")
+            except Exception as exc:
+                print(f"skip offer Comps: {exc}")
+        except Exception as exc:
+            print(f"skip Explore Offer: {exc}")
         try:
             _tab(page, "Chat")
             page.wait_for_timeout(2500)
@@ -84,7 +100,7 @@ def main() -> None:
         _shot(page, "08-stats.png")
         try:
             page.get_by_role("tab", name="Market").click()
-            page.wait_for_timeout(3000)
+            page.wait_for_timeout(8000)
             _shot(page, "08b-stats-market.png")
         except Exception as exc:
             print(f"skip Stats Market: {exc}")
