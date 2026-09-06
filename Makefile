@@ -8,7 +8,7 @@ export OMP_NUM_THREADS=1
 
 .DEFAULT_GOAL := help
 
-.PHONY: help install update clean prek prek-all check tests coverage mlflow mlflow-stop datasets otodom olx nol pipeline app ingest-gtfs ingest-gios ingest-rcn ingest-gunb ingest-otodom ingest-olx ingest-nol osrm-prepare osrm-up otp-prepare otp-up
+.PHONY: help install update clean prek prek-all check tests coverage mlflow mlflow-stop datasets otodom olx nol pipeline refresh update-data app ingest-gtfs ingest-gios ingest-rcn ingest-gunb ingest-otodom ingest-olx ingest-nol osrm-prepare osrm-up otp-prepare otp-up
 
 MLFLOW_HOST ?= 127.0.0.1
 MLFLOW_PORT ?= 5005
@@ -118,8 +118,15 @@ otp-prepare: ## Copy OSM PBF + GTFS into data/otp and print OTP build steps
 otp-up: ## Start OpenTripPlanner (profile otp; requires prior otp-prepare build)
 	docker compose -f docker/docker-compose.otp.yml --profile otp up -d
 
-pipeline: ## Full ingest → GIS → train/score → recommend (FORCE=1 to recompute)
+pipeline: ## Incremental ingest → GIS → train/score → recommend (FORCE=1 full recompute)
 	uv run python -m happy_housing.pipeline $(if $(filter 1,$(FORCE)),--force,)
+
+refresh: ## Start OSRM + OTP, then incremental pipeline (no FORCE / no GIS re-download)
+	$(MAKE) osrm-up
+	$(MAKE) otp-up
+	$(MAKE) pipeline
+
+update-data: refresh ## Alias for refresh (make update = uv lock)
 
 app: ## Launch Streamlit GUI + Ops job worker (fork-safe job spawn)
 	uv run python -m happy_housing.app.ops_app_main
