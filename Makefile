@@ -8,7 +8,7 @@ export OMP_NUM_THREADS=1
 
 .DEFAULT_GOAL := help
 
-.PHONY: help install update clean prek prek-all check tests coverage mlflow mlflow-stop datasets otodom olx nol pipeline app ingest-gtfs ingest-gios ingest-rcn ingest-gunb ingest-otodom ingest-olx ingest-nol osrm-prepare
+.PHONY: help install update clean prek prek-all check tests coverage mlflow mlflow-stop datasets otodom olx nol pipeline app ingest-gtfs ingest-gios ingest-rcn ingest-gunb ingest-otodom ingest-olx ingest-nol osrm-prepare osrm-up otp-prepare otp-up
 
 MLFLOW_HOST ?= 127.0.0.1
 MLFLOW_PORT ?= 5005
@@ -81,14 +81,42 @@ olx: ## Scrape OLX Warsaw flats via public API (district-tiled; uses config inge
 nol: ## Scrape Nieruchomości Online Warsaw flats (JSON-LD; uses config ingest caps)
 	uv run python -c "from pathlib import Path; from happy_housing.config import load_experiment_config; from happy_housing.ingest.nol import scrape_nol_warsaw; c=load_experiment_config(Path('configs/experiment.yaml')); scrape_nol_warsaw(Path('data/processed/nol_listings.parquet'), max_pages=c.ingest.nol_max_pages, max_listings=c.ingest.nol_max_listings, incremental=c.ingest.nol_incremental, include_rent=c.ingest.nol_include_rent, fetch_details=c.ingest.nol_fetch_details)"
 
-osrm-prepare: ## Download Mazowieckie PBF and build OSRM MLD graph into docker/data/osrm
+osrm-prepare: ## Download Mazowieckie PBF and build car/foot/bike OSRM MLD graphs
 	@mkdir -p docker/data/osrm
-	@echo "Download https://download.geofabrik.de/europe/poland/mazowieckie-latest.osm.pbf into docker/data/osrm/"
-	@echo "Then run: docker run --rm -v \"$$(pwd)/docker/data/osrm:/data\" ghcr.io/project-osrm/osrm-backend:latest osrm-extract -p /opt/car.lua /data/mazowieckie-latest.osm.pbf"
-	@echo "Then: docker run --rm -v \"$$(pwd)/docker/data/osrm:/data\" ghcr.io/project-osrm/osrm-backend:latest osrm-partition /data/mazowieckie-latest.osrm"
-	@echo "Then: docker run --rm -v \"$$(pwd)/docker/data/osrm:/data\" ghcr.io/project-osrm/osrm-backend:latest osrm-customize /data/mazowieckie-latest.osrm"
-	@echo "Start: docker compose -f docker/docker-compose.osrm.yml up"
-	@echo "OSRM listens on http://127.0.0.1:5001 (not :5000 — AirPlay on macOS)"
+	@echo "1) Download https://download.geofabrik.de/europe/poland/mazowieckie-latest.osm.pbf"
+	@echo "   into docker/data/osrm/"
+	@echo "2) Build three graphs (car :5001, foot :5002, bike :5003):"
+	@echo "   cd docker/data/osrm && \\"
+	@echo "     ln -sf mazowieckie-latest.osm.pbf mazowieckie-car.osm.pbf && \\"
+	@echo "     ln -sf mazowieckie-latest.osm.pbf mazowieckie-foot.osm.pbf && \\"
+	@echo "     ln -sf mazowieckie-latest.osm.pbf mazowieckie-bike.osm.pbf"
+	@echo "   for PROFILE in car foot bike; do"
+	@echo "     LUA=\$$( [ \$$PROFILE = car ] && echo car || [ \$$PROFILE = foot ] && echo foot || echo bicycle );"
+	@echo "     docker run --rm -v \"\$$(pwd)/docker/data/osrm:/data\" ghcr.io/project-osrm/osrm-backend:latest \\"
+	@echo "       osrm-extract -p /opt/\$$LUA.lua /data/mazowieckie-\$$PROFILE.osm.pbf;"
+	@echo "     docker run --rm -v \"\$$(pwd)/docker/data/osrm:/data\" ghcr.io/project-osrm/osrm-backend:latest \\"
+	@echo "       osrm-partition /data/mazowieckie-\$$PROFILE.osrm;"
+	@echo "     docker run --rm -v \"\$$(pwd)/docker/data/osrm:/data\" ghcr.io/project-osrm/osrm-backend:latest \\"
+	@echo "       osrm-customize /data/mazowieckie-\$$PROFILE.osrm;"
+	@echo "   done"
+	@echo "3) Start: make osrm-up"
+	@echo "   Car http://127.0.0.1:5001 · foot :5002 · bike :5003"
+	@echo "   Legacy car graph only: ln -sfn mazowieckie-latest.osrm docker/data/osrm/mazowieckie-car.osrm"
+
+osrm-up: ## Start car/foot/bike OSRM containers (ports 5001/5002/5003)
+	docker compose -f docker/docker-compose.osrm.yml up -d
+
+otp-prepare: ## Copy OSM PBF + GTFS into data/otp and print OTP build steps
+	@mkdir -p data/otp
+	@echo "1) Place mazowieckie-latest.osm.pbf and gtfs_warsaw.zip in data/otp/"
+	@echo "   (GTFS: copy from data/cache or data/fixtures after pipeline GTFS step)"
+	@echo "2) Build graph (slow, once):"
+	@echo "   docker compose -f docker/docker-compose.otp.yml --profile otp-build run --rm otp-build"
+	@echo "3) Start: make otp-up"
+	@echo "   OTP http://127.0.0.1:8080 — enable routing.use_otp_transit in YAML / Admin"
+
+otp-up: ## Start OpenTripPlanner (profile otp; requires prior otp-prepare build)
+	docker compose -f docker/docker-compose.otp.yml --profile otp up -d
 
 pipeline: ## Full ingest → GIS → train/score → recommend (FORCE=1 to recompute)
 	uv run python -m happy_housing.pipeline $(if $(filter 1,$(FORCE)),--force,)

@@ -9,7 +9,29 @@ from happy_housing.gis.routing import (
     attach_commute_minutes,
     correct_active_mode_duration_s,
     duration_seconds_from_distance_m,
+    resolve_osrm_base_url,
 )
+
+
+def test_resolve_osrm_base_url_by_profile() -> None:
+    assert resolve_osrm_base_url("driving") == "http://127.0.0.1:5001"
+    assert resolve_osrm_base_url("foot") == "http://127.0.0.1:5002"
+    assert resolve_osrm_base_url("bike") == "http://127.0.0.1:5003"
+    assert (
+        resolve_osrm_base_url(
+            "foot",
+            osrm_url="http://car.test",
+            osrm_foot_url="http://foot.test",
+        )
+        == "http://foot.test"
+    )
+    assert (
+        resolve_osrm_base_url(
+            "bicycle",
+            osrm_bike_url="http://bike.test/",
+        )
+        == "http://bike.test"
+    )
 
 
 def test_attach_commute_minutes_distance_fallback() -> None:

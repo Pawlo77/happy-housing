@@ -10,7 +10,11 @@ from happy_housing.app.commute_modes import (
     coerce_commute_display_mode,
 )
 from happy_housing.gis.polyline import decode_google_polyline
-from happy_housing.gis.routing import osrm_route_geojson, otp_plan_best_itinerary
+from happy_housing.gis.routing import (
+    osrm_route_geojson,
+    otp_plan_best_itinerary,
+    resolve_osrm_base_url,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -194,6 +198,8 @@ def fetch_offer_commute_route(
     hour: int,
     osrm_url: str,
     otp_url: str,
+    osrm_foot_url: str | None = None,
+    osrm_bike_url: str | None = None,
 ) -> CommuteRoutePlan | None:
     """Fetch the best route for ``mode`` at ``hour`` (0-23 local)."""
     display = coerce_commute_display_mode(mode)
@@ -229,10 +235,16 @@ def fetch_offer_commute_route(
         )
         return plan
     profile = {"car": "driving", "bike": "bike", "walk": "foot"}[display]
+    base_url = resolve_osrm_base_url(
+        profile,
+        osrm_url=osrm_url,
+        osrm_foot_url=osrm_foot_url,
+        osrm_bike_url=osrm_bike_url,
+    )
     payload = osrm_route_geojson(
         origin,
         dest,
-        base_url=osrm_url,
+        base_url=base_url,
         profile=profile,
     )
     if payload is None:

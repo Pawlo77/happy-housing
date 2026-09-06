@@ -35,6 +35,8 @@ def test_load_default_experiment_yaml() -> None:
     assert "wynik_mazowieckie.zip" in config.ingest_urls.gunb_zip
     assert config.logging.level == "INFO"
     assert config.routing.osrm_url.endswith(":5001")
+    assert config.routing.osrm_foot_url.endswith(":5002")
+    assert config.routing.osrm_bike_url.endswith(":5003")
     assert config.routing.otp_url.endswith(":8080")
     assert config.routing.use_otp_transit is True
     assert config.routing.require_osrm is True

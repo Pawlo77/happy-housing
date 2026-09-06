@@ -38,6 +38,31 @@ _ACTIVE_MODE_MAX_IMPLIED_KMH: dict[str, float] = {
 }
 """Implied speeds above this mean the car OSRM graph answered for foot/bike."""
 
+DEFAULT_OSRM_CAR_URL: str = "http://127.0.0.1:5001"
+"""Default car OSRM host (macOS AirPlay owns :5000)."""
+
+DEFAULT_OSRM_FOOT_URL: str = "http://127.0.0.1:5002"
+"""Default foot-graph OSRM host."""
+
+DEFAULT_OSRM_BIKE_URL: str = "http://127.0.0.1:5003"
+"""Default bike-graph OSRM host."""
+
+
+def resolve_osrm_base_url(
+    profile: str,
+    *,
+    osrm_url: str = DEFAULT_OSRM_CAR_URL,
+    osrm_foot_url: str | None = None,
+    osrm_bike_url: str | None = None,
+) -> str:
+    """Pick OSRM root by routing profile (car / foot / bike graphs)."""
+    key = str(profile or "driving").strip().casefold() or "driving"
+    if key in {"foot", "walking"}:
+        return str(osrm_foot_url or DEFAULT_OSRM_FOOT_URL).rstrip("/")
+    if key in {"bike", "bicycle", "cycling"}:
+        return str(osrm_bike_url or DEFAULT_OSRM_BIKE_URL).rstrip("/")
+    return str(osrm_url or DEFAULT_OSRM_CAR_URL).rstrip("/")
+
 
 def duration_seconds_from_distance_m(distance_m: float, speed_kmh: float) -> float:
     """Travel time (s) for ``distance_m`` at constant ``speed_kmh``."""
@@ -64,9 +89,9 @@ def correct_active_mode_duration_s(
 ) -> float:
     """Replace car-graph foot/bike durations with a distance / speed estimate.
 
-    Local OSRM is prepared with ``car.lua`` only; ``/route/v1/foot`` and
-    ``/bike`` still return driving times. When implied speed exceeds a
-    plausible walk/bike cap, rescale using ``proxy_speed_kmh``.
+    Prefer dedicated foot/bike OSRM graphs (ports 5002/5003). When those are
+    down or still serve the car extract, ``/foot`` and ``/bike`` return driving
+    times — rescale when implied speed exceeds a plausible walk/bike cap.
     """
     key = str(profile or "").strip().casefold()
     if key not in _ACTIVE_MODE_PROXY_KMH:
@@ -301,11 +326,14 @@ def attach_active_mode_commutes(
     require_osrm: bool,
     use_otp_transit: bool,
     otp_url: str,
+    osrm_foot_url: str | None = None,
+    osrm_bike_url: str | None = None,
 ) -> pd.DataFrame:
     """Fill car / transit / bike / walk commute columns for one destination.
 
-    Car uses OSRM ``driving`` (``commute_min``). Bike / walk use OSRM
-    ``bike`` / ``foot`` when those graphs exist; otherwise speed proxies.
+    Car uses OSRM ``driving`` on ``osrm_url``. Bike / walk use dedicated
+    foot/bike graph URLs when set (defaults ``:5002`` / ``:5003``); car-like
+    table replies are still rescaled as a fallback.
     Transit uses OTP when enabled.
     """
     logger.info(
@@ -315,11 +343,29 @@ def attach_active_mode_commutes(
         float(dest_lat),
         bool(use_otp_transit),
     )
+    car_url = resolve_osrm_base_url(
+        "driving",
+        osrm_url=osrm_url,
+        osrm_foot_url=osrm_foot_url,
+        osrm_bike_url=osrm_bike_url,
+    )
+    bike_url = resolve_osrm_base_url(
+        "bike",
+        osrm_url=osrm_url,
+        osrm_foot_url=osrm_foot_url,
+        osrm_bike_url=osrm_bike_url,
+    )
+    foot_url = resolve_osrm_base_url(
+        "foot",
+        osrm_url=osrm_url,
+        osrm_foot_url=osrm_foot_url,
+        osrm_bike_url=osrm_bike_url,
+    )
     out = attach_commute_minutes(
         frame,
         dest_lon=dest_lon,
         dest_lat=dest_lat,
-        osrm_url=osrm_url,
+        osrm_url=car_url,
         require_osrm=require_osrm,
         profile="driving",
         out_col="commute_min",
@@ -329,7 +375,7 @@ def attach_active_mode_commutes(
         out,
         dest_lon=dest_lon,
         dest_lat=dest_lat,
-        osrm_url=osrm_url,
+        osrm_url=bike_url,
         require_osrm=False,
         profile="bike",
         out_col="bike_commute_min",
@@ -339,7 +385,7 @@ def attach_active_mode_commutes(
         out,
         dest_lon=dest_lon,
         dest_lat=dest_lat,
-        osrm_url=osrm_url,
+        osrm_url=foot_url,
         require_osrm=False,
         profile="foot",
         out_col="walk_commute_min",

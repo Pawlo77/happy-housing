@@ -53,6 +53,7 @@ from happy_housing.app.data import (
     clear_data_caches,
     load_config,
     load_metadata,
+    load_rcn_transactions,
     load_scored,
     processed_dir,
 )
@@ -91,6 +92,10 @@ from happy_housing.app.map_view_presets import (
     map_view_presets_path,
 )
 from happy_housing.app.maps import commute_compare_layers, render_deck
+from happy_housing.app.offer_comps import (
+    format_rcn_coord_quality,
+    rcn_coord_source_counts,
+)
 from happy_housing.app.ops_services import check_pipeline_services
 from happy_housing.app.pipeline_ingest import (
     resolve_ingest_flags,
@@ -177,13 +182,22 @@ def _render_ops_services(config: object) -> None:
     """Docker / OSRM / OTP readiness row."""
     routing = getattr(config, "routing", None)
     osrm_url = str(getattr(routing, "osrm_url", "http://127.0.0.1:5001"))
+    osrm_foot_url = str(getattr(routing, "osrm_foot_url", "http://127.0.0.1:5002"))
+    osrm_bike_url = str(getattr(routing, "osrm_bike_url", "http://127.0.0.1:5003"))
     otp_url = str(getattr(routing, "otp_url", "http://127.0.0.1:8080"))
     st.subheader("Routing services")
     st.caption(
-        "Pipeline commute features need OSRM. OTP is optional (transit minutes). "
-        "Docker powers the compose stacks under `docker/`."
+        "Car OSRM required for pipeline commute. Foot/bike graphs optional "
+        "(`make osrm-prepare` → `make osrm-up`: :5001/:5002/:5003). "
+        "OTP optional for transit (`make otp-prepare` → `make otp-up`; "
+        "`routing.use_otp_transit` in configs/experiment.yaml)."
     )
-    checks = check_pipeline_services(osrm_url=osrm_url, otp_url=otp_url)
+    checks = check_pipeline_services(
+        osrm_url=osrm_url,
+        otp_url=otp_url,
+        osrm_foot_url=osrm_foot_url,
+        osrm_bike_url=osrm_bike_url,
+    )
     cols = st.columns(len(checks))
     for col, check in zip(cols, checks, strict=True):
         with col, st.container(border=True):
@@ -416,8 +430,10 @@ def _panel_ops(settings: AppSettings, settings_file: Path, proc: Path) -> None:
             value=False,
             help=(
                 "Re-download open-data archives and map caches: GUNB zip + WFS, "
-                "RCN zip, GTFS, GIOŚ, crime, OSM / Warsaw layers. Leave off for "
-                "day-to-day listing + model runs (reuse local files)."
+                "RCN zip, GTFS, GIOŚ, crime, OSM / Warsaw layers. Use this to "
+                "re-extract RCN parcel geometry when Offer Comps is empty "
+                "(centroid-only deeds). Leave off for day-to-day listing + "
+                "model runs (reuse local files)."
             ),
             key="pipe_force_gis",
         )
@@ -809,7 +825,11 @@ def _panel_commute(settings: AppSettings, settings_file: Path, proc: Path) -> No
     st.caption(
         "Destination for car / transit / bike / walk commute minutes. "
         "Search uses OpenStreetMap Nominatim (open geocoder). "
-        "After changing the place, recompute features (or run the full pipeline)."
+        "After changing the place, recompute features (or run the full pipeline). "
+        "OSRM: car :5001 · foot :5002 · bike :5003 (`make osrm-up`). "
+        f"OTP transit: {'on' if config.routing.use_otp_transit else 'off'} "
+        f"({config.routing.otp_url}) — `make otp-up` + "
+        "`routing.use_otp_transit: true` in experiment.yaml."
     )
     if "admin_commute_lon" not in st.session_state:
         st.session_state["admin_commute_lon"] = float(target.lon)
@@ -1374,6 +1394,12 @@ def _panel_sources(settings: AppSettings, settings_file: Path, proc: Path) -> No
         value=bool(flags.download_rcn),
         help="RCN GML is multi-GB; full parse can take a long time.",
         key="pipe_download_rcn",
+    )
+    rcn_frame = load_rcn_transactions()
+    rcn_quality = format_rcn_coord_quality(rcn_coord_source_counts(rcn_frame))
+    st.caption(
+        f"On disk: {rcn_quality}. Offer Comps needs parcel coords — "
+        "if parcel count is 0, Run → Force GIS / remote refresh + pipeline."
     )
     rcn_unlimited = st.checkbox(
         "Unlimited RCN rows",

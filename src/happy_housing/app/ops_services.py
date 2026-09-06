@@ -200,10 +200,17 @@ def check_docker_engine() -> ServiceCheck:
     )
 
 
-def check_osrm(base_url: str) -> ServiceCheck:
+def check_osrm(
+    base_url: str,
+    *,
+    key: str = "osrm",
+    label: str = "OSRM car",
+    profile: str = "driving",
+) -> ServiceCheck:
     """HTTP probe OSRM with a tiny Warsaw route request."""
     root = str(base_url or "").rstrip("/")
-    url = f"{root}/route/v1/driving/21.012,52.230;21.020,52.235"
+    profile_key = str(profile or "driving").strip() or "driving"
+    url = f"{root}/route/v1/{profile_key}/21.012,52.230;21.020,52.235"
     params: dict[str, Any] = {"overview": "false"}
     t0 = time.perf_counter()
     try:
@@ -214,19 +221,23 @@ def check_osrm(base_url: str) -> ServiceCheck:
         ok = response.ok and code.upper() in {"", "OK"}
         detail = f"HTTP {response.status_code}" + (f" code={code}" if code else "")
         return ServiceCheck(
-            key="osrm",
-            label="OSRM routing",
+            key=key,
+            label=label,
             ok=ok,
-            detail=detail if ok else f"{detail} — start docker/docker-compose.osrm.yml",
+            detail=(
+                detail
+                if ok
+                else f"{detail} — make osrm-up (car :5001 / foot :5002 / bike :5003)"
+            ),
             latency_ms=ms,
             required_for=("pipeline", "commute"),
         )
     except Exception as exc:
         ms = (time.perf_counter() - t0) * 1000.0
-        logger.debug("OSRM health failed: %s", exc)
+        logger.debug("OSRM health failed (%s): %s", key, exc)
         return ServiceCheck(
-            key="osrm",
-            label="OSRM routing",
+            key=key,
+            label=label,
             ok=False,
             detail=f"{exc} — need container on {root}",
             latency_ms=ms,
@@ -272,10 +283,16 @@ def check_otp(base_url: str) -> ServiceCheck:
 def check_pipeline_services(
     osrm_url: str,
     otp_url: str,
+    osrm_foot_url: str | None = None,
+    osrm_bike_url: str | None = None,
 ) -> list[ServiceCheck]:
-    """Docker + OSRM + OTP checks for the Ops panel."""
+    """Docker + OSRM car/foot/bike + OTP checks for the Ops panel."""
+    foot = str(osrm_foot_url or "http://127.0.0.1:5002")
+    bike = str(osrm_bike_url or "http://127.0.0.1:5003")
     return [
         check_docker_engine(),
-        check_osrm(osrm_url),
+        check_osrm(osrm_url, key="osrm", label="OSRM car", profile="driving"),
+        check_osrm(foot, key="osrm_foot", label="OSRM foot", profile="foot"),
+        check_osrm(bike, key="osrm_bike", label="OSRM bike", profile="bike"),
         check_otp(otp_url),
     ]

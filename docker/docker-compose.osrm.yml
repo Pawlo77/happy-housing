@@ -1,11 +1,30 @@
 services:
-  osrm:
+  osrm-car:
     image: ghcr.io/project-osrm/osrm-backend:latest
     ports:
       # Host 5001 — macOS AirPlay Receiver owns :5000 (returns HTTP 403).
       - "5001:5000"
     volumes:
       - ./data/osrm:/data
-    # Prepare Mazowieckie extract offline first (see Makefile osrm-prepare).
+    # Prefer mazowieckie-car.osrm from `make osrm-prepare`. For older car-only
+    # extracts: `ln -sfn mazowieckie-latest.osrm docker/data/osrm/mazowieckie-car.osrm`
     command: >
-      osrm-routed --algorithm mld /data/mazowieckie-latest.osrm
+      osrm-routed --algorithm mld /data/mazowieckie-car.osrm
+
+  osrm-foot:
+    image: ghcr.io/project-osrm/osrm-backend:latest
+    ports:
+      - "5002:5000"
+    volumes:
+      - ./data/osrm:/data
+    command: >
+      osrm-routed --algorithm mld /data/mazowieckie-foot.osrm
+
+  osrm-bike:
+    image: ghcr.io/project-osrm/osrm-backend:latest
+    ports:
+      - "5003:5000"
+    volumes:
+      - ./data/osrm:/data
+    command: >
+      osrm-routed --algorithm mld /data/mazowieckie-bike.osrm

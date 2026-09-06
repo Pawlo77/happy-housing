@@ -51,8 +51,29 @@ def test_check_pipeline_services_orders() -> None:
         latency_ms=1.0,
         required_for=("pipeline", "commute"),
     )
+
+    def _osrm_side_effect(
+        url: str,
+        *,
+        key: str = "osrm",
+        label: str = "OSRM car",
+        profile: str = "driving",
+    ) -> ServiceCheck:
+        del url, label, profile
+        return ServiceCheck(
+            key=key,
+            label=key,
+            ok=True,
+            detail="ok",
+            latency_ms=1.0,
+            required_for=("pipeline", "commute"),
+        )
+
     with (
-        patch("happy_housing.app.ops_services.check_osrm", return_value=fake),
+        patch(
+            "happy_housing.app.ops_services.check_osrm",
+            side_effect=_osrm_side_effect,
+        ),
         patch(
             "happy_housing.app.ops_services.check_otp",
             return_value=ServiceCheck(
@@ -80,7 +101,14 @@ def test_check_pipeline_services_orders() -> None:
             osrm_url="http://127.0.0.1:5001",
             otp_url="http://127.0.0.1:8080",
         )
-    assert [r.key for r in rows] == ["docker", "osrm", "otp"]
+    assert [r.key for r in rows] == [
+        "docker",
+        "osrm",
+        "osrm_foot",
+        "osrm_bike",
+        "otp",
+    ]
+    del fake
 
 
 def test_check_docker_engine_missing_binary() -> None:

@@ -66,10 +66,13 @@ logging:
   level: INFO
 
 # Local routers (Docker). Host :5001 avoids macOS AirPlay on :5000.
-# Car = OSRM driving → commute_min. Bike/foot = OSRM bike/foot when graphs
-# exist, else speed proxy. use_otp_transit=true fills transit_commute_min.
+# Car / foot / bike = separate OSRM graphs (make osrm-prepare). Missing
+# foot/bike services fall back to speed proxy (or rescale if car answers).
+# use_otp_transit=true fills transit_commute_min (make otp-up).
 routing:
   osrm_url: http://127.0.0.1:5001
+  osrm_foot_url: http://127.0.0.1:5002
+  osrm_bike_url: http://127.0.0.1:5003
   otp_url: http://127.0.0.1:8080
   use_otp_transit: true
   require_osrm: true

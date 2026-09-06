@@ -220,6 +220,8 @@ def recompute_commute_features(
         dest_lon=float(dest_lon),
         dest_lat=float(dest_lat),
         osrm_url=osrm_url,
+        osrm_foot_url=config.routing.osrm_foot_url,
+        osrm_bike_url=config.routing.osrm_bike_url,
         require_osrm=bool(config.routing.require_osrm),
         use_otp_transit=bool(use_otp_transit),
         otp_url=otp_url or config.routing.otp_url,

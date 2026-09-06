@@ -4,12 +4,15 @@ import pandas as pd
 import pytest
 
 from happy_housing.app.offer_comps import (
+    comps_empty_guidance,
     drop_centroid_fallbacks,
     flag_metro_rows,
+    format_rcn_coord_quality,
     local_loyalty,
     local_monthly_medians,
     membership_stats,
     prepare_offer_comps,
+    rcn_coord_source_counts,
     similar_size_band,
 )
 from happy_housing.models.neighborhood import query_rcn_neighbors
@@ -58,6 +61,29 @@ def test_drop_centroid_fallbacks() -> None:
     kept = drop_centroid_fallbacks(_deeds())
     assert (kept["coord_source"] == "parcel").all()
     assert len(kept) == 3
+
+
+def test_rcn_coord_source_counts() -> None:
+    counts = rcn_coord_source_counts(_deeds())
+    assert counts["total"] == 4
+    assert counts["parcel"] == 3
+    assert counts["centroid"] == 1
+    assert counts["missing"] == 0
+    assert "parcel 3" in format_rcn_coord_quality(counts)
+
+
+def test_comps_empty_guidance_when_centroid_heavy() -> None:
+    all_centroids = pd.DataFrame({
+        "coord_source": ["centroid", "centroid", "missing"],
+        "lon": [21.0, 21.0, 21.0],
+        "lat": [52.2, 52.2, 52.2],
+    })
+    counts = rcn_coord_source_counts(all_centroids)
+    msg = comps_empty_guidance(counts, n_local=0)
+    assert msg is not None
+    assert "Force GIS" in msg
+    assert comps_empty_guidance(rcn_coord_source_counts(_deeds()), n_local=0) is None
+    assert comps_empty_guidance(counts, n_local=3) is None
 
 
 def test_flag_metro_unlabelled_and_outside_city() -> None:

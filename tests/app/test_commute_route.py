@@ -186,6 +186,34 @@ def test_osrm_foot_route_rescales_car_graph_duration() -> None:
     assert abs(float(out["duration"]) - 1571.04) < 1.0
 
 
+def test_fetch_offer_commute_route_walk_uses_foot_url() -> None:
+    from happy_housing.app.commute_route import fetch_offer_commute_route
+
+    with patch(
+        "happy_housing.app.commute_route.osrm_route_geojson",
+        return_value={
+            "duration": 600.0,
+            "distance": 1000.0,
+            "coordinates": [[21.0, 52.23], [20.98, 52.24]],
+        },
+    ) as route_mock:
+        plan = fetch_offer_commute_route(
+            origin_lon=21.0,
+            origin_lat=52.23,
+            dest_lon=20.98,
+            dest_lat=52.24,
+            mode="walk",
+            hour=8,
+            osrm_url="http://car.test",
+            otp_url="http://otp.test",
+            osrm_foot_url="http://foot.test",
+            osrm_bike_url="http://bike.test",
+        )
+    assert plan is not None
+    assert route_mock.call_args.kwargs["base_url"] == "http://foot.test"
+    assert route_mock.call_args.kwargs["profile"] == "foot"
+
+
 def test_fetch_offer_commute_route_walk_uses_walk_pace() -> None:
     from happy_housing.app.commute_route import fetch_offer_commute_route
 

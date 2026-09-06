@@ -357,10 +357,14 @@ class LoggingConfig:
 
 @dataclass(frozen=True, slots=True)
 class RoutingConfig:
-    """Local routing service endpoints (OSRM car, OTP transit)."""
+    """Local routing service endpoints (OSRM car/foot/bike, OTP transit)."""
 
     osrm_url: str = "http://127.0.0.1:5001"
     """OSRM table API root for car commute minutes (host :5001 vs AirPlay :5000)."""
+    osrm_foot_url: str = "http://127.0.0.1:5002"
+    """OSRM root for the foot graph (walk paths + durations)."""
+    osrm_bike_url: str = "http://127.0.0.1:5003"
+    """OSRM root for the bicycle graph (bike paths + durations)."""
     otp_url: str = "http://127.0.0.1:8080"
     """OpenTripPlanner 2 HTTP root for transit+walk plans."""
     use_otp_transit: bool = False
@@ -370,6 +374,8 @@ class RoutingConfig:
 
     def __post_init__(self) -> None:
         _require_str("osrm_url", self.osrm_url)
+        _require_str("osrm_foot_url", self.osrm_foot_url)
+        _require_str("osrm_bike_url", self.osrm_bike_url)
         _require_str("otp_url", self.otp_url)
 
     def to_dict(self) -> dict[str, Any]:
@@ -382,6 +388,8 @@ class RoutingConfig:
         mapping = _extract_mapping(data, name="RoutingConfig")
         return cls(
             osrm_url=str(mapping.get("osrm_url", "http://127.0.0.1:5001")),
+            osrm_foot_url=str(mapping.get("osrm_foot_url", "http://127.0.0.1:5002")),
+            osrm_bike_url=str(mapping.get("osrm_bike_url", "http://127.0.0.1:5003")),
             otp_url=str(mapping.get("otp_url", "http://127.0.0.1:8080")),
             use_otp_transit=bool(mapping.get("use_otp_transit", False)),
             require_osrm=bool(mapping.get("require_osrm", False)),

@@ -28,6 +28,71 @@ _WARSAW_GIS_NORTH: float = 52.37
 """North edge of the experiment GIS bbox."""
 
 
+def rcn_coord_source_counts(frame: pd.DataFrame) -> dict[str, int]:
+    """Count ``coord_source`` values for Admin / Comps quality captions."""
+    counts = {
+        "parcel": 0,
+        "centroid": 0,
+        "missing": 0,
+        "other": 0,
+        "total": len(frame),
+    }
+    if frame.empty:
+        return counts
+    if "coord_source" not in frame.columns:
+        counts["other"] = counts["total"]
+        return counts
+    source = frame["coord_source"].astype(str).str.casefold().str.strip()
+    counts["parcel"] = int(source.eq("parcel").sum())
+    counts["centroid"] = int(source.eq("centroid").sum())
+    counts["missing"] = int(source.eq("missing").sum())
+    counts["other"] = int(
+        counts["total"] - counts["parcel"] - counts["centroid"] - counts["missing"]
+    )
+    return counts
+
+
+def format_rcn_coord_quality(counts: dict[str, int]) -> str:
+    """One-line summary of RCN geolocation quality."""
+    total = int(counts.get("total") or 0)
+    if total <= 0:
+        return "No RCN deeds on disk."
+    parcel = int(counts.get("parcel") or 0)
+    centroid = int(counts.get("centroid") or 0)
+    missing = int(counts.get("missing") or 0)
+    other = int(counts.get("other") or 0)
+    parts = [
+        f"{total:,} deeds",
+        f"parcel {parcel:,}",
+        f"centroid {centroid:,}",
+        f"missing {missing:,}",
+    ]
+    if other:
+        parts.append(f"other {other:,}")
+    return " · ".join(parts)
+
+
+def comps_empty_guidance(
+    counts: dict[str, int],
+    n_local: int,
+) -> str | None:
+    """Explain empty Comps when on-disk RCN lacks usable parcel pins."""
+    if int(n_local) > 0:
+        return None
+    total = int(counts.get("total") or 0)
+    if total <= 0:
+        return None
+    parcel = int(counts.get("parcel") or 0)
+    if parcel > 0:
+        return None
+    return (
+        "No mappable RCN deeds in this radius. On-disk RCN has no parcel "
+        "geometry (centroid / missing only) — Offer Comps drops those pins. "
+        "Admin → Run: tick Force GIS / remote refresh, keep Download RCN on, "
+        "then re-run the pipeline to re-extract parcel coords from the GML zip."
+    )
+
+
 def drop_centroid_fallbacks(frame: pd.DataFrame) -> pd.DataFrame:
     """Drop stacked dzielnica-centroid pins (unusable on a comps map)."""
     if frame.empty:

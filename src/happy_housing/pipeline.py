@@ -314,6 +314,23 @@ def resolve_pipeline_force_flags(
     return force_steps, bool(force_gis_refresh)
 
 
+def enriched_listings_geodataframe(frame: pd.DataFrame) -> gpd.GeoDataFrame:
+    """Build GeoDataFrame from model-ready listings (lon/lat → points).
+
+    Length always matches ``frame`` (passthrough / filtered rows included),
+    unlike copying columns onto the pre-model GIS enrich GeoDataFrame.
+    """
+    work = frame.copy()
+    if "lon" in work.columns and "lat" in work.columns:
+        geometry = gpd.points_from_xy(
+            pd.to_numeric(work["lon"], errors="coerce"),
+            pd.to_numeric(work["lat"], errors="coerce"),
+        )
+    else:
+        geometry = [None] * len(work)
+    return gpd.GeoDataFrame(work, geometry=geometry, crs="EPSG:4326")
+
+
 def run_pipeline(
     config_path: Path | str = Path("configs/experiment.yaml"),
     *,
@@ -698,6 +715,8 @@ def run_pipeline(
         "nbhd_r": float(app_settings.model_nbhd_radius_m),
         "otp": bool(config.routing.use_otp_transit),
         "osrm": str(config.routing.osrm_url),
+        "osrm_foot": str(config.routing.osrm_foot_url),
+        "osrm_bike": str(config.routing.osrm_bike_url),
         "require_osrm": bool(config.routing.require_osrm),
         "n_features": len(FEATURE_COLUMNS),
     }
@@ -822,6 +841,8 @@ def run_pipeline(
             dest_lon=commute.lon,
             dest_lat=commute.lat,
             osrm_url=config.routing.osrm_url,
+            osrm_foot_url=config.routing.osrm_foot_url,
+            osrm_bike_url=config.routing.osrm_bike_url,
             require_osrm=bool(config.routing.require_osrm),
             use_otp_transit=bool(config.routing.use_otp_transit),
             otp_url=config.routing.otp_url,
@@ -834,10 +855,7 @@ def run_pipeline(
 
         def _write_enriched_geoparquet(frame: pd.DataFrame) -> None:
             """Persist attribute frame with Hilbert-sorted GeoParquet geometry."""
-            geo = enriched.copy()
-            for col in frame.columns:
-                geo[col] = frame[col].to_numpy()
-            write_geoparquet(geo, enriched_path)
+            write_geoparquet(enriched_listings_geodataframe(frame), enriched_path)
 
         _write_enriched_geoparquet(train_frame)
 

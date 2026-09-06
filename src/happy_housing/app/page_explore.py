@@ -159,7 +159,11 @@ from happy_housing.app.maps import (
     listing_ids_fingerprint,
     render_deck,
 )
-from happy_housing.app.offer_comps import prepare_offer_comps
+from happy_housing.app.offer_comps import (
+    comps_empty_guidance,
+    prepare_offer_comps,
+    rcn_coord_source_counts,
+)
 from happy_housing.app.offer_display import (
     floor_plan_urls_from_row,
     image_urls_from_row,
@@ -1327,6 +1331,8 @@ def _cached_offer_commute_route(
     hour: int,
     osrm_url: str,
     otp_url: str,
+    osrm_foot_url: str = "http://127.0.0.1:5002",
+    osrm_bike_url: str = "http://127.0.0.1:5003",
 ) -> object | None:
     """Cached door-to-door commute plan for Offer Map."""
     return fetch_offer_commute_route(
@@ -1338,6 +1344,8 @@ def _cached_offer_commute_route(
         hour=hour,
         osrm_url=osrm_url,
         otp_url=otp_url,
+        osrm_foot_url=osrm_foot_url,
+        osrm_bike_url=osrm_bike_url,
     )
 
 
@@ -1939,7 +1947,13 @@ def _render_offer_comps(
             layers.append(ask_layer)
     layers.append(focus_marker_layer(float(lat), float(lon)))
     if n_local == 0:
-        st.info("No RCN deeds in this radius (centroid fallbacks dropped).")
+        quality = rcn_coord_source_counts(load_rcn_transactions())
+        hint = comps_empty_guidance(quality, n_local=0)
+        st.info(
+            hint
+            if hint is not None
+            else "No RCN deeds in this radius (centroid fallbacks dropped)."
+        )
     render_deck(
         layers,
         latitude=float(lat),
@@ -2403,6 +2417,8 @@ def _tab_offer(
     show_commute_route: bool = True,
     osrm_url: str = "http://127.0.0.1:5001",
     otp_url: str = "http://127.0.0.1:8080",
+    osrm_foot_url: str = "http://127.0.0.1:5002",
+    osrm_bike_url: str = "http://127.0.0.1:5003",
 ) -> None:
     """Single-offer deep dive with Overview / Context / Comps / Map / SHAP / AI."""
     preferred = normalize_listing_id(st.session_state.get("explore_offer_id"))
@@ -2591,6 +2607,8 @@ def _tab_offer(
                     int(hour),
                     str(osrm_url),
                     str(otp_url),
+                    str(osrm_foot_url),
+                    str(osrm_bike_url),
                 )
                 if route_plan is None:
                     st.info(
@@ -3502,6 +3520,8 @@ def render_explore() -> None:
                 show_commute_route=bool(app_settings.offer_map_show_commute_route),
                 osrm_url=str(config.routing.osrm_url),
                 otp_url=str(config.routing.otp_url),
+                osrm_foot_url=str(config.routing.osrm_foot_url),
+                osrm_bike_url=str(config.routing.osrm_bike_url),
                 **{
                     key: value
                     for key, value in map_kwargs.items()
