@@ -139,6 +139,30 @@ def test_prepare_listings_boosts_recommended_radius() -> None:
     assert "Recommended" in str(rec["tooltip_detail"])
 
 
+def test_prepare_listings_for_map_styles_historical_pins() -> None:
+    out = prepare_listings_for_map(
+        pd.DataFrame({
+            "listing_id": ["live", "gone"],
+            "district": ["wola", "wola"],
+            "source": ["otodom", "olx"],
+            "lat": [52.2, 52.21],
+            "lon": [21.0, 21.01],
+            "listing_active": [1, 0],
+            "delta_price_per_m2": [-100.0, 50.0],
+            "price_per_m2": [15000.0, 14000.0],
+            "area_m2": [50.0, 48.0],
+            "rooms": [2.0, 2.0],
+            "commute_min": [18.0, 20.0],
+        })
+    )
+    live = out.loc[out["listing_id"] == "live"].iloc[0]
+    gone = out.loc[out["listing_id"] == "gone"].iloc[0]
+    assert "Closed" not in str(live["tooltip_detail"])
+    assert "Closed" in str(gone["tooltip_detail"])
+    assert float(gone["radius"]) < float(live["radius"])
+    assert int(gone["color_a"]) < int(live["color_a"])
+
+
 def test_prepare_listings_drops_missing_coordinates() -> None:
     listings = prepare_listings_for_map(
         pd.DataFrame({

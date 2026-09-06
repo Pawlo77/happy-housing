@@ -66,7 +66,13 @@ from happy_housing.app.filter_presets import (
     filter_presets_path,
     load_filter_presets,
 )
-from happy_housing.app.filters import LISTING_KIND_OPTIONS, coerce_listing_kind
+from happy_housing.app.filters import (
+    LISTING_KIND_OPTIONS,
+    LISTING_STATUS_LABELS,
+    LISTING_STATUS_OPTIONS,
+    coerce_listing_kind,
+    coerce_listing_status,
+)
 from happy_housing.app.freshness import (
     build_freshness_report,
     derived_to_frame,
@@ -1649,6 +1655,19 @@ def _panel_explore(settings: AppSettings, settings_file: Path, proc: Path) -> No
             "widget is empty. Missing listing_kind still counts as sale."
         ),
     )
+    status_default = coerce_listing_status(settings.filter_default_listing_status)
+    listing_status = st.selectbox(
+        "Default listing status",
+        options=list(LISTING_STATUS_OPTIONS),
+        index=list(LISTING_STATUS_OPTIONS).index(status_default),
+        format_func=lambda key: LISTING_STATUS_LABELS.get(str(key), str(key)),
+        key="settings_filter_default_listing_status",
+        help=(
+            "Seed Explore live vs closed asks. Historical pins are exact "
+            "closed rows from scored buyer sources (otodom, NOL, OLX), "
+            "not Spatial interpolation."
+        ),
+    )
     delta_scale = st.number_input(
         "Listing pin Δ colour scale (zł/m²)",
         min_value=100.0,
@@ -1717,6 +1736,7 @@ def _panel_explore(settings: AppSettings, settings_file: Path, proc: Path) -> No
             "Satellite" if str(basemap) == "Satellite" else "Streets"
         )
         settings.filter_default_listing_kind = coerce_listing_kind(listing_kind)
+        settings.filter_default_listing_status = coerce_listing_status(listing_status)
         settings.map_delta_color_scale_zl = float(delta_scale)
         settings.map_max_gunb_points = int(max_gunb)
         settings.map_max_shop_points = int(max_shop)

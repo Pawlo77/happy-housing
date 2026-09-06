@@ -183,6 +183,12 @@ FILTER_HELP: dict[str, str] = {
         "Sale vs rent. Missing kind counts as sale (RCN deeds, older asks). "
         "Rent zł/m² is monthly; do not mix with sale prices."
     ),
+    "listing_status": (
+        "Live asks vs exact closed rows still in scored parquet "
+        "(otodom / NOL / OLX when marked listing_active=0). "
+        "Not Spatial Historical interpolation. OLX gone ads stay live "
+        "until ingest marks them closed."
+    ),
     "oou": (
         "Filter by aircraft Lden ≥55 dB (UM strategic map / legacy END). "
         "Inside = noisier aircraft exposure."

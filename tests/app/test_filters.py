@@ -9,6 +9,7 @@ from happy_housing.app.filters import (
     apply_filters,
     apply_starred_only,
     coerce_listing_kind,
+    coerce_listing_status,
     offer_age_months,
 )
 
@@ -101,6 +102,35 @@ def test_apply_filters_listing_kind_missing_column_rent_empty() -> None:
     assert rent.empty
     sale = apply_filters(frame, FilterState(listing_kind="sale"))
     assert list(sale["listing_id"]) == ["ask", "deed"]
+
+
+def test_apply_filters_listing_status_live_vs_historical() -> None:
+    frame = pd.DataFrame({
+        "listing_id": ["live-oto", "closed-oto", "closed-olx"],
+        "district": ["wola", "wola", "wola"],
+        "source": ["otodom", "otodom", "olx"],
+        "listing_active": [1, 0, 0],
+        "price_per_m2": [15000.0, 14000.0, 13000.0],
+    })
+    live = apply_filters(frame, FilterState(listing_status="live"))
+    hist = apply_filters(frame, FilterState(listing_status="historical"))
+    both = apply_filters(frame, FilterState(listing_status="(all)"))
+    assert list(live["listing_id"]) == ["live-oto"]
+    assert list(hist["listing_id"]) == ["closed-oto", "closed-olx"]
+    assert list(both["listing_id"]) == ["live-oto", "closed-oto", "closed-olx"]
+    missing = apply_filters(
+        frame.drop(columns=["listing_active"]),
+        FilterState(listing_status="historical"),
+    )
+    assert missing.empty
+
+
+def test_coerce_listing_status_and_from_dict() -> None:
+    assert coerce_listing_status("Historical") == "historical"
+    assert coerce_listing_status("closed") == "historical"
+    assert coerce_listing_status("LIVE") == "live"
+    restored = FilterState.from_dict({"listing_status": "historical"})
+    assert restored.listing_status == "historical"
 
 
 def test_coerce_listing_kind_and_from_dict() -> None:

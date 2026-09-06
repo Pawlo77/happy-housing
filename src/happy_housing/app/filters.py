@@ -8,11 +8,13 @@ from typing import Any, Self
 import pandas as pd
 
 from happy_housing.app.listing_attrs import apply_property_attr_filters
+from happy_housing.ingest.listing_common import LISTING_ACTIVE_COLUMN, listing_is_active
 
 _STR_FIELDS: frozenset[str] = frozenset({
     "district",
     "source",
     "listing_kind",
+    "listing_status",
     "oou",
     "high_noise",
     "poor_air",
@@ -54,6 +56,16 @@ _INT_FIELDS: frozenset[str] = frozenset({
 LISTING_KIND_OPTIONS: tuple[str, ...] = ("(all)", "sale", "rent")
 """Sale vs rent filter choices."""
 
+LISTING_STATUS_OPTIONS: tuple[str, ...] = ("live", "historical", "(all)")
+"""Live vs closed-ask filter choices. Default Explore view is live."""
+
+LISTING_STATUS_LABELS: dict[str, str] = {
+    "live": "Live",
+    "historical": "Historical (closed)",
+    "(all)": "Live + historical",
+}
+"""Selectbox labels for ``listing_status``."""
+
 
 def coerce_listing_kind(value: object, fallback: str = "(all)") -> str:
     """Normalize a listing-kind filter to ``sale``, ``rent``, or ``(all)``."""
@@ -66,6 +78,21 @@ def coerce_listing_kind(value: object, fallback: str = "(all)") -> str:
     if fallback in allowed:
         return fallback
     return "(all)"
+
+
+def coerce_listing_status(value: object, fallback: str = "live") -> str:
+    """Normalize listing status to ``live``, ``historical``, or ``(all)``."""
+    allowed = set(LISTING_STATUS_OPTIONS)
+    text = str(value or "").strip().casefold()
+    if text in {"live", "active", "open"}:
+        return "live"
+    if text in {"historical", "closed", "inactive", "gone", "withdrawn"}:
+        return "historical"
+    if text in {"(all)", "all", "both"}:
+        return "(all)"
+    if fallback in allowed:
+        return fallback
+    return "live"
 
 
 def listing_kind_labels(frame: pd.DataFrame) -> pd.Series:
@@ -89,6 +116,8 @@ class FilterState:
     """Listing source or ``(all)``."""
     listing_kind: str = "(all)"
     """``sale`` / ``rent`` / ``(all)``. Missing kind treated as sale."""
+    listing_status: str = "live"
+    """``live`` / ``historical`` / ``(all)``. Missing ``listing_active`` counts live."""
     oou: str = "(all)"
     """Aircraft Lden ≥55 dB: ``(all)``, ``inside``, or ``outside``."""
     high_noise: str = "(all)"
@@ -151,6 +180,8 @@ class FilterState:
                 data[str_key] = text.strip() or "(all)"
         if "listing_kind" in data:
             data["listing_kind"] = coerce_listing_kind(data["listing_kind"])
+        if "listing_status" in data:
+            data["listing_status"] = coerce_listing_status(data["listing_status"])
         for float_key in _FLOAT_FIELDS:
             if float_key in data:
                 data[float_key] = _opt_float(data[float_key])
@@ -241,6 +272,13 @@ def apply_filters(
     kind = coerce_listing_kind(state.listing_kind)
     if kind != "(all)":
         mask &= listing_kind_labels(frame).eq(kind)
+    status = coerce_listing_status(state.listing_status)
+    if status != "(all)":
+        if LISTING_ACTIVE_COLUMN in frame.columns:
+            active = frame[LISTING_ACTIVE_COLUMN].map(listing_is_active)
+            mask &= active if status == "live" else ~active
+        elif status == "historical":
+            mask &= False
     if state.oou == "inside" and "in_oou" in frame.columns:
         mask &= pd.to_numeric(frame["in_oou"], errors="coerce").eq(1)
     elif state.oou == "outside" and "in_oou" in frame.columns:

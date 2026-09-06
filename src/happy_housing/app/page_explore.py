@@ -109,10 +109,13 @@ from happy_housing.app.filter_presets import (
 )
 from happy_housing.app.filters import (
     LISTING_KIND_OPTIONS,
+    LISTING_STATUS_LABELS,
+    LISTING_STATUS_OPTIONS,
     FilterState,
     apply_filters,
     apply_starred_only,
     coerce_listing_kind,
+    coerce_listing_status,
     offer_age_months,
 )
 from happy_housing.app.geocode import (
@@ -247,7 +250,6 @@ from happy_housing.gis.amenity_catalog import (
 )
 from happy_housing.gis.gios_aq_field import AQ_MAP_OVERLAYS, AqMapOverlay
 from happy_housing.gis.warsaw_noise import NOISE_MAP_OVERLAYS, NoiseMapOverlay
-from happy_housing.ingest.listing_common import filter_active_listings
 from happy_housing.ingest.otodom import fetch_listing_detail, otodom_session
 from happy_housing.ingest.proxy_pool import configure_http_proxies
 from happy_housing.models.train import (
@@ -822,6 +824,18 @@ def _sidebar_filters(frame: pd.DataFrame) -> tuple[FilterState, bool]:
         help=FILTER_HELP["listing_kind"],
         key="explore_listing_kind",
     )
+    if "explore_listing_status" not in st.session_state:
+        settings = load_app_settings(settings_path(processed_dir()))
+        st.session_state["explore_listing_status"] = coerce_listing_status(
+            settings.filter_default_listing_status
+        )
+    listing_status = st.selectbox(
+        "Listing status",
+        list(LISTING_STATUS_OPTIONS),
+        format_func=lambda key: LISTING_STATUS_LABELS.get(str(key), str(key)),
+        help=FILTER_HELP["listing_status"],
+        key="explore_listing_status",
+    )
     starred_only = st.checkbox(
         "Starred only",
         value=False,
@@ -919,6 +933,7 @@ def _sidebar_filters(frame: pd.DataFrame) -> tuple[FilterState, bool]:
             district=district,
             source=source,
             listing_kind=coerce_listing_kind(listing_kind),
+            listing_status=coerce_listing_status(listing_status),
             oou=oou,
             high_noise=high_noise,
             poor_air=poor_air,
@@ -3341,7 +3356,7 @@ def render_explore() -> None:
     """Render Explore with sidebar Filter/Map-layer tabs + main content tabs."""
     logger.info("Rendering Explore")
     try:
-        frame = filter_active_listings(load_scored())
+        frame = load_scored()
     except FileNotFoundError as exc:
         logger.warning("Explore missing scored listings: %s", exc)
         st.error(str(exc))

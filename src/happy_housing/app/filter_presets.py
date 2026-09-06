@@ -7,7 +7,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Self
 
-from happy_housing.app.filters import FilterState, coerce_listing_kind
+from happy_housing.app.filters import (
+    FilterState,
+    coerce_listing_kind,
+    coerce_listing_status,
+)
 from happy_housing.app.io_cache import read_json
 
 logger = logging.getLogger(__name__)
@@ -188,6 +192,10 @@ def suggest_filter_preset_name(
         parts.append(_title_token(state.source))
     if state.listing_kind != _DEFAULT_ALL:
         parts.append(state.listing_kind)
+    if state.listing_status == "historical":
+        parts.append("closed")
+    elif state.listing_status == "(all)":
+        parts.append("incl. closed")
     if state.object_type != _DEFAULT_ALL:
         parts.append(state.object_type)
     if state.ownership != _DEFAULT_ALL:
@@ -258,6 +266,7 @@ def apply_filter_preset_to_session(
     session["explore_district"] = state.district
     session["explore_source"] = state.source
     session["explore_listing_kind"] = coerce_listing_kind(state.listing_kind)
+    session["explore_listing_status"] = coerce_listing_status(state.listing_status)
     session["explore_oou"] = state.oou
     session["explore_high_noise"] = state.high_noise
     session["explore_poor_air"] = state.poor_air
@@ -383,6 +392,7 @@ def snapshot_filter_preset_from_session(
         district=_str("explore_district"),
         source=_str("explore_source"),
         listing_kind=coerce_listing_kind(_str("explore_listing_kind")),
+        listing_status=coerce_listing_status(_str("explore_listing_status", "live")),
         oou=_str("explore_oou"),
         high_noise=_str("explore_high_noise"),
         poor_air=_str("explore_poor_air"),

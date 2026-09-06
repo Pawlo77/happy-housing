@@ -13,7 +13,7 @@ from happy_housing.app.commute_modes import (
     commute_tooltip_label,
 )
 from happy_housing.gis.traffic import diurnal_traffic_weight
-from happy_housing.ingest.listing_common import filter_active_listings
+from happy_housing.ingest.listing_common import LISTING_ACTIVE_COLUMN, listing_is_active
 
 _DELTA_COLOR_SCALE_ZL: float = 1_500.0
 """Δ zł/m² soft-saturation scale for offer pin colours (tanh)."""
@@ -628,6 +628,7 @@ _LISTING_MAP_SOURCE_COLUMNS: tuple[str, ...] = (
     "transit_commute_min",
     "bike_commute_min",
     "walk_commute_min",
+    LISTING_ACTIVE_COLUMN,
 )
 """Columns read when building offer map pins (skip description / media)."""
 
@@ -644,8 +645,9 @@ def prepare_listings_for_map(
     Recommended ids get larger radii and a clear tooltip badge so they
     stand out among standard offer pins. ``commute_mode`` selects which
     commute column appears on hover (default: public transport).
+    Closed asks (``listing_active=0``) stay on the map when the caller
+    includes them — smaller grey pins with a Closed tooltip badge.
     """
-    frame = filter_active_listings(frame)
     if frame.empty:
         return pd.DataFrame()
     keep = [c for c in _LISTING_MAP_SOURCE_COLUMNS if c in frame.columns]
@@ -671,6 +673,16 @@ def prepare_listings_for_map(
     out["radius"] = base_radius.where(
         ~out["is_recommended"], (base_radius * 2.2).clip(48, 120)
     )
+    if LISTING_ACTIVE_COLUMN in out.columns:
+        is_closed = ~out[LISTING_ACTIVE_COLUMN].map(listing_is_active)
+    else:
+        is_closed = pd.Series(False, index=out.index)
+    out["radius"] = out["radius"].where(~is_closed, (out["radius"] * 0.55).clip(12, 32))
+    closed_arr = is_closed.to_numpy()
+    out["color_r"] = np.where(closed_arr, 120, out["color_r"])
+    out["color_g"] = np.where(closed_arr, 120, out["color_g"])
+    out["color_b"] = np.where(closed_arr, 128, out["color_b"])
+    out["color_a"] = np.where(closed_arr, 110, out["color_a"])
     # Gold stroke for recommended; soft white for the rest.
     out["line_r"] = np.where(out["is_recommended"], 255, 255)
     out["line_g"] = np.where(out["is_recommended"], 196, 255)
@@ -701,8 +713,10 @@ def prepare_listings_for_map(
     badge = out["is_recommended"].map(
         lambda flag: "★ Recommended · " if bool(flag) else ""
     )
+    closed_badge = is_closed.map(lambda flag: "Closed · " if bool(flag) else "")
     out["tooltip_detail"] = (
         badge
+        + closed_badge
         + district
         + " · "
         + _fmt_int(ppm, " zł/m²")

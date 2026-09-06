@@ -21,10 +21,10 @@ _INACTIVE_ASK_PARQUETS: tuple[tuple[str, str], ...] = (
     ("otodom", "otodom_listings.parquet"),
     ("nol", "nol_listings.parquet"),
 )
-"""Closed search-card artifacts unioned into Stats (map still hides them)."""
+"""Closed search-card artifacts unioned into Stats historical ask context."""
 
 LISTING_ACTIVE_COLUMN: str = "listing_active"
-"""1 = live ask shown on map; 0 = withdrawn/closed but kept for history."""
+"""1 = live ask; 0 = withdrawn/closed (kept for history / Explore filter)."""
 
 BUYER_LISTING_SCHEMA_COLUMNS: tuple[str, ...] = (
     "year_built",
@@ -189,7 +189,7 @@ def listing_is_active(value: object) -> bool:
 
 
 def filter_active_listings(frame: pd.DataFrame) -> pd.DataFrame:
-    """Drop inactive/closed rows for Explore map and live offer lists."""
+    """Drop inactive/closed rows for recommender and live-only lists."""
     if frame.empty or LISTING_ACTIVE_COLUMN not in frame.columns:
         return frame
     mask = frame[LISTING_ACTIVE_COLUMN].map(listing_is_active)
