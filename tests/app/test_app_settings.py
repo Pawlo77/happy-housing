@@ -32,6 +32,8 @@ def test_load_missing_returns_defaults(tmp_path: Path) -> None:
     assert settings.otodom_max_listings is None
     assert settings.http_free_proxies_enabled is False
     assert settings.filter_default_listing_kind == "(all)"
+    assert settings.extract_attrs_enabled is True
+    assert settings.extract_max_listings == 0
     assert settings.offer_comps_max_pins == 200
     assert settings.offer_comps_months == 0
     assert settings.offer_comps_include_metro is True

@@ -41,7 +41,7 @@ class AppSettings:
     """Max description characters sent to the extract model."""
     extract_max_tokens: int = 48
     """Max tokens for extract responses (CSV line only)."""
-    extract_max_listings: int = 200
+    extract_max_listings: int = 0
     """Cap LM extract calls per pipeline/Admin run (0 = unlimited)."""
     extract_lm_workers: int = 2
     """Parallel LMS attr-extract workers (same model; keep low for LM Studio)."""

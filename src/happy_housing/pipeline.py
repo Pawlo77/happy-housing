@@ -5,7 +5,8 @@ input fingerprints match ``pipeline_steps.json`` unless ``force_pipeline``
 is set. Remote GIS / open-data archives re-download only with
 ``force_gis_refresh`` (not with full recompute alone). When GIS context is
 unchanged, enrich reuses prior rows and GIS/OSRM/OTP/photo only for new or
-moved listings.
+moved listings. Description attr extract always runs when enabled (default on),
+including after an enrich skip.
 """
 
 import argparse
@@ -20,6 +21,7 @@ import geopandas as gpd
 import pandas as pd
 
 from happy_housing.app.app_settings import (
+    AppSettings,
     load_app_settings,
     save_app_settings,
     settings_path,
@@ -358,6 +360,39 @@ def _concat_enriched_listings(
     combined["_ord"] = combined["listing_id"].astype(str).map(order)
     combined = combined.sort_values("_ord", kind="stable")
     return combined.drop(columns=["_ord"]).reset_index(drop=True)
+
+
+def apply_listing_attr_extract(
+    frame: pd.DataFrame,
+    settings: AppSettings,
+    processed: Path,
+) -> tuple[pd.DataFrame, bool]:
+    """Run LMS description extract when enabled; report whether fingerprints moved."""
+    if not bool(settings.extract_attrs_enabled) or frame.empty:
+        return frame, False
+    before = (
+        frame["attr_extract_fp"].copy() if "attr_extract_fp" in frame.columns else None
+    )
+    cap = int(settings.extract_max_listings) or None
+    out = enrich_frame_listing_attrs(
+        frame,
+        model=settings.extract_lm_model,
+        max_chars=int(settings.extract_max_chars),
+        max_tokens=int(settings.extract_max_tokens),
+        use_llm=True,
+        metrics_path=llm_metrics_path(processed),
+        max_llm_calls=cap,
+        lm_workers=int(settings.extract_lm_workers),
+    )
+    if before is None:
+        changed = "attr_extract_fp" in out.columns and bool(
+            out["attr_extract_fp"].notna().any()
+        )
+    else:
+        prev = before.astype("string").fillna("")
+        now = out["attr_extract_fp"].astype("string").fillna("")
+        changed = not now.equals(prev)
+    return out, bool(changed)
 
 
 def _ingest_buyer_source_into_parts(
@@ -813,8 +848,6 @@ def run_pipeline(
         "traffic_r": float(app_settings.traffic_neighbourhood_radius_m),
         "aq": bool(app_settings.aq_field_enabled),
         "aq_power": float(app_settings.aq_idw_power),
-        "extract": bool(app_settings.extract_attrs_enabled),
-        "extract_workers": int(app_settings.extract_lm_workers),
         "photo": True,
         "photo_n": int(app_settings.photo_cv_max_photos),
         "photo_model": str(app_settings.photo_cv_model_id),
@@ -950,18 +983,6 @@ def run_pipeline(
         )
         train_frame = promote_listing_flags(train_frame)
         train_frame = attach_crime_features(train_frame, crime_by_district)
-        if app_settings.extract_attrs_enabled:
-            cap = int(app_settings.extract_max_listings) or None
-            train_frame = enrich_frame_listing_attrs(
-                train_frame,
-                model=app_settings.extract_lm_model,
-                max_chars=int(app_settings.extract_max_chars),
-                max_tokens=int(app_settings.extract_max_tokens),
-                use_llm=True,
-                metrics_path=llm_metrics_path(processed),
-                max_llm_calls=cap,
-                lm_workers=int(app_settings.extract_lm_workers),
-            )
         train_frame = attach_active_mode_commutes(
             train_frame,
             dest_lon=commute.lon,
@@ -1002,6 +1023,15 @@ def run_pipeline(
             time.perf_counter() - _enrich_t0,
             (time.perf_counter() - _enrich_t0) / 60.0,
         )
+
+    train_frame, extract_changed = apply_listing_attr_extract(
+        train_frame,
+        app_settings,
+        processed,
+    )
+    if extract_changed:
+        write_geoparquet(enriched_listings_geodataframe(train_frame), enriched_path)
+        logger.info("Wrote listing attr extract into enrich parquet")
 
     rcn_for_model = (
         pd.read_parquet(rcn_parquet) if rcn_parquet.exists() else pd.DataFrame()

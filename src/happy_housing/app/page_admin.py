@@ -2413,7 +2413,9 @@ def _panel_extract(settings: AppSettings, settings_file: Path, proc: Path) -> No
     """Listing attribute extract from truncated descriptions."""
     st.caption(
         "Lightweight model fills gaps from truncated descriptions "
-        "(CSV line, N if unknown). Structured Otodom fields always win."
+        "(CSV line, N if unknown). Structured Otodom fields always win. "
+        "On by default in `make pipeline` (even when GIS enrich is skipped). "
+        "0 LM calls / run = unlimited."
     )
     lms_keys = list_lmstudio_llm_keys()
     if lms_keys:
