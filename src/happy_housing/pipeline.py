@@ -3,7 +3,9 @@
 Expensive steps (RCN extract, enrich, train/score, recommender) skip when
 input fingerprints match ``pipeline_steps.json`` unless ``force_pipeline``
 is set. Remote GIS / open-data archives re-download only with
-``force_gis_refresh`` (not with full recompute alone).
+``force_gis_refresh`` (not with full recompute alone). When GIS context is
+unchanged, enrich reuses prior rows and GIS/OSRM/OTP/photo only for new or
+moved listings.
 """
 
 import argparse
@@ -251,6 +253,111 @@ def _split_listings_for_enrich(
         return listings.copy(), listings.iloc[0:0].copy()
     has_coords = listings["lat"].notna() & listings["lon"].notna()
     return listings.loc[has_coords].copy(), listings.loc[~has_coords].copy()
+
+
+ENRICH_READY_COLUMN: str = "dist_daszynskiego_m"
+"""Prior GIS row is reusable when this distance feature is finite."""
+
+INCREMENTAL_COORD_TOL: float = 1e-5
+"""Degree tolerance (~1 m) before a listing is treated as moved."""
+
+
+def overlay_listing_columns(
+    prior_rows: pd.DataFrame,
+    current_rows: pd.DataFrame,
+    key: str = "listing_id",
+) -> pd.DataFrame:
+    """Copy current listing fields onto prior enrich rows, aligned by id."""
+    if prior_rows.empty or current_rows.empty:
+        return prior_rows.copy()
+    if key not in prior_rows.columns or key not in current_rows.columns:
+        return prior_rows.copy()
+    current = current_rows.drop_duplicates(subset=[key], keep="last")
+    current_idx = current.set_index(current[key].astype(str))
+    out = prior_rows.copy()
+    out_ids = out[key].astype(str)
+    for col in current.columns:
+        if col == key:
+            continue
+        mapped = out_ids.map(current_idx[col])
+        known = mapped.notna()
+        if col not in out.columns:
+            out[col] = mapped
+            continue
+        out.loc[known, col] = mapped.loc[known].to_numpy()
+    return out
+
+
+def split_incremental_enrich_rows(
+    current: pd.DataFrame,
+    prior: pd.DataFrame | None,
+    *,
+    key: str = "listing_id",
+    ready_col: str = ENRICH_READY_COLUMN,
+    coord_tol: float = INCREMENTAL_COORD_TOL,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Split listings into GIS-needed vs reusable prior enrich rows.
+
+    Reuse when ``listing_id`` exists in ``prior``, coordinates are unchanged,
+    and ``ready_col`` is finite. Reused rows overlay fresh listing columns
+    (price, description, …) onto prior GIS / commute / photo features.
+    """
+    if current.empty:
+        empty = current.iloc[0:0].copy()
+        return empty, empty
+    if (
+        prior is None
+        or prior.empty
+        or key not in current.columns
+        or key not in prior.columns
+        or ready_col not in prior.columns
+        or "lat" not in current.columns
+        or "lon" not in current.columns
+        or "lat" not in prior.columns
+        or "lon" not in prior.columns
+    ):
+        return current.copy(), current.iloc[0:0].copy()
+
+    prior_u = prior.drop_duplicates(subset=[key], keep="last")
+    prior_idx = prior_u.set_index(prior_u[key].astype(str))
+    ids = current[key].astype(str)
+    in_prior = ids.isin(prior_idx.index)
+    cur_lat = pd.to_numeric(current["lat"], errors="coerce")
+    cur_lon = pd.to_numeric(current["lon"], errors="coerce")
+    prior_lat = pd.to_numeric(ids.map(prior_idx["lat"]), errors="coerce")
+    prior_lon = pd.to_numeric(ids.map(prior_idx["lon"]), errors="coerce")
+    moved = (cur_lat - prior_lat).abs() > float(coord_tol)
+    moved |= (cur_lon - prior_lon).abs() > float(coord_tol)
+    ready = pd.to_numeric(ids.map(prior_idx[ready_col]), errors="coerce").notna()
+    reuse_mask = in_prior & ready & ~moved & cur_lat.notna() & cur_lon.notna()
+    need = current.loc[~reuse_mask].copy()
+    if not bool(reuse_mask.any()):
+        return need, current.iloc[0:0].copy()
+    reuse_ids = ids.loc[reuse_mask]
+    prior_reuse = prior_idx.loc[reuse_ids].copy()
+    prior_reuse = prior_reuse.reset_index(drop=True)
+    current_reuse = current.loc[reuse_mask].reset_index(drop=True)
+    reuse = overlay_listing_columns(prior_reuse, current_reuse, key=key)
+    return need, reuse
+
+
+def _concat_enriched_listings(
+    parts: list[pd.DataFrame],
+    listings: pd.DataFrame,
+) -> pd.DataFrame:
+    """Concat enrich pieces and restore current listing order."""
+    nonempty = [part for part in parts if not part.empty]
+    if not nonempty:
+        return pd.DataFrame()
+    combined = pd.concat(nonempty, ignore_index=True, sort=False)
+    if "listing_id" not in combined.columns or "listing_id" not in listings.columns:
+        return combined
+    order = {
+        str(value): idx for idx, value in enumerate(listings["listing_id"].astype(str))
+    }
+    combined["_ord"] = combined["listing_id"].astype(str).map(order)
+    combined = combined.sort_values("_ord", kind="stable")
+    return combined.drop(columns=["_ord"]).reset_index(drop=True)
 
 
 def _ingest_buyer_source_into_parts(
@@ -720,9 +827,7 @@ def run_pipeline(
         "require_osrm": bool(config.routing.require_osrm),
         "n_features": len(FEATURE_COLUMNS),
     }
-    enrich_fp = fingerprint(
-        _listings_fingerprint(listings),
-        file_token(otodom_parquet),
+    context_fp = fingerprint(
         file_token(rcn_parquet),
         file_token(gtfs_parquet),
         file_token(gios_parquet),
@@ -730,6 +835,17 @@ def run_pipeline(
         file_token(crime_parquet),
         f"commute={commute.lon:.6f},{commute.lat:.6f}",
         payload_token(enrich_settings),
+    )
+    enrich_fp = fingerprint(
+        context_fp,
+        _listings_fingerprint(listings),
+        file_token(otodom_parquet),
+    )
+    prior_context_fp = str(
+        (manifest.steps.get("enrich_context") or {}).get("inputs_fp") or ""
+    )
+    use_row_incremental = (
+        not force and enriched_path.exists() and prior_context_fp == context_fp
     )
 
     if manifest.should_skip("enrich", enrich_fp, [enriched_path], force=force):
@@ -741,7 +857,17 @@ def run_pipeline(
         logger.info("STEP start enrich")
         _enrich_t0 = time.perf_counter()
         to_enrich, passthrough = _split_listings_for_enrich(listings)
-        if app_settings.snap_listings_out_of_parks:
+        reuse = to_enrich.iloc[0:0].copy()
+        if use_row_incremental:
+            prior_enriched = pd.read_parquet(enriched_path)
+            prior_enriched = prior_enriched.drop(columns=["geometry"], errors="ignore")
+            to_enrich, reuse = split_incremental_enrich_rows(to_enrich, prior_enriched)
+            logger.info(
+                "Incremental enrich: %s GIS rows, %s reused",
+                len(to_enrich),
+                len(reuse),
+            )
+        if app_settings.snap_listings_out_of_parks and not to_enrich.empty:
             to_enrich = snap_listings_out_of_parks(
                 to_enrich,
                 parks=parks,
@@ -810,18 +936,18 @@ def run_pipeline(
             )
             if aq_rasters:
                 enriched = attach_gios_aq_field_features(enriched, aq_rasters)
-        train_frame = prepare_listings_for_model(
+        train_new = prepare_listings_for_model(
             pd.DataFrame(enriched.drop(columns=["geometry"], errors="ignore"))
         )
-        if not passthrough.empty:
-            train_frame = pd.concat(
-                [
-                    train_frame,
-                    prepare_listings_for_model(passthrough.reset_index(drop=True)),
-                ],
-                ignore_index=True,
-                sort=False,
-            )
+        passthrough_prep = (
+            prepare_listings_for_model(passthrough.reset_index(drop=True))
+            if not passthrough.empty
+            else passthrough
+        )
+        train_frame = _concat_enriched_listings(
+            [train_new, reuse, passthrough_prep],
+            listings,
+        )
         train_frame = promote_listing_flags(train_frame)
         train_frame = attach_crime_features(train_frame, crime_by_district)
         if app_settings.extract_attrs_enabled:
@@ -869,6 +995,7 @@ def run_pipeline(
                 radius_m=float(app_settings.model_nbhd_radius_m),
             )
             _write_enriched_geoparquet(train_frame)
+        manifest.mark("enrich_context", context_fp)
         manifest.mark_and_save("enrich", enrich_fp)
         logger.info(
             "STEP done enrich in %.1fs (%.2f min)",

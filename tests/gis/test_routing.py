@@ -51,6 +51,29 @@ def test_attach_commute_minutes_distance_fallback() -> None:
     assert float(out["commute_min"].iloc[0]) == 6.0
 
 
+def test_attach_commute_minutes_skips_filled_rows() -> None:
+    frame = pd.DataFrame({
+        "lon": [21.0, 21.01],
+        "lat": [52.23, 52.24],
+        "dist_daszynskiego_m": [3000.0, 1500.0],
+        "commute_min": [7.0, float("nan")],
+    })
+    with patch(
+        "happy_housing.gis.routing.osrm_table_durations_seconds",
+        return_value=np.array([600.0]),
+    ) as table_mock:
+        out = attach_commute_minutes(
+            frame,
+            dest_lon=20.983,
+            dest_lat=52.23,
+            osrm_url="http://osrm.test",
+        )
+    origins = table_mock.call_args[0][0]
+    assert origins == [(21.01, 52.24)]
+    assert float(out["commute_min"].iloc[0]) == 7.0
+    assert float(out["commute_min"].iloc[1]) == 10.0
+
+
 def test_duration_seconds_from_distance_m_walk_pace() -> None:
     # 2.182 km at 5 km/h → 26.184 min
     assert abs(duration_seconds_from_distance_m(2182.0, 5.0) - 1571.04) < 0.1

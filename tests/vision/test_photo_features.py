@@ -35,3 +35,24 @@ def test_attach_photo_features_frame() -> None:
     out = attach_photo_features(frame, encoder=HeuristicPhotoEncoder())
     assert out.iloc[0]["n_photos_scored"] == 1.0
     assert "photo_quality_mean" in out.columns
+
+
+def test_attach_photo_features_skips_already_scored_rows() -> None:
+    frame = pd.DataFrame([
+        {
+            "listing_id": "old",
+            "image_urls_json": json.dumps(["https://x/old.jpg"]),
+            "photo_quality_mean": 0.4,
+            "n_photos_scored": 3.0,
+        },
+        {
+            "listing_id": "new",
+            "image_urls_json": json.dumps(["https://x/new.jpg"]),
+            "floor_plan_urls_json": "[]",
+        },
+    ])
+    out = attach_photo_features(frame, encoder=HeuristicPhotoEncoder())
+    assert float(out.iloc[0]["photo_quality_mean"]) == 0.4
+    assert float(out.iloc[0]["n_photos_scored"]) == 3.0
+    assert pd.notna(out.iloc[1]["photo_quality_mean"])
+    assert float(out.iloc[1]["n_photos_scored"]) == 1.0

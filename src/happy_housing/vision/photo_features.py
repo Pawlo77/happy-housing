@@ -170,7 +170,10 @@ def attach_photo_features(
     max_photos: int = 8,
     model_id: str = "openai/clip-vit-base-patch32",
 ) -> pd.DataFrame:
-    """Add ``PHOTO_FEATURE_COLUMNS`` to a listings frame."""
+    """Add ``PHOTO_FEATURE_COLUMNS`` to a listings frame.
+
+    Rows with a finite ``photo_quality_mean`` keep existing photo columns.
+    """
     out = frame.copy()
     for col in PHOTO_FEATURE_COLUMNS:
         if col not in out.columns:
@@ -178,21 +181,20 @@ def attach_photo_features(
     if out.empty:
         return out
     backend = encoder or resolve_photo_encoder(model_id)
-    rows: list[dict[str, float]] = []
-    for _, row in out.iterrows():
+    scored = pd.to_numeric(out["photo_quality_mean"], errors="coerce")
+    for idx, row in out.iterrows():
+        if pd.notna(scored.loc[idx]):
+            continue
         images = _urls_from_json(row.get("image_urls_json"))
         if not images and isinstance(row.get("image_url"), str) and row["image_url"]:
             images = [str(row["image_url"])]
         plans = _urls_from_json(row.get("floor_plan_urls_json"))
-        rows.append(
-            aggregate_photo_features(
-                image_urls=images,
-                floor_plan_urls=plans,
-                encoder=backend,
-                max_photos=max_photos,
-            )
+        feats = aggregate_photo_features(
+            image_urls=images,
+            floor_plan_urls=plans,
+            encoder=backend,
+            max_photos=max_photos,
         )
-    features = pd.DataFrame(rows, index=out.index)
-    for col in PHOTO_FEATURE_COLUMNS:
-        out[col] = features[col]
+        for col, value in feats.items():
+            out.at[idx, col] = value
     return out

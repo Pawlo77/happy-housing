@@ -225,6 +225,7 @@ def recompute_commute_features(
         require_osrm=bool(config.routing.require_osrm),
         use_otp_transit=bool(use_otp_transit),
         otp_url=otp_url or config.routing.otp_url,
+        overwrite=True,
     )
     for col in (
         "commute_min",

@@ -88,3 +88,34 @@ def test_attach_transit_commute_minutes_uses_otp() -> None:
             dest_lat=52.23,
         )
     assert float(out["transit_commute_min"].iloc[0]) == 10.0
+
+
+def test_attach_transit_skips_rows_already_filled() -> None:
+    frame = pd.DataFrame({
+        "lon": [21.0, 21.01],
+        "lat": [52.23, 52.24],
+        "transit_commute_min": [12.5, float("nan")],
+    })
+    calls: list[tuple[float, float]] = []
+
+    def _fake(
+        origin: tuple[float, float],
+        destination: tuple[float, float],
+        **kwargs: Any,
+    ) -> float:
+        del destination, kwargs
+        calls.append(origin)
+        return 480.0
+
+    with patch(
+        "happy_housing.gis.routing.otp_plan_duration_seconds",
+        side_effect=_fake,
+    ):
+        out = attach_transit_commute_minutes(
+            frame,
+            dest_lon=20.983,
+            dest_lat=52.23,
+        )
+    assert calls == [(21.01, 52.24)]
+    assert float(out["transit_commute_min"].iloc[0]) == 12.5
+    assert float(out["transit_commute_min"].iloc[1]) == 8.0

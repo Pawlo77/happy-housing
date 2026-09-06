@@ -234,8 +234,11 @@ def attach_commute_minutes(
     require_osrm: bool = False,
     profile: str = "driving",
     proxy_speed_kmh: float = 30.0,
+    overwrite: bool = False,
 ) -> pd.DataFrame:
     """Add commute minutes via OSRM Table or a constant-speed distance proxy.
+
+    Rows with a finite ``out_col`` are left unchanged (incremental).
 
     Args:
         require_osrm: When true, raise if the Table API is unreachable instead
@@ -243,19 +246,35 @@ def attach_commute_minutes(
         profile: OSRM routing profile (``driving``, ``bike``, ``foot``).
         proxy_speed_kmh: Assumed urban speed when OSRM is down (car ≈ 30,
             bike ≈ 15, walk ≈ 5).
+        overwrite: When true, recompute every row (commute-target change).
     """
     out = frame.copy()
-    origins = list(zip(out["lon"].astype(float), out["lat"].astype(float), strict=True))
+    if out.empty:
+        if out_col not in out.columns:
+            out[out_col] = pd.Series(dtype=float)
+        return out
+    if out_col not in out.columns:
+        out[out_col] = float("nan")
+    pending = pd.to_numeric(out[out_col], errors="coerce").isna()
+    if overwrite:
+        pending = pd.Series(True, index=out.index)
+    pending &= out["lon"].notna() & out["lat"].notna()
+    if not bool(pending.any()):
+        return out
+    work = out.loc[pending].copy()
+    origins = list(
+        zip(work["lon"].astype(float), work["lat"].astype(float), strict=True)
+    )
     durations = osrm_table_durations_seconds(
         origins,
         (dest_lon, dest_lat),
         base_url=osrm_url,
         profile=profile,
     )
-    if durations is not None and len(durations) == len(out):
+    if durations is not None and len(durations) == len(work):
         profile_key = str(profile or "driving").strip().casefold() or "driving"
-        if profile_key in _ACTIVE_MODE_PROXY_KMH and distance_col in out.columns:
-            dist_m = pd.to_numeric(out[distance_col], errors="coerce").to_numpy(
+        if profile_key in _ACTIVE_MODE_PROXY_KMH and distance_col in work.columns:
+            dist_m = pd.to_numeric(work[distance_col], errors="coerce").to_numpy(
                 dtype=float
             )
             dur_s = np.asarray(durations, dtype=float)
@@ -281,17 +300,18 @@ def attach_commute_minutes(
                     "rescaled with %.0f km/h via %s",
                     profile_key,
                     n_fix,
-                    len(out),
+                    len(work),
                     proxy,
                     distance_col,
                 )
-            out[out_col] = corrected / 60.0
+            work[out_col] = corrected / 60.0
         else:
-            out[out_col] = durations / 60.0
+            work[out_col] = durations / 60.0
+        out.loc[pending, out_col] = work[out_col].to_numpy()
         logger.info(
-            "OSRM %s filled %s/%s rows → %s",
+            "OSRM %s filled %s/%s pending rows → %s",
             profile,
-            len(out),
+            int(pending.sum()),
             len(out),
             out_col,
         )
@@ -310,10 +330,11 @@ def attach_commute_minutes(
         out_col,
     )
     speed = float(proxy_speed_kmh) if float(proxy_speed_kmh) > 0 else 30.0
-    if distance_col in out.columns:
-        out[out_col] = (out[distance_col].astype(float) / 1000.0) / speed * 60.0
+    if distance_col in work.columns:
+        work[out_col] = (work[distance_col].astype(float) / 1000.0) / speed * 60.0
     else:
-        out[out_col] = np.nan
+        work[out_col] = np.nan
+    out.loc[pending, out_col] = work[out_col].to_numpy()
     return out
 
 
@@ -328,6 +349,7 @@ def attach_active_mode_commutes(
     otp_url: str,
     osrm_foot_url: str | None = None,
     osrm_bike_url: str | None = None,
+    overwrite: bool = False,
 ) -> pd.DataFrame:
     """Fill car / transit / bike / walk commute columns for one destination.
 
@@ -335,6 +357,7 @@ def attach_active_mode_commutes(
     foot/bike graph URLs when set (defaults ``:5002`` / ``:5003``); car-like
     table replies are still rescaled as a fallback.
     Transit uses OTP when enabled.
+    ``overwrite`` recomputes every row (new commute destination).
     """
     logger.info(
         "Attach multi-mode commute for %s rows → (%.5f, %.5f) otp=%s",
@@ -370,6 +393,7 @@ def attach_active_mode_commutes(
         profile="driving",
         out_col="commute_min",
         proxy_speed_kmh=30.0,
+        overwrite=overwrite,
     )
     out = attach_commute_minutes(
         out,
@@ -380,6 +404,7 @@ def attach_active_mode_commutes(
         profile="bike",
         out_col="bike_commute_min",
         proxy_speed_kmh=15.0,
+        overwrite=overwrite,
     )
     out = attach_commute_minutes(
         out,
@@ -390,6 +415,7 @@ def attach_active_mode_commutes(
         profile="foot",
         out_col="walk_commute_min",
         proxy_speed_kmh=5.0,
+        overwrite=overwrite,
     )
     if use_otp_transit:
         logger.info("Querying OTP transit minutes at %s", otp_url)
@@ -398,6 +424,7 @@ def attach_active_mode_commutes(
             dest_lon=dest_lon,
             dest_lat=dest_lat,
             otp_url=otp_url,
+            overwrite=overwrite,
         )
         filled = int(
             pd.to_numeric(out.get("transit_commute_min"), errors="coerce").notna().sum()
@@ -610,23 +637,40 @@ def attach_transit_commute_minutes(
     otp_url: str = "http://127.0.0.1:8080",
     out_col: str = "transit_commute_min",
     max_workers: int = _OTP_MAX_WORKERS,
+    overwrite: bool = False,
 ) -> pd.DataFrame:
     """Add transit+walk minutes via OTP2; NaN when OTP is unavailable.
 
-    GTFS stop proximity (``dist_transit_stop_m``) remains the offline proxy.
+    Rows that already have finite ``out_col`` are left unchanged unless
+    ``overwrite`` is true. GTFS stop proximity remains the offline proxy.
     """
     out = frame.copy()
     if out.empty:
         out[out_col] = pd.Series(dtype=float)
         return out
+    if out_col not in out.columns:
+        out[out_col] = float("nan")
+    minutes = pd.to_numeric(out[out_col], errors="coerce")
+    pending_mask = minutes.isna() & out["lon"].notna() & out["lat"].notna()
+    if overwrite:
+        pending_mask = out["lon"].notna() & out["lat"].notna()
+        minutes = pd.Series(float("nan"), index=out.index)
+    pending_pos = [i for i, flag in enumerate(pending_mask.tolist()) if flag]
+    if not pending_pos:
+        return out
     origins = list(zip(out["lon"].astype(float), out["lat"].astype(float), strict=True))
     dest = (dest_lon, dest_lat)
-    results: list[float] = [float("nan")] * len(origins)
-    workers = max(1, min(int(max_workers), len(origins)))
+    results = minutes.to_numpy(dtype=float, copy=True)
+    workers = max(1, min(int(max_workers), len(pending_pos)))
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = {
-            pool.submit(otp_plan_duration_seconds, origin, dest, base_url=otp_url): idx
-            for idx, origin in enumerate(origins)
+            pool.submit(
+                otp_plan_duration_seconds,
+                origins[idx],
+                dest,
+                base_url=otp_url,
+            ): idx
+            for idx in pending_pos
         }
         for fut in as_completed(futures):
             idx = futures[fut]

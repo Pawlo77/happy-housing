@@ -414,7 +414,11 @@ def _panel_ops(settings: AppSettings, settings_file: Path, proc: Path) -> None:
             )
     with pipe_col, st.container(border=True):
         st.markdown("**Pipeline**")
-        st.caption("Enrich → train → score → recommend.")
+        st.caption(
+            "Incremental: scrape new/changed listings; GIS/OSRM/OTP/photo only "
+            "for new or moved pins. Force full recompute re-enriches every row. "
+            "Force GIS re-downloads archives."
+        )
         force_refresh = st.checkbox(
             "Force full recompute",
             value=bool(settings.pipeline_force_refresh),
