@@ -1,6 +1,7 @@
 """Home page: about, market overview, sources with URLs, model story."""
 
 import logging
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
 
@@ -14,6 +15,7 @@ from happy_housing.app.data import (
     load_config,
     load_metadata,
     load_scored,
+    load_shap_bundle,
     processed_dir,
     scored_path,
 )
@@ -33,8 +35,22 @@ from happy_housing.app.source_inventory import (
     SourceInventoryRow,
     build_source_inventory,
 )
+from happy_housing.models.train import model_feature_columns
 
 logger = logging.getLogger(__name__)
+
+
+def resolve_home_feature_columns(
+    metadata_columns: Sequence[str] | None,
+    booster_columns: Sequence[str] | None = None,
+) -> list[str]:
+    """Prefer run-metadata feature names; else use the fitted booster list."""
+    meta = [str(c).strip() for c in (metadata_columns or []) if str(c).strip()]
+    if meta:
+        return meta
+    if booster_columns:
+        return [str(c).strip() for c in booster_columns if str(c).strip()]
+    return []
 
 
 def _hero(refreshed: str | None, n_offers: int, r2: float | None) -> None:
@@ -309,7 +325,13 @@ def render_home() -> None:
     r2 = meta.model_metrics.get("r2") if meta and meta.model_metrics else None
     duration = meta.duration_s if meta else None
     metrics = dict(meta.model_metrics) if meta and meta.model_metrics else {}
-    features = list(meta.feature_columns) if meta and meta.feature_columns else []
+    booster_cols: list[str] | None = None
+    meta_cols = list(meta.feature_columns) if meta and meta.feature_columns else []
+    if not any(str(c).strip() for c in meta_cols):
+        bundle = load_shap_bundle()
+        if bundle is not None:
+            booster_cols = list(model_feature_columns(bundle[0]))
+    features = resolve_home_feature_columns(meta_cols, booster_columns=booster_cols)
 
     _hero(refreshed, summary["n_offers"], r2)
 
